@@ -1,0 +1,253 @@
+Public mCurrentBoxSizeID As Variant
+Public inputBoxSize As String
+
+Public mCurrentWhiteSpaceCoefID As Variant
+Public inputWhiteSpaceExt As String
+Public inputWhiteSpaceX As String
+Public inputWhiteSpaceY As String
+
+
+Public mCurrentEmployee As Variant
+Public inputPersonFullName As String
+
+Public mCurrentCategory As Variant
+Public inputCategoryName As String
+
+'---------- DROP-DOWN LIST WITH ALL THE EMPLOYEES ---------
+Sub uiGetCategoryId(control As IRibbonControl, ByRef categoryId As Variant)
+    If IsEmpty(mCurrentCategory) Then
+        ReDim mCurrentCategory(0)
+        mCurrentCategory(0) = "categoryCEO"
+        inputCategoryName = "CEO"
+    Else
+        mCurrentCategory(0) = "category" & inputCategoryName
+    End If
+    
+    categoryId = mCurrentCategory(0)
+    getRibbon().InvalidateControl ("personFullName")
+End Sub
+
+Sub uiOnChangeCategory(control As IRibbonControl, selectedID As String, selectedIndex As Double)
+    mCurrentCategory(0) = CStr(selectedID)
+    
+    inputCategoryName = Replace(mCurrentCategory(0), "category", "")
+    If inputCategoryName = "AZ" Then
+        MsgBox ("Can't list all your employees in the dropdown since there are more than 1000 of them. Listing only the first 1000.")
+    End If
+    
+    'Safely access dictionary with full error handling for Mac
+    On Error Resume Next
+    inputPersonFullName = MyDictionaryEmployeesPerCategory.Item(inputCategoryName)(0)
+    If Err.Number <> 0 Then
+        inputPersonFullName = ""
+        Err.Clear
+    End If
+    On Error GoTo 0
+    
+    On Error Resume Next
+    getRibbon().InvalidateControl ("personFullName")
+    On Error GoTo 0
+End Sub
+
+'---------- DROP-DOWN LIST WITH ALL THE EMPLOYEES ---------
+Function getEmployeesListByCategory(ByVal category As String) As Variant
+    Dim employeesListByCategory As Variant
+    Select Case category
+        Case "CEO":
+            ReDim employeesListByCategory(0)
+            employeesListByCategory(0) = inputCEOFullName
+        
+        Case "Managers":
+            numberOfEmployees = 0
+            For i = 0 To UBound(MyVariantListOfEmployees, 1)
+                If MyDictionaryPersonalInfo.Item(MyVariantListOfEmployees(i)).IsManager = True Then
+                    numberOfEmployees = numberOfEmployees + 1
+                End If
+            Next i
+            
+            ReDim employeesListByCategory(numberOfEmployees - 1)
+        
+            managersIndex = 0
+            For i = 0 To UBound(MyVariantListOfEmployees, 1)
+                If MyDictionaryPersonalInfo.Item(MyVariantListOfEmployees(i)).IsManager = True Then
+                    employeesListByCategory(managersIndex) = MyVariantListOfEmployees(i)
+                    managersIndex = managersIndex + 1
+                End If
+            Next i
+            
+        Case "AZ":
+            numberOfEmployees = CDbl(UBound(MyVariantListOfEmployees)) + 1
+            If numberOfEmployees > 1000 Then
+                numberOfEmployees = 1000
+            End If
+            
+            ReDim employeesListByCategory(numberOfEmployees - 1)
+            
+            For i = 0 To numberOfEmployees - 1
+                employeesListByCategory(i) = MyVariantListOfEmployees(i)
+            Next i
+            
+        Case Else
+            numberOfEmployees = 0
+            For i = 0 To UBound(MyVariantListOfEmployees, 1)
+                If Left(MyVariantListOfEmployees(i), 1) = LCase(category) Then
+                    numberOfEmployees = numberOfEmployees + 1
+                End If
+            Next i
+            
+            If numberOfEmployees > 0 Then
+                ReDim employeesListByCategory(numberOfEmployees - 1)
+        
+                employeesIndex = 0
+                For i = 0 To UBound(MyVariantListOfEmployees, 1)
+                    If Left(MyVariantListOfEmployees(i), 1) = LCase(category) Then
+                        employeesListByCategory(employeesIndex) = MyVariantListOfEmployees(i)
+                        employeesIndex = employeesIndex + 1
+                    End If
+                Next i
+            End If
+    End Select
+    
+    getEmployeesListByCategory = employeesListByCategory
+End Function
+
+Sub getNumberOfEmployees(control As IRibbonControl, ByRef returnedVal)
+    'Wrap entire function in error handling for Mac compatibility
+    On Error Resume Next
+    
+    Dim dictCount As Long
+    dictCount = MyDictionaryEmployeesPerCategory.Count
+    
+    If Err.Number <> 0 Or dictCount = 0 Then
+        returnedVal = 0
+        Err.Clear
+    Else
+        returnedVal = UBound(MyDictionaryEmployeesPerCategory.Item(inputCategoryName), 1) + 1
+        If Err.Number <> 0 Then
+            returnedVal = 0
+            Err.Clear
+        End If
+    End If
+    
+    On Error GoTo 0
+End Sub
+
+Sub getEmployeeName(control As IRibbonControl, index As Integer, ByRef returnedVal)
+    'Wrap entire function in error handling for Mac compatibility
+    On Error Resume Next
+    
+    Dim dictCount As Long
+    dictCount = MyDictionaryEmployeesPerCategory.Count
+    
+    If Err.Number <> 0 Or dictCount = 0 Then
+        returnedVal = ""
+        Err.Clear
+    Else
+        returnedVal = MyDictionaryPersonalInfo.Item(MyDictionaryEmployeesPerCategory.Item(inputCategoryName)(index)).FullName
+        If Err.Number <> 0 Then
+            returnedVal = ""
+            Err.Clear
+        End If
+    End If
+    
+    On Error GoTo 0
+End Sub
+
+Sub getEmployeeIndex(control As IRibbonControl, index As Integer, ByRef returnedVal)
+    returnedVal = "employee" & CStr(index)
+End Sub
+
+Sub uiGetEmployeeId(control As IRibbonControl, ByRef employeeId As Variant)
+    'Full error handling for Mac compatibility
+    On Error Resume Next
+    
+    If IsEmpty(mCurrentEmployee) Then
+        ReDim mCurrentEmployee(0)
+        mCurrentEmployee(0) = "employee0"
+        inputPersonFullName = MyDictionaryEmployeesPerCategory.Item(inputCategoryName)(0)
+        If Err.Number <> 0 Then
+            inputPersonFullName = ""
+            Err.Clear
+        End If
+    Else
+        Dim upperBound As Long
+        upperBound = UBound(MyDictionaryEmployeesPerCategory.Item(inputCategoryName))
+        If Err.Number = 0 Then
+            For i = 0 To upperBound
+                If MyDictionaryEmployeesPerCategory.Item(inputCategoryName)(i) = inputPersonFullName Then
+                    mCurrentEmployee(0) = "employee" & CStr(i)
+                End If
+            Next i
+        End If
+        Err.Clear
+    End If
+    
+    On Error GoTo 0
+    employeeId = mCurrentEmployee(0)
+End Sub
+
+Sub uiOnChangeEmployee(control As IRibbonControl, selectedID As String, selectedIndex As Double)
+    'Full error handling for Mac compatibility
+    On Error Resume Next
+    
+    mCurrentEmployee(0) = selectedID
+    inputPersonIndex = CInt(Replace(mCurrentEmployee(0), "employee", ""))
+    inputPersonFullName = MyDictionaryEmployeesPerCategory.Item(inputCategoryName)(inputPersonIndex)
+    
+    If Err.Number <> 0 Then
+        inputPersonFullName = ""
+        Err.Clear
+    End If
+    
+    On Error GoTo 0
+End Sub
+
+'--------- STICKY SIZES CHECKBOX ----------
+Sub autodetectSizeAndWhiteSpaceSwitch(control As IRibbonControl, pressed As Boolean)
+    autodetectSizeAndWhiteSpaceFlag = Not (autodetectSizeAndWhiteSpaceFlag)
+End Sub
+
+Sub autodetectSizeAndWhiteSpaceStatus(control As IRibbonControl, ByRef returnedVal)
+    returnedVal = CBool(autodetectSizeAndWhiteSpaceFlag)
+End Sub
+
+'--------- BOX SIZE DROP-DOWN ---------
+Sub dropDownBoxSizeSwitch(control As IRibbonControl, ByRef returnedVal)
+    returnedVal = CBool(dropDownBoxSizeEnabledFlag)
+End Sub
+
+Sub GetSelectedBoxSizeID(control As IRibbonControl, ByRef boxSizeID As Variant)
+    If IsEmpty(mCurrentBoxSizeID) Then mCurrentBoxSizeID = "boxSizeMedium"
+    
+    boxSizeID = mCurrentBoxSizeID
+    inputBoxSize = Replace(mCurrentBoxSizeID, "boxSize", "")
+End Sub
+
+Sub OnChangeBoxSize(control As IRibbonControl, selectedID As String, selectedIndex As Double)
+    mCurrentBoxSizeID = selectedID
+    inputBoxSize = Replace(selectedID, "boxSize", "")
+End Sub
+
+'--------- WHITE SPACE COEF DROP-DOWN ---------
+Sub dropDownWhiteSpaceSwitch(control As IRibbonControl, ByRef returnedVal)
+    returnedVal = CBool(dropDownWhiteSpaceEnabledFlag)
+End Sub
+
+Sub GetSelectedWhiteSpaceCoef(control As IRibbonControl, ByRef whiteSpaceCoefID As Variant)
+    'set
+    If IsEmpty(mCurrentWhiteSpaceCoefID) Then mCurrentWhiteSpaceCoefID = "whiteSpaceCoef10"
+    whiteSpaceCoefID = mCurrentWhiteSpaceCoefID
+    
+    inputWhiteSpaceExt = CInt(Replace(mCurrentWhiteSpaceCoefID, "whiteSpaceCoef", ""))
+    inputWhiteSpaceX = inputWhiteSpaceExt
+    inputWhiteSpaceY = inputWhiteSpaceExt
+End Sub
+
+Sub OnChangeWhiteSpaceCoef(control As IRibbonControl, selectedID As String, selectedIndex As Double)
+    'get
+    mCurrentWhiteSpaceCoefID = selectedID
+    
+    inputWhiteSpaceExt = CInt(Replace(mCurrentWhiteSpaceCoefID, "whiteSpaceCoef", ""))
+    inputWhiteSpaceX = inputWhiteSpaceExt
+    inputWhiteSpaceY = inputWhiteSpaceExt
+End Sub

@@ -1,0 +1,294 @@
+Sub createDepartments(control As IRibbonControl)
+    'work with current slide
+    slideNumber = ActiveWindow.Selection.SlideRange.slideIndex 'ActivePresentation.Windows(1).View.Slide.slideIndex
+    
+    Call findFullPalette
+    
+    If slideNumber <> paletteSlideNumber Then
+        Call makeDepartments(slideNumber)
+    End If
+End Sub
+
+'Shade visualization
+Sub makeDepartmentShade(ByVal slideNumber As Integer, virtualShade As CVirtualShade, ByVal customZOrder As Integer)
+    'Copy shade and rename it
+    shadeTemplateSuffix = "Shade" & CStr(shadeIterator + 1) & "Department"
+    virtualShade.shapeName = copyShapeErrorFree(shadeTemplateSuffix, slideNumber, LCase(Replace(virtualShade.DepartmentName, " ", "")) & shadeTemplateSuffix)
+           
+    With ActivePresentation.Slides(slideNumber).Shapes(virtualShade.shapeName)
+        'Set shape's dimesnisons same as it's virtual analog
+        .Left = virtualShade.LeftBorder
+        .Top = virtualShade.TopBorder
+                        
+        .Width = virtualShade.Width
+        .Height = virtualShade.Height
+                        
+        'Set the department name
+        .TextFrame.TextRange.Text = virtualShade.DepartmentName
+    End With
+            
+    'We send every shape to back one by one to enumerate shapes' zorders
+    ActivePresentation.Slides(slideNumber).Shapes(virtualShade.shapeName).Select
+    ActiveWindow.Selection.ShapeRange.ZOrder msoSendToBack
+    
+    'Custom zorder enumeration (object model doesn
+    virtualShade.ShapeZOrder = customZOrder
+                    
+    'Propagate shadeIterator; it's a a global variable
+    shadeIterator = (shadeIterator + 1) Mod 3
+End Sub
+
+Sub makeDepartments(ByVal slideNumber As Integer)
+    'Open progress bar
+    Call openProgressDigit("Initializing...")
+    '-------------------------------------------------------
+    '--------------- GRADIENT FOR GIVEN SHADE --------------
+    '-------------------------------------------------------
+    
+    
+        'Change shade's color according to gradient's formula
+        With ActiveWindow.Selection 'ActivePresentation.Windows(1).Selection
+            If .Type = ppSelectionShapes Then
+                If .ShapeRange.Count = 1 Then
+                    On Error GoTo errorResolvingShapeName
+                    If InStr(1, .ShapeRange(1).Name, "Shade") > 0 And endsWith(.ShapeRange(1).Name, "Department") = True Then
+                        shadeName = Mid(.ShapeRange(1).Name, InStr(1, .ShapeRange(1).Name, "Shade"), Len("Shade9")) & "Department"
+                        'Original colors
+                        shadeRGBValue = ActivePresentation.Slides(1).Shapes(shadeName).Fill.ForeColor.RGB
+                        shadeR = CInt(shadeRGBValue Mod 256)
+                        shadeG = CInt(((shadeRGBValue - shadeR) Mod 65536) / 256)
+                        shadeB = CInt((shadeRGBValue - shadeR - shadeG * 256) / 65536)
+                        'MsgBox (shadeR & ", " & shadeG & ", " & shadeB)
+                        
+                        'Actual colors
+                        tempRGBValue = .ShapeRange(1).Fill.ForeColor.RGB
+                        tempR = CInt(tempRGBValue Mod 256)
+                        tempG = CInt(((tempRGBValue - tempB) Mod 65536) / 256)
+                        tempB = CInt((tempRGBValue - tempR - tempG * 256) / 65536)
+                        'MsgBox (tempR & ", " & tempG & ", " & tempB)
+                        
+                        'Perform gradient change; 255 is white, 0 is black
+                        deltaR = (255 - shadeR) / 2
+                        deltaG = (255 - shadeG) / 2
+                        deltaB = (255 - shadeB) / 2
+                        
+                        If tempR + deltaR > 255 Or tempG + deltaG > 255 Or tempB + deltaB > 255 Then
+                            tempR = 0
+                            tempG = 0
+                            tempB = 0
+                        End If
+                        
+                        If tempR < shadeR Or tempG < shadeG Or tempB < shadeB Then
+                            deltaR = (shadeR - 0) / 3
+                            deltaG = (shadeG - 0) / 3
+                            deltaB = (shadeB - 0) / 3
+                        End If
+    
+                        .ShapeRange(1).Fill.ForeColor.RGB = RGB(CInt(tempR + deltaR), CInt(tempG + deltaG), CInt(tempB + deltaB))
+                        Call closeProgressDigit
+                        Exit Sub
+                    End If
+                End If
+            End If
+        End With
+
+    '-------------------------------------------------------
+    '---- IF NO SHAPE SELECTED - CREATE OR ERASE SHADES ----
+    '-------------------------------------------------------
+    
+    'Every element of MyDictionaryOrgElements corresponds to employee's card WITHOUT TICK
+    Set MyDictionaryOrgElements = New Dictionary
+    Set MyDictionaryDepartmentShades = New Dictionary
+    
+    'Returns MyDictionaryCardsCheckList filled with people keys
+    'MyDictionaryCardsCheckList's Keys are IDs of all employees on the slide
+    Call refreshCardsChecklist("single_slide", slideNumber)
+
+    'Define department shades' sizes and save org elements sizes
+    For Each cardName In MyDictionaryCardsCheckList.keys
+        personFullName = parseShapeName(cardName).Item("FullNameKey")
+        
+        If parseShapeName(cardName).Item("ManagerType") = "Solid" Then
+            'Add orgelement to the dictionary
+            With checkShapeExists(slideNumber, personFullName & "MainBackground" & "Solid")
+                MyDictionaryOrgElements.add personFullName, New CVirtualShade
+                MyDictionaryOrgElements.Item(personFullName).dimensionsVBAStyle .Left, .Top, .Width, .Height
+            End With
+    
+            'Use lcase-no-space department name as department shade key
+            departmentShadeKey = MyDictionaryPersonalInfo.Item(personFullName).DepartmentKey
+            
+            If departmentShadeKey <> "" And MyDictionaryOrgElements.Item(personFullName).TopBorder > const_slideTopBorder Then
+                
+                'Stretch virtual shape onto all the people in one department
+                With MyDictionaryDepartmentShades
+                    If Not .Exists(departmentShadeKey) Then
+                        .add departmentShadeKey, New CVirtualShade
+                        .Item(departmentShadeKey).dimensionsPreset ("default")
+                        .Item(departmentShadeKey).DepartmentName = MyDictionaryPersonalInfo.Item(personFullName).Department
+                    End If
+                    
+                    'Stretch the shade over one more org element
+                    .Item(departmentShadeKey).insertShapeInside MyDictionaryOrgElements.Item(personFullName)
+                End With
+            End If
+        End If
+    Next cardName
+    
+    'DIAGNOSTICS
+    
+    '----- Show cards -----
+    'For Each card In MyDictionaryOrgElements
+    '    MyDictionaryOrgElements.Item(card).visualizeColorful (3)
+    'Next shade
+    
+    '---- Show shades -----
+    'For Each shade In MyDictionaryDepartmentShades
+    '    MyDictionaryDepartmentShades.Item(shade).visualizeColorful (3)
+    'Next shade
+    
+    'Hard to see it but there is a hidden call to function which erases all shapes with name tag "Department"
+    
+        If Not eraseAllShapesLike(slideNumber, "Department") Then
+            ticShapesCounter = ActivePresentation.Slides(slideNumber).Shapes.Count
+            
+            customZOrder = 0
+            
+            Dim stretchedShade As CVirtualShade
+            Set stretchedShade = New CVirtualShade
+            
+            Call updateTaskDigit("Creating...")
+            
+            'Brute force all departments
+            For Each departmentShade In MyDictionaryDepartmentShades.keys
+                Call stretchedShade.dimensionsPreset("full_slide")
+                
+                'First loop: stretch in vertical direction
+                For Each element In MyDictionaryOrgElements.keys
+                    With MyDictionaryOrgElements.Item(element)
+                        Select Case MyDictionaryOrgElements.Item(element).Location(MyDictionaryDepartmentShades.Item(departmentShade))
+                            Case "top"
+                                If MyDictionaryOrgElements.Item(element).BottomBorder > stretchedShade.TopBorder Then stretchedShade.TopBorder = MyDictionaryOrgElements.Item(element).BottomBorder
+                            Case "bottom"
+                                If MyDictionaryOrgElements.Item(element).TopBorder < stretchedShade.BottomBorder Then stretchedShade.BottomBorder = .TopBorder
+                        End Select
+                    End With
+                Next element
+                
+                
+                'Save new vertical dimensions if they changed
+                With MyDictionaryDepartmentShades.Item(departmentShade)
+                    If stretchedShade.TopBorder <> const_slideTopBorder Then
+                        .TopBorder = .TopBorder / 2 + stretchedShade.TopBorder / 2 - 1
+                    Else
+                        .TopBorder = stretchedShade.TopBorder - 1
+                    End If
+                    If stretchedShade.BottomBorder <> const_slideBottomBorder Then
+                        .BottomBorder = .BottomBorder / 2 + stretchedShade.BottomBorder / 2 + 1
+                    Else
+                        .BottomBorder = stretchedShade.BottomBorder + 1
+                    End If
+                End With
+                
+                'Reset temporary shade size
+                Call stretchedShade.dimensionsPreset("full_slide")
+                
+                'Second loop: stretch in horizontal direction
+                'AT THIS STEP VIRTUAL SHAPE SIZE IS CHANGED (it's already stretched vertically)
+                For Each element In MyDictionaryOrgElements.keys
+                    With MyDictionaryOrgElements.Item(element)
+                        Select Case .Location(MyDictionaryDepartmentShades.Item(departmentShade))
+                            Case "right"
+                                If .LeftBorder < stretchedShade.RightBorder Then stretchedShade.RightBorder = .LeftBorder
+                            Case "left"
+                                If .RightBorder > stretchedShade.LeftBorder Then stretchedShade.LeftBorder = .RightBorder
+                        End Select
+                    End With
+                Next element
+                
+                'Save new horizontal dimensions if they changed
+                'With MyDictionaryDepartmentShades.Item(departmentShade)
+                    If stretchedShade.RightBorder <> const_slideRightBorder Then
+                        MyDictionaryDepartmentShades.Item(departmentShade).RightBorder = MyDictionaryDepartmentShades.Item(departmentShade).RightBorder / 2 + stretchedShade.RightBorder / 2 + 1
+                    Else
+                        MyDictionaryDepartmentShades.Item(departmentShade).RightBorder = stretchedShade.RightBorder + 1
+                    End If
+                    If stretchedShade.LeftBorder <> const_slideLeftBorder Then
+                        MyDictionaryDepartmentShades.Item(departmentShade).LeftBorder = MyDictionaryDepartmentShades.Item(departmentShade).LeftBorder / 2 + stretchedShade.LeftBorder / 2 - 1
+                    Else
+                        MyDictionaryDepartmentShades.Item(departmentShade).LeftBorder = stretchedShade.LeftBorder - 1
+                    End If
+                'End With
+                
+                Call makeDepartmentShade(slideNumber, MyDictionaryDepartmentShades.Item(departmentShade), customZOrder)
+    
+                customZOrder = customZOrder + 1
+            Next departmentShade
+            
+            'Rearrange departments by depth
+            Call updateTaskDigit("Rearranging...")
+            
+            'Prepare array of sorted shades for the following shapes redistribution
+            Dim departmentShadesSorted As Collection
+            Set departmentShadesSorted = New Collection
+            
+            'Save initial zorders
+            For Each shadeKey In MyDictionaryDepartmentShades.keys
+                departmentShadesSorted.add shadeKey
+            Next shadeKey
+        
+            For Each shadeBelow In MyDictionaryDepartmentShades.keys
+                For Each shadeAbove In MyDictionaryDepartmentShades.keys
+                    'we skip the case of two equal shapes
+                    If shadeBelow <> shadeAbove Then
+                        'if shape B (B means hypothetically Below) is inside shape A (A means hypothetically Above)...
+                        'and shape B is above shape A (bigger means deeper)
+                        If MyDictionaryDepartmentShades.Item(shadeAbove).hasShapeInside(MyDictionaryDepartmentShades.Item(shadeBelow)) And _
+                           MyDictionaryDepartmentShades.Item(shadeBelow).ShapeZOrder > MyDictionaryDepartmentShades.Item(shadeAbove).ShapeZOrder Then
+                            
+                            'Save existing sequence, get ready to save new one
+                            Set departmentShadesSortedSaved = departmentShadesSorted
+                            Set departmentShadesSorted = New Collection
+                            
+                            'Swap two shapes's zOrder
+                            'Collection is like a queue in terms of data structures
+                            For Each shadeKey In departmentShadesSortedSaved
+                                'Send the chosen shape to back
+                                'We save the sequence for any not-swapped shapes,
+                                'But we switch the zorder for swapped shapes
+                                Select Case shadeKey
+                                    Case shadeBelow
+                                        shadeToBeSentToBackKey = shadeAbove
+                                    Case shadeAbove
+                                        shadeToBeSentToBackKey = shadeBelow
+                                    Case Else
+                                        shadeToBeSentToBackKey = shadeKey
+                                End Select
+                                
+                                ActivePresentation.Slides(slideNumber).Shapes(MyDictionaryDepartmentShades.Item(shadeToBeSentToBackKey).shapeName).Select
+                                ActiveWindow.Selection.ShapeRange.ZOrder msoSendToBack
+                                
+                                departmentShadesSorted.add shadeToBeSentToBackKey
+                                MyDictionaryDepartmentShades.Item(shadeToBeSentToBackKey).ShapeZOrder = customZOrder
+                                
+                                customZOrder = customZOrder + 1
+                            Next shadeKey
+                            'by the end of swap you are left with departmentShadesSorted collection, storing a queue of departments
+                            
+                        End If
+                    End If
+                Next shadeAbove
+            Next shadeBelow
+            
+            tocShapesCounter = ActivePresentation.Slides(slideNumber).Shapes.Count
+        
+            If Not ticShapesCounter = tocShapesCounter Then
+                ActiveWindow.Selection.Unselect
+            End If
+        End If
+    
+    Call closeProgressDigit
+    
+errorResolvingShapeName:
+    On Error GoTo -1
+End Sub

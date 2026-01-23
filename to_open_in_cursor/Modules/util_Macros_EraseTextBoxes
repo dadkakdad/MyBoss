@@ -1,0 +1,3 @@
+Sub eraseTextBoxesOnSlide()
+    Call eraseAllShapesLike(ActiveWindow.Selection.SlideRange.slideIndex, "<TEXTBOX>") 'ActivePresentation.Windows(1).View.Slide.slideIndex, "<TEXTBOX>")
+End Sub

@@ -1,0 +1,85 @@
+Public mCurrentSheet As Variant
+
+Public inputSheetIndex As String
+Public inputSheetName As String
+Public inputFirstRow As Integer
+
+'Public mCurrentBoxSizeID As Variant
+'Public inputBoxSize As String
+
+'---------- DROP-DOWN LIST WITH ALL THE SHEETS ---------
+Sub getNumberOfSheets(control As IRibbonControl, ByRef returnedVal)
+    'Handle uninitialized array - return 0 if array not ready
+    On Error Resume Next
+    returnedVal = UBound(MyVariantListOfSheets) + 1
+    If Err.Number <> 0 Then
+        returnedVal = 0
+        Err.Clear
+    End If
+    On Error GoTo 0
+End Sub
+
+Sub getSheetName(control As IRibbonControl, index As Integer, ByRef returnedVal)
+    'Handle uninitialized array
+    On Error Resume Next
+    returnedVal = MyVariantListOfSheets(index)
+    If Err.Number <> 0 Then
+        returnedVal = ""
+        Err.Clear
+    End If
+    On Error GoTo 0
+End Sub
+
+Sub getSheetIndex(control As IRibbonControl, index As Integer, ByRef returnedVal)
+    returnedVal = "sheetIndex" & CStr(index + 1)
+End Sub
+
+Sub uiGetSheetId(control As IRibbonControl, ByRef sheetId As Variant)
+    If IsEmpty(mCurrentSheet) Then
+        ReDim mCurrentSheet(0)
+        mCurrentSheet(0) = "sheetIndex1"
+    Else
+        If IsEmpty(mCurrentSheet(0)) Then
+            ReDim mCurrentSheet(0)
+            mCurrentSheet(0) = "sheetIndex1"
+        End If
+    End If
+    sheetId = mCurrentSheet(0)
+    
+    inputSheetIndex = CInt(Replace(mCurrentSheet(0), "sheetIndex", ""))
+    
+    'Handle uninitialized array
+    On Error Resume Next
+    inputSheetName = MyVariantListOfSheets(inputSheetIndex - 1)
+    If Err.Number <> 0 Then
+        inputSheetName = ""
+        Err.Clear
+    End If
+    On Error GoTo 0
+End Sub
+
+Sub uiOnChangeSheet(control As IRibbonControl, selectedID As String, selectedIndex As Double)
+    mCurrentSheet(0) = selectedID
+    
+    inputSheetIndex = CInt(Replace(mCurrentSheet(0), "sheetIndex", ""))
+    
+    'Handle uninitialized array
+    On Error Resume Next
+    inputSheetName = MyVariantListOfSheets(inputSheetIndex - 1)
+    If Err.Number <> 0 Then
+        inputSheetName = ""
+        Err.Clear
+    End If
+    On Error GoTo 0
+End Sub
+
+'---------- YES/NO TITLES CHECKBOX ---------
+Sub sheetHasTitlesSwitch(control As IRibbonControl, pressed As Boolean)
+    sheetHasTitlesFlag = Not (sheetHasTitlesFlag)
+End Sub
+
+Sub sheetHasTitlesStatus(control As IRibbonControl, ByRef returnedVal)
+    returnedVal = sheetHasTitlesFlag
+End Sub
+
+

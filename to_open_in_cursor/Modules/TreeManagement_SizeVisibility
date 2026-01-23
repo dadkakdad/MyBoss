@@ -1,0 +1,192 @@
+'---------------------------------------------------------------------
+'---------------------------- SIZE  ----------------------------------
+'---------------------------------------------------------------------
+
+Function getNumberOfBranches(ByVal personFullName As String, Optional ByVal regime As String = "all", Optional ByVal treesVisibilityFlags As Dictionary) As Integer
+    If treesVisibilityFlags Is Nothing Then
+        Set treesVisibilityFlags = synthesizeInputAllDirectReportsVisible(personFullName)
+    End If
+    
+    With MyDictionaryPersonalInfo.Item(personFullName)
+        '-------------- PREDICT THE NUMBER OF SEPARATE TREES CREATED --------------
+        Select Case LCase(regime)
+            Case "ordinary"
+                getNumberOfBranches = MyDictionaryPersonalInfo.Item(personFullName).DirectReports("Unsorted").Item("Managers").Count
+            Case "department"
+                getNumberOfBranches = MyDictionaryPersonalInfo.Item(personFullName).ListOfDepartments("Workers").Count
+            Case "all"
+                getNumberOfBranches = MyDictionaryPersonalInfo.Item(personFullName).DirectReports("Unsorted").Item("Managers").Count + .ListOfDepartments("Workers").Count
+            Case "allrecursive"
+                getNumberOfBranches = MyDictionaryPersonalInfo.Item(personFullName).ListOfDepartments("Workers").Count
+                For Each managerFullName In MyDictionaryPersonalInfo.Item(personFullName).DirectReports("Unsorted").Item("Managers")
+                    If treesVisibilityFlags.Exists(managerFullName) Then
+                        If treesVisibilityFlags.Item(managerFullName) = 1 Then
+                            getNumberOfBranches = getNumberOfBranches + getNumberOfBranches(managerFullName, regime)
+                        Else
+                            getNumberOfBranches = getNumberOfBranches + 1
+                        End If
+                    Else
+                        getNumberOfBranches = getNumberOfBranches + 1
+                    End If
+                Next managerFullName
+        End Select
+    End With
+End Function
+
+'For given list of subordinates predict reference tick names
+Function getReferenceTickNames(ByVal personFullName As String, ByVal considerAllDirectReportsAsWorkers As Boolean, Optional ByVal treesVisibilityFlags As Dictionary) As Collection
+    Dim person As Object
+    
+    
+    'By default all the direct reports are visible
+    If treesVisibilityFlags Is Nothing Then
+        Set treesVisibilityFlags = synthesizeInputAllDirectReportsVisible(personFullName)
+    End If
+    
+    Set person = MyDictionaryPersonalInfo.Item(personFullName)
+      
+    
+'    With MyDictionaryPersonalInfo.Item(personFullName)
+    '-------------- PREDICT THE NUMBER OF SEPARATE TREES CREATED --------------
+    nOrdinaryBranches = person.nOrdinaryBranchesUtil(considerAllDirectReportsAsWorkers)
+    nDepartmentBranches = person.nDepartmentBranchesUtil(considerAllDirectReportsAsWorkers)
+    
+    '-------------- PREDICT TICK NAMES CREATED --------------
+    Select Case nOrdinaryBranches + nDepartmentBranches
+        Case Is >= 2
+            If countVisibleTrees(treesVisibilityFlags) = 0 And person.DirectReports("Unsorted").Item("Managers").Count > 0 And person.nBranchesHorizontallyLimitExceeded(considerAllDirectReportsAsWorkers) Then
+                subordinatesTickPrefix = personFullName & "Subordinates" & "Tick"
+            Else
+                subordinatesTickPrefix = personFullName & "Subordinates" & "Tick" & "Main"
+            End If
+        Case Is = 1
+            'This case means we have either one department branch or one ordinary branch
+            Select Case 1
+                Case Is = nDepartmentBranches
+                    If person.DirectReports("Unsorted").Item("All").Count > 1 Then
+                        subordinatesTickPrefix = personFullName & "Subordinates" & "Tick"
+                    End If
+                    
+                    If person.DirectReports("Unsorted").Item("All").Count = 1 Then
+                        subordinatesTickPrefix = person.DirectReports("Unsorted").Item("All").Item(1) & "Tick"
+                    End If
+                Case Is = nOrdinaryBranches
+                    If treesVisibilityFlags.Item(treesVisibilityFlags.keys(0)) = 1 Then
+                        subordinatesTickPrefix = person.DirectReports("Unsorted").Item("All").Item(1) & "Tick"
+                    Else
+                        subordinatesTickPrefix = personFullName & "Subordinates" & "Tick"
+                    End If
+            End Select
+        Case Is = 0
+            MsgBox (MyDictionaryPersonalInfo.Item(personFullName).FullName & "'s tree is not shown by default")
+    End Select
+
+    'Save tick names
+    Set tickNames = New Collection
+    
+    If person.DirectReports("Unsorted").Item("Solid").Count > 0 Then
+        tickNames.add subordinatesTickPrefix & "Solid" 'if there is at least one solid-line direct report...
+    End If
+    
+    'Workaround over VBA bug of IF executes unconditially. !SICK!
+    DottedCount = person.DirectReports("Unsorted").Item("Dotted").Count
+    If DottedCount > 0 Then
+        tickNames.add subordinatesTickPrefix & "Dotted" 'if there is at least one dotted-line direct report...
+    End If
+'    End With
+    
+    Set getReferenceTickNames = tickNames
+End Function
+
+Function getAlignedRowHeight(ByVal listOfPeopleOnRow As Collection) As Double
+    maximumElementHeight = 0
+    
+    'Analyze row
+    bubbleFlag = False
+    commentboxFlag = False
+    
+    For Each personFullName In listOfPeopleOnRow
+        If MyDictionaryPersonalInfo.Item(personFullName).HasTwoManagers() Then bubbleFlag = True
+        If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then commentboxFlag = True
+    Next personFullName
+                        
+    'Calculate total height
+    maximumElementHeight = getCardHeight() + inputWhiteSpaceY
+    If bubbleFlag Then maximumElementHeight = maximumElementHeight + getBubbleHeight()
+    If commentboxFlag Then maximumElementHeight = maximumElementHeight + getCommentBoxHeight()
+    
+    getAlignedRowHeight = maximumElementHeight
+End Function
+
+
+'---------------------------------------------------------------------
+'---------------------------- VISIBILITY  ----------------------------
+'---------------------------------------------------------------------
+Function synthesizeInputAllDirectReportsVisible(ByVal personFullName As String) As Dictionary
+    Set synthesizeInputAllDirectReportsVisible = synthesizeInputAllDirectReportsFixedVisibility(personFullName, 1)
+End Function
+
+Function synthesizeInputAllDirectReportsInvisible(ByVal personFullName As String) As Dictionary
+    Set synthesizeInputAllDirectReportsInvisible = synthesizeInputAllDirectReportsFixedVisibility(personFullName, 0)
+End Function
+
+Function synthesizeInputAllDirectReportsFixedVisibility(ByVal personFullName As String, ByVal visibility As Integer) As Dictionary
+    'Prepare the structure to fill
+    Set synthesizeInputAllDirectReportsFixedVisibility = New Dictionary
+    
+    'Set all direct report's trees to be visible
+    Set directReportsCollectionTemp = New Collection
+    Set directReportsCollectionTemp = MyDictionaryPersonalInfo.Item(personFullName).DirectReports("Unsorted").Item("All")
+    For Each directReport In directReportsCollectionTemp
+        synthesizeInputAllDirectReportsFixedVisibility.add directReport, visibility
+    Next directReport
+End Function
+
+Function countVisibleTrees(Optional ByVal treesVisibilityFlags As Dictionary) As Integer
+    countVisibleTrees = countTreesByVisibility(treesVisibilityFlags, 1)
+End Function
+
+Function countInvisibleTrees(Optional ByVal treesVisibilityFlags As Dictionary) As Integer
+    countInvisibleTrees = countTreesByVisibility(treesVisibilityFlags, 0)
+End Function
+
+'We create tree only under managers; manager is a person with at least one direct report
+Function countTreesByVisibility(Optional ByVal treesVisibilityFlags As Dictionary, Optional visibility As Integer = 1) As Integer
+    countTreesByVisibility = 0
+    
+    If Not treesVisibilityFlags Is Nothing Then
+        'First count the number of visible direct reports
+        For Each directReport In treesVisibilityFlags.keys
+            If directReport <> "" Then
+                If treesVisibilityFlags.Item(directReport) = visibility And MyDictionaryPersonalInfo.Item(directReport).IsManager = True Then
+                    countTreesByVisibility = countTreesByVisibility + 1
+                End If
+            End If
+        Next directReport
+    End If
+End Function
+
+'Check all managers and all workers in separate units whether any of them is mixed-line reporter
+'We need it because one worker in separate department is shown as orgchart element with tick pointing up
+Function checkSolidLineDirectReportsNeedShiftDown(ByVal personFullName As String) As Boolean
+    With MyDictionaryPersonalInfo
+        'Check workers
+        Set MyDictionaryDepartmentsList = MyDictionaryPersonalInfo.Item(personFullName).ListOfDepartments("Workers")
+        For Each DepartmentName In MyDictionaryDepartmentsList.keys
+            If MyDictionaryDepartmentsList.Item(DepartmentName).Count = 1 And MyDictionaryPersonalInfo.Item(MyDictionaryDepartmentsList.Item(DepartmentName).Item(1)).HasTwoManagers Then
+                checkSolidLineDirectReportsNeedShiftDown = True
+                Exit Function
+            End If
+        Next DepartmentName
+        
+        'Check managers
+        For Each directReport In MyDictionaryPersonalInfo.Item(personFullName).DirectReports("Unsorted").Item("Managers")
+            If MyDictionaryPersonalInfo.Item(directReport).HasTwoManagers Then
+                checkSolidLineDirectReportsNeedShiftDown = True
+                Exit Function
+            End If
+        Next directReport
+    End With
+    
+    checkSolidLineDirectReportsNeedShiftDown = False
+End Function

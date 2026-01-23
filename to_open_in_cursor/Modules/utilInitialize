@@ -1,0 +1,205 @@
+'to wait until copied object gets in buffer
+Declare PtrSafe Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
+
+'to be able to store the reference to the ribbon even after error occurs
+Declare PtrSafe Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (ByRef Destination As Any, ByRef source As Any, ByVal length As Long)
+Declare PtrSafe Function GetProp Lib "User32" Alias "GetPropA" (ByVal hWnd As Long, ByVal lpString As String) As LongPtr
+Declare PtrSafe Function SetProp Lib "User32" Alias "SetPropA" (ByVal hWnd As Long, ByVal lpString As String, ByVal hData As LongPtr) As LongPtr
+Declare PtrSafe Function RemoveProp Lib "User32" Alias "RemovePropA" (ByVal hWnd As Long, ByVal lpString As String) As Long
+
+'to get hwnd of currently open presentation
+Declare PtrSafe Function FindWindow Lib "User32" Alias "FindWindowA" (ByVal lpClassName As String, ByVal lpWindowName As String) As Long
+Declare PtrSafe Function GetWindowText Lib "User32" Alias "GetWindowTextA" (ByVal hWnd As Long, ByVal lpString As String, ByVal cch As Long) As Long
+Declare PtrSafe Function GetWindowTextLength Lib "User32" Alias "GetWindowTextLengthA" (ByVal hWnd As Long) As Long
+Declare PtrSafe Function GetWindow Lib "User32" (ByVal hWnd As Long, ByVal wCmd As Long) As Long
+Declare PtrSafe Function IsWindowVisible Lib "User32" (ByVal hWnd As Long) As Boolean
+
+'to remember to always declare variables
+Option Explicit
+
+'---------- CAN NOT BE CHANGED AFTER ORGCHART CREATOR IS STARTED ----------
+'linking variables to access ribbon controls
+'Public moRibbon As IRibbonUI
+Dim X As New CEventClass
+
+'---------- CAN NOT BE CHANGED AFTER FILE IS UPLOADED ----------
+'IMPORTANT: Single variable storing all data about employees
+Public employeesList As Variant
+
+'IMPORTANT: Array to store personal info about every employee
+Public MyDictionaryPersonalInfo As Dictionary
+
+'variable storing list of employees for combobox
+Public MyVariantListOfEmployees() As Variant
+Public MyDictionaryEmployeesPerCategory As Dictionary
+Public MyVariantListOfSheets() As Variant
+
+'number of sheets in picked excel
+Public numberOfSheetsAvailable As Integer
+
+'IMPORTANT: Array to store lists of direct reports for every employee (in terms of data types "list" is Collection)
+Public MyDictionaryDirectReports As Dictionary
+
+'Pleliminary results after file uploading finished: name of CEO and company size (N people)
+Public inputCEOFullName As String
+Public inputCompanySize As Integer
+
+'---------- CAN CHANGE AFTER FILE IS UPLOADED ----------
+'Buffer array to store the list of employees' cards in presentation
+Public MyDictionaryCardsCheckList As Dictionary
+
+'Buffer array to store employees with undefined manager
+Public MyDictionaryCeoCandidates As Dictionary
+
+'Buffer array to store the all departments to be visualised at the moment
+Public MyDictionaryDepartmentsList As Dictionary
+
+'counters for progress bar
+Public orgchartElementToCreate As Double
+Public orgchartElementCreatedCounter As Double
+Public orgchartElementToDelete As Double
+Public orgchartElementDeletedCounter As Double
+
+'checklist of created people
+Public MyDictionarySubordinatesChecklist As Dictionary
+
+'---------- CONTROLLING VARIABLES ----------
+'variables controlling GUI behavior
+Public fileUploadingSuccessful As Boolean
+Public fileSelectionSuccessful As Boolean
+Public addSlideNEnabledFlag As Boolean
+Public ungroupShapesEnabledFlag As Boolean
+Public groupShapesEnabledFlag As Boolean
+Public autodetectSizeAndWhiteSpaceFlag As Boolean
+Public dropDownBoxSizeEnabledFlag As Boolean
+Public dropDownWhiteSpaceEnabledFlag As Boolean
+
+'Array for card's size identificators (for ex. "Small", "Medium", etc.)
+Public MyDictionaryCardSizes As Collection
+
+'Array for cards' ticks pre-defined sizes (for ex. "5", "7", etc.)
+Public MyDictionaryTickLengths As Collection
+
+'List of regular expressions identifying employee's card
+Public orgChartElementIdentificators As Collection
+
+'Size constraints for clever trees
+Public maxWidthGuideline As Integer
+Public maxHeightGuideline As Integer
+
+Public const_slideTopBorder As Double
+Public const_slideRightBorder As Double
+Public const_slideBottomBorder As Double
+Public const_slideLeftBorder As Double
+
+Public shadeIterator As Double
+
+Public sheetHasTitlesFlag As Boolean
+
+Public numberOfPeopleSplitIntoSlides As Integer
+Public numberOfPeopleDuplicates As Integer
+
+'Time in milliseconds to pause program execution
+Public pauseLength As Double
+
+Public paletteSlideNumber As Integer
+Public defaultNumberOfShades As Integer
+Public defaultHomeCity As String
+Public defaultInputNumberOfColumns As Integer
+Public stopExecutionFlag As Boolean
+
+Public MAX_PEOPLE_FOR_2D_BRANCH As Integer
+Public MAX_PEOPLE_FOR_4D_BRANCH As Integer
+Public MAX_BRANCHES_HORIZONTALLY As Integer
+
+Function getRibbon() As IRibbonUI
+    Set getRibbon = RibbonObj()
+End Function
+
+Sub MyAddInInitialize(Ribbon As IRibbonUI)
+    Err.Clear
+    'stopExecutionFlag = False
+
+    Call RibbonOnLoad(Ribbon)
+    
+    'Important for automatic card detection
+    Set X.PPTEvent = Application
+    
+    Set MyDictionaryPersonalInfo = New Dictionary
+    
+    Set MyDictionaryDirectReports = New Dictionary
+    
+    Set MyDictionaryEmployeesPerCategory = New Dictionary
+    
+    Set MyDictionaryCardsCheckList = New Dictionary
+    Set MyDictionaryCeoCandidates = New Dictionary
+    Set MyDictionaryDepartmentsList = New Dictionary
+    
+    Set MyDictionarySubordinatesChecklist = New Dictionary
+    
+    fileUploadingSuccessful = False
+    fileSelectionSuccessful = False
+    
+    sheetHasTitlesFlag = True
+    
+    addSlideNEnabledFlag = False
+    
+    ungroupShapesEnabledFlag = False
+    groupShapesEnabledFlag = False
+    
+    autodetectSizeAndWhiteSpaceFlag = True
+    dropDownBoxSizeEnabledFlag = True
+    dropDownWhiteSpaceEnabledFlag = True
+    
+    shadeIterator = 1
+    orgchartElementToCreate = 0
+    orgchartElementCreatedCounter = 0
+    
+    'Name convention for card sizes
+    Set MyDictionaryCardSizes = New Collection
+    With MyDictionaryCardSizes
+        .add "ExtraSmall"
+        .add "Small"
+        .add "Medium"
+        .add "Large"
+    End With
+    
+    'Name convention for tick lengths
+    Set MyDictionaryTickLengths = New Collection
+    With MyDictionaryTickLengths
+        .add 5
+        .add 7
+        .add 10
+        .add 12
+        .add 15
+    End With
+    
+    'Default OC creator settings
+    Call initPalette
+    Call findFullPalette
+    MsgBox ("WELCOME TO THE ORG CHART CREATOR!" & vbCrLf & _
+                    "Full templates palette is on slide " & paletteSlideNumber & "." & vbCrLf & _
+                    "Have a good day :)")
+    
+    defaultNumberOfShades = 3
+    defaultHomeCity = "Russia, Moscow"
+    defaultInputNumberOfColumns = 13
+    
+    'Safe zone dimensions
+    On Error Resume Next
+    const_slideTopBorder = 140#
+    const_slideRightBorder = 945#
+    const_slideBottomBorder = 505#
+    const_slideLeftBorder = 15#
+    On Error GoTo 0
+    
+    'Parameters for tree size optimizer
+    maxWidthGuideline = 920
+    maxHeightGuideline = 350
+    
+    MAX_PEOPLE_FOR_2D_BRANCH = 6
+    MAX_PEOPLE_FOR_4D_BRANCH = 14
+    MAX_BRANCHES_HORIZONTALLY = 7
+    
+    ReDim MyVariantListOfSheets(0)
+End Sub

@@ -1,0 +1,149 @@
+
+ <customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui" onLoad="MyAddInInitialize">
+  
+   <ribbon startFromScratch="false">
+ 
+    <!-- Toolbar Tab -->
+      <tabs>
+        <tab id="OrgChartCreator" label="Org chart" >
+            <group id="setupStage">
+			<button id="pickInputFile" label="Select Excel file" supertip = "Select Excel file with orgstructure data" size="large" onAction="pickExcelFile" image="Toolbar_pickExcelFile" getVisible="isExcelNotOK"/>
+			
+			<box id="excelParametersBox" boxStyle="vertical" >
+				<editBox id="inputFileName" label="File" sizeString="Vengrzhinovsky Alexander+" enabled="false" getText="uiShowInputFileName" getScreentip="uiCopyFileNameToScreentip" getVisible="isExcelSelected" />
+				<dropDown id="sheetName" label="Sheet" sizeString="Vengrzhinovsk Alexand" getItemCount="getNumberOfSheets" getItemLabel="getSheetName" getItemID="getSheetIndex" getSelectedItemID="uiGetSheetId" onAction="uiOnChangeSheet" getVisible="isExcelSelected"/>
+				<checkBox id="sheetHasTitles" label="Columns have titles" onAction="sheetHasTitlesSwitch" getPressed="sheetHasTitlesStatus" getVisible="isExcelSelected" />
+			</box>
+			
+			<button id="uploadExcelFile" label="Import data" screentip="Import data from Excel sheet" size="large" onAction="uploadExcelFile" image="Toolbar_uploadExcelFile" getVisible="isExcelSelected" />
+			
+			<splitButton id="UpdateInputSplitButton" size="large"  getVisible="isExcelOK">
+				<button id="refreshExcelFile" label="Refresh" getScreentip = "uiGetInputDescription" getSupertip="uiGetInputDescription" onAction="uploadExcelFile" image="Toolbar_reloadExcelFile"/>
+				<menu id="UpdateInputSplitMenu" itemSize="large">
+					<button id="pickInputFileAgain" label="Select another file" onAction="pickExcelFile" image="Toolbar_pickExcelFile"/>
+					<button id="pickInputSheetAgain" label="Select another sheet" onAction="pickExcelSheet" image="Toolbar_pickExcelFile"/>	
+				</menu>
+			</splitButton>
+		</group>
+
+		<group id="createStage" getVisible="isExcelOK">
+			<dropDown id="personCategory" label="Select category" getSelectedItemID="uiGetCategoryId" onAction="uiOnChangeCategory">
+				<item id="categoryCEO" label="CEO" />
+				<item id="categoryManagers" label="Managers" />
+				<item id="categoryAZ" label="All, A-Z" />
+				<item id="categoryA" label="A" />
+				<item id="categoryB" label="B" />
+				<item id="categoryC" label="C" />
+				<item id="categoryD" label="D" />
+				<item id="categoryE" label="E" />
+				<item id="categoryF" label="F" />
+				<item id="categoryG" label="G" />
+				<item id="categoryH" label="H" />
+				<item id="categoryI" label="I" />
+				<item id="categoryJ" label="J" />
+				<item id="categoryK" label="K" />
+				<item id="categoryL" label="L" />
+				<item id="categoryM" label="M" />
+				<item id="categoryN" label="N" />
+				<item id="categoryO" label="O" />
+				<item id="categoryP" label="P" />
+				<item id="categoryQ" label="Q" />
+				<item id="categoryR" label="R" />
+				<item id="categoryS" label="S" />
+				<item id="categoryT" label="T" />
+				<item id="categoryU" label="U" />
+				<item id="categoryV" label="V" />
+				<item id="categoryW" label="W" />
+				<item id="categoryX" label="X" />
+				<item id="categoryY" label="Y" />
+				<item id="categoryZ" label="Z" />
+			</dropDown>	
+
+			<dropDown id="personFullName" label="Select employee" sizeString="Vengrzhinovsky Alexander+" getItemCount="getNumberOfEmployees" getItemLabel="getEmployeeName" getItemID="getEmployeeIndex" getSelectedItemID="uiGetEmployeeId" onAction="uiOnChangeEmployee" />
+			
+			
+            		
+            		<menu id="CreateOrgstructureSplitMenu" itemSize="large" label="Create org chart" image="Toolbar_tree_folded">
+					<button id="cFTC" label="Single slide org structure" onAction="createFullTreeClever" image="Toolbar_tree_folded" />
+					<button id="cFTI" label="Full org structure" onAction="createFullTreeInfinity" image="Toolbar_tree_full" />
+      	      	</menu>
+          		
+
+			<separator id="separator1" />
+			
+			<dropDown id="dropDownBoxSize" label="Element size"  getSelectedItemID="GetSelectedBoxSizeID" onAction="OnChangeBoxSize" getEnabled="dropDownBoxSizeSwitch" >
+				<item id="boxSizeLarge" label="Large" />
+				<item id="boxSizeMedium" label="Medium" />
+				<item id="boxSizeSmall" label="Small" />
+   				<item id="boxSizeExtraSmall" label="Extra Small" />		
+ 			</dropDown>
+			
+			<dropDown id="dropDownWhiteSpace" label="Tick size, pt."  getSelectedItemID="GetSelectedWhiteSpaceCoef" onAction="OnChangeWhiteSpaceCoef" getEnabled="dropDownWhiteSpaceSwitch" >
+				<item id="whiteSpaceCoef15" label="15" />   					
+				<item id="whiteSpaceCoef12" label="12" />
+   				<item id="whiteSpaceCoef10" label="10" />
+   				<item id="whiteSpaceCoef7" label="7" />
+				<item id="whiteSpaceCoef5" label="5" />
+			</dropDown>
+
+			<checkBox id="autodetectSizeAndWhiteSpace" label="Sticky sizes" onAction="autodetectSizeAndWhiteSpaceSwitch" getPressed="autodetectSizeAndWhiteSpaceStatus"/>
+			
+			<separator id="separator2" />
+
+			<splitButton id="CreateSingleElementSplitButton" size="large">
+				<button id="c0DK" label="Manager" onAction="create0DKingBranch" image="Toolbar_c0king" />
+				<menu id="CreateSingleElementSplitMenu" itemSize="large">
+					<button id="c0D" label="Employee" onAction="create0DBranch" image="Toolbar_c0" />
+				</menu>
+ 			</splitButton>
+
+			<separator id="separator3" />
+
+			<splitButton id="CreateSubordinatesSplitButton" size="large">
+				<button id="cAutoD" label="Direct reports" onAction="createAutoDBranch" image="Toolbar_cAuto" />
+				<menu id="CreateSubordinatesSplitMenu" itemSize="large">
+					<button id="c1D" label="1-in-row" onAction="create1DBranch" image="Toolbar_c1" />
+					<button id="c2D" label="2-in-row" onAction="create2DBranch" image="Toolbar_c2" />
+					<button id="c4D" label="4-in-row" onAction="create4DBranch" image="Toolbar_c4" />
+				</menu>
+			</splitButton>
+
+			<separator id="separator4" />
+
+			<button id="cFTS" label="Subordinates" size="large" onAction="createFullTreeStraightforward" image="Toolbar_tree_straight" />
+
+			<separator id="separator5" />
+			
+			<button id="cDEP" label="Departments" size="large" onAction="createDepartments" image="Toolbar_shades" />
+			
+			<separator id="separator6" />			
+			
+			<button id="cLINK" label="Links" size="large" onAction="createLinks" image="Toolbar_slideNs" />
+		</group>
+
+		<group id="decorationStageElements" getVisible="isExcelOK">
+	<button id="addEmptySlide" label="Slide" size="large" onAction="addEmptySlide" image="Toolbar_newslide" />
+ <menu id="ElementsDropdownMenu" label="Elements" size="large" itemSize="large" imageMso="TextAlignGallery"  >
+			<button id="addDescription" label="Title" onAction="addDescription" image="Toolbar_addTitle" />			
+			<button id="addOneOfShades" label="Shade" onAction="addOneOfShades" image="Toolbar_addShade" />
+			<button id="addAttentionFrame" label="Frame" onAction="addAttentionFrame" image="Toolbar_addAttention" />
+			<button id="addEmptyCard" label="Card" onAction="addEmptyCard" image="Toolbar_addCard" />
+			<button id="addLine" label="Connector" onAction="addLine" image="Toolbar_addLine" />			
+			<button id="addSlideN" label="Link" image="Toolbar_addSlideN" onAction="addSlideN" getEnabled="addSlideNSwitch" />
+</menu>		
+		</group>
+
+		<group id="decorationStageManipulation" getVisible="isExcelOK">
+			<button id="ungroupShapes" label="Ungroup" size="large" image="Toolbar_ungroupShapes" onAction="ungroupShapes" getEnabled="ungroupShapesSwitch" />
+			<button id="groupShapes" label="Group" size="large" image="Toolbar_groupShapes" onAction="groupShapes" getEnabled="groupShapesSwitch" />
+ <menu id="ArrangementDropdownMenu" label="Arrange" size="large" itemSize="large" imageMso="TextAlignGallery"  >
+			<button id="distributeHorizontally" label="Distribute Horizontally" onAction="distributeHorizontally" image="Toolbar_distributeHor" />
+			<button id="alignTop" label="Align Top" onAction="alignTop" image="Toolbar_alignTop" />
+			<button id="distributeVertically" label="Distribute Vertically" onAction="distributeVertically" image="Toolbar_distributeVer" />
+			<button id="alignLeft" label="Align Left" onAction="alignLeft" image="Toolbar_alignLeft" />
+</menu>
+		</group>
+        </tab>
+      </tabs>
+  </ribbon>
+</customUI>

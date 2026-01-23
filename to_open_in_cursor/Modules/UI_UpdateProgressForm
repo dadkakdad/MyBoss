@@ -1,0 +1,120 @@
+'----------------------- UFProgressDigit -----------------------
+Sub openProgressDigit(Optional taskName As String = "", Optional progress As Double = -1)
+    Call updateTaskDigit(taskName)
+    Call updateProgressDigit(progress)
+    
+    With UFProgressDigit
+        .Top = Application.Top + Application.ActiveWindow.Height / 2 - .Height / 2
+        .Left = Application.Left + Application.ActiveWindow.Width / 2 - .Width / 2
+    End With
+    
+    UFProgressDigit.Show (vbModeless)
+    
+    DoEvents
+End Sub
+
+Sub updateTaskDigit(ByVal taskName As String)
+    With UFProgressDigit
+        If taskName <> "" Then
+            .Caption = taskName
+        Else
+            .Caption = "Starting..."
+        End If
+    End With
+    
+    DoEvents
+End Sub
+
+Sub updateProgressDigit(ByVal percent As Double)
+    With UFProgressDigit.statusLabel
+        If percent >= 0 Then
+            .Caption = CStr(Round(percent * 100, 0)) & "%"
+        Else
+            .Caption = "This may take a while"
+        End If
+    End With
+    
+    DoEvents
+End Sub
+
+Sub closeProgressDigit()
+    UFProgressDigit.Hide
+    
+    DoEvents
+End Sub
+
+
+'----------------------- UFProgressBar -----------------------
+Sub openProgressBar(ByVal taskName As String, ByVal progress As Double, ByVal cancelable As Boolean)
+    Call updateTaskBar(taskName)
+    Call updateProgressBar(progress)
+    
+    With UFProgressBar
+        .CancelButton.Visible = cancelable
+        .Top = Application.Top + Application.ActiveWindow.Height / 2 - .Height / 2
+        .Left = Application.Left + Application.ActiveWindow.Width / 2 - .Width / 2
+    End With
+    
+    UFProgressBar.Show (vbModeless)
+    
+    DoEvents
+End Sub
+
+Sub updateCancelButtonVisibility(ByVal cancelable As Boolean)
+    With UFProgressBar
+        .CancelButton.Visible = cancelable
+    End With
+End Sub
+
+Sub updateTaskBar(ByVal taskName As String)
+    With UFProgressBar
+        If taskName <> "" Then
+            .Caption = taskName
+        Else
+            .Caption = "Starting..."
+        End If
+    End With
+    
+    DoEvents
+End Sub
+
+Sub updateProgressBar(ByVal percent As Double)
+    With UFProgressBar
+        If percent >= 0 Then
+            'make >100% case invisible for user
+            If percent > 1 Then
+                percentModerated = 1
+            Else
+                percentModerated = percent
+            End If
+            
+            .Status.Caption = CStr(Round(percentModerated * 100, 0)) & "% completed"
+            .Bar.Width = percentModerated * 100 * 2
+        Else
+            .Status.Caption = "This may take a while"
+            .Bar.Width = 0
+        End If
+    End With
+    
+    DoEvents
+End Sub
+
+Sub updateProgress()
+    '[AM] NOTE just restored missing method to let project compile
+    DoEvents
+End Sub
+
+
+Sub cancelProgress()
+    stopExecutionFlag = True
+    closeProgressBar
+    
+    DoEvents
+End Sub
+
+Sub closeProgressBar()
+    UFProgressBar.Hide
+    
+    DoEvents
+End Sub
+

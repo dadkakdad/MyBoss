@@ -1,0 +1,68 @@
+Sub groupAllShapesInIndexList(ByVal slideNumber As Integer, ByVal firstIndex As Integer, ByVal lastIndex As Integer, ByVal groupName As String)
+    Dim shapeIndexList() As Integer
+    ReDim shapeIndexList(lastIndex - firstIndex)
+    
+    For i = 0 To (lastIndex - firstIndex - 1)
+        shapeIndexList(i) = firstIndex + i + 1
+    Next i
+           
+    Set newSelection = ActivePresentation.Slides(slideNumber).Shapes.Range(shapeIndexList)
+           
+    Select Case newSelection.Count
+        Case 0
+            Exit Sub
+        Case 1
+            'MsgBox ("Unable to perform grouping - only one shape in index list")
+            'preserve original shape's name --> do nothing in case of one shape
+            'newSelection.Item(1).Name = groupName
+        Case Else
+            Set newGroup = newSelection.Group
+            newGroup.Name = groupName
+    End Select
+End Sub
+
+Sub removeComplexGrouping(ByVal slideNumber As Integer, ByVal shapeName As String)
+    If fastCheckShapeExists(slideNumber, shapeName) Then
+        With ActivePresentation.Slides(slideNumber)
+            Dim ticShapesCounter, tocShapesCounter As Integer
+            
+            If .Shapes(shapeName).Type = msoGroup Then
+                groupingRemovedFlag = False
+                
+                ticShapesCounter = ActivePresentation.Slides(CInt(slideNumber)).Shapes.Count
+                ActivePresentation.Slides(slideNumber).Shapes(shapeName).Select
+                ActiveWindow.Selection.ShapeRange.ZOrder msoBringToFront
+                ActivePresentation.Slides(CInt(slideNumber)).Shapes(shapeName).Ungroup
+            Else
+                groupingRemovedFlag = True
+            End If
+            
+            Do While Not groupingRemovedFlag
+                tocShapesCounter = ActivePresentation.Slides(CInt(slideNumber)).Shapes.Count
+                
+                groupingRemovedFlag = True
+                For i = ticShapesCounter To tocShapesCounter
+                    'MsgBox (ActivePresentation.Slides(slideNumber).Shapes(i).Name)
+                    If endsWith(ActivePresentation.Slides(slideNumber).Shapes(i).Name, "Solid") = False And endsWith(ActivePresentation.Slides(slideNumber).Shapes(i).Name, "Dotted") = False And ActivePresentation.Slides(slideNumber).Shapes(i).Type = msoGroup Then
+                        ActivePresentation.Slides(slideNumber).Shapes(i).Ungroup
+                        groupingRemovedFlag = False
+                    End If
+                Next i
+            Loop
+            
+            'group all the shapes created
+            Dim shapeIndexList() As Integer
+            ReDim shapeIndexList(tocShapesCounter - ticShapesCounter)
+            
+            For i = 0 To (tocShapesCounter - ticShapesCounter)
+                shapeIndexList(i) = ticShapesCounter + i
+            Next i
+                
+            Set newGroup = ActivePresentation.Slides(slideNumber).Shapes.Range(shapeIndexList).Group
+            newGroup.Name = shapeName
+            
+            ActivePresentation.Slides(slideNumber).Shapes(shapeName).Select
+            ActiveWindow.Selection.ShapeRange.ZOrder msoSendToBack
+        End With
+    End If
+End Sub

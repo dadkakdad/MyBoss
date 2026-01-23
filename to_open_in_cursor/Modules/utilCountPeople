@@ -1,0 +1,75 @@
+Sub refreshSubordinatesChecklist(ByVal managerFullName As String)
+    'empty the buffer array
+    Set MyDictionarySubordinatesChecklist = New Dictionary
+    'fill the MyDictionarySubordinatesChecklist with .Dlist of topLevelManager's subordinates
+    Call CalculateSubordinates(managerFullName, "checklist")
+End Sub
+
+'Count the number of subordinates (only connected to their manager with continuous solid line)
+'AND
+'Fill the checklist with ALL THEIR NAMES into dictionary to use further (if outputFormat = "checklist")
+Function CalculateSubordinates(ByVal personFullName As String, ByVal outputFormat As String, Optional ByVal managerFullName As String = "") As Object
+    'Check whether we have already calculated this value
+    If CBool(MyDictionaryPersonalInfo.Item(personFullName).HeadcountStats.IsDefault) = False And CStr(outputFormat) = "number" Then
+        Set CalculateSubordinates = MyDictionaryPersonalInfo.Item(personFullName).HeadcountStats
+        Exit Function
+    End If
+        
+    Set CalculateSubordinates = New CSubordinatesStatistics
+    CalculateSubordinates.ResetToZero
+    
+    'Save into local variable to optimize method calls
+    Set directReportsList = MyDictionaryPersonalInfo.Item(personFullName).DirectReports("Unsorted").Item("All")
+    
+    'Count all subordinates in branches
+    If directReportsList.Count > 0 Then
+        'Run recursion calculation for all person's subordinates
+        For Each directReport In directReportsList
+            'In other words if this is first run (empty managerFullName) or person's subtree is solid-line connected
+            If MyDictionaryPersonalInfo.Item(directReport).ManagerType(personFullName) = "Solid" Then
+                Call CalculateSubordinates.add(CalculateSubordinates(directReport, outputFormat, personFullName))
+            End If
+            
+            If outputFormat = "checklist" Then
+                cardName = directReport & MyDictionaryPersonalInfo.Item(directReport).ManagerType(personFullName)
+                If Not MyDictionarySubordinatesChecklist.Exists(cardName) Then
+                    MyDictionarySubordinatesChecklist.add cardName, 1
+                End If
+            End If
+        Next directReport
+    End If
+ 
+    If outputFormat = "checklist" Then
+         cardName = personFullName & "Solid"
+        'Add person to checklist no matter if he is TBH or not
+        If Not MyDictionarySubordinatesChecklist.Exists(cardName) Then
+            MyDictionarySubordinatesChecklist.add cardName, 1
+        End If
+    Else
+        'Increase the subordinates counter
+        If managerFullName = "" Or MyDictionaryPersonalInfo.Item(personFullName).ManagerType(managerFullName) = "Solid" Then
+            If Not MyDictionaryPersonalInfo.Item(personFullName).IsToBeHired Then
+                CalculateSubordinates.SubordinatesNumber = CalculateSubordinates.SubordinatesNumber + 1
+                    
+                If MyDictionaryPersonalInfo.Item(personFullName).Location = defaultHomeCity Then
+                    CalculateSubordinates.SubordinatesInHomeCityNumber = CalculateSubordinates.SubordinatesInHomeCityNumber + 1
+                End If
+                If Not (MyDictionaryPersonalInfo.Item(personFullName).OutsourceFlag Or MyDictionaryPersonalInfo.Item(personFullName).ImportantFlag) Then
+                    CalculateSubordinates.OrdinaryNumber = CalculateSubordinates.OrdinaryNumber + 1
+                End If
+                If MyDictionaryPersonalInfo.Item(personFullName).OutsourceFlag Then
+                    CalculateSubordinates.OutsourceNumber = CalculateSubordinates.OutsourceNumber + 1
+                End If
+                If MyDictionaryPersonalInfo.Item(personFullName).ImportantFlag Then
+                    CalculateSubordinates.ImportantNumber = CalculateSubordinates.ImportantNumber + 1
+                End If
+            End If
+        End If
+        
+        'Increase the cards counter
+        CalculateSubordinates.SubordinatesCardsInFullTree = CalculateSubordinates.SubordinatesCardsInFullTree + 1
+        
+        'Save the calculation info for future optimization
+        MyDictionaryPersonalInfo.Item(personFullName).HeadcountStats = CalculateSubordinates
+    End If
+End Function

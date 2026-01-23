@@ -1,0 +1,163 @@
+Sub addEmptySlide(control As IRibbonControl)
+    Call addEmptySlideUtility("insert")
+End Sub
+
+Sub addNavigationUtility(ByVal slideNumberFrom As Integer, ByVal personFullName As String, ByVal slideNumberTo As Integer, ByVal managerFullName As String)
+    Dim tempTemplateName As String
+    tempTemplateName = "NavigationArrow"
+    
+    copiedShapeName = copyShapeErrorFree(tempTemplateName, slideNumberFrom, tempTemplateName)
+    
+    With ActivePresentation.Slides(slideNumberFrom).Shapes(ActivePresentation.Slides(slideNumberFrom).Shapes.Count)
+        .Left = Application.ActivePresentation.PageSetup.SlideWidth / 2 - .Width / 2
+        .Top = 15
+        
+        Call customReplace(checkShapeExists(slideNumberFrom, "NavigationArrowInfoBox"), "<pname>", MyDictionaryPersonalInfo.Item(managerFullName).FullName)
+        Call customReplace(checkShapeExists(slideNumberFrom, "NavigationArrowInfoBox"), "<sliden>", CStr(slideNumberTo))
+        
+        .GroupItems("NavigationArrowDecoration").ActionSettings(ppMouseClick).Action = ppActionHyperlink
+        .GroupItems("NavigationArrowDecoration").ActionSettings(ppMouseClick).Hyperlink.SubAddress = ActivePresentation.Slides(slideNumberTo).SlideID & "," & slideNumberTo & "," & ActivePresentation.Slides(slideNumberTo).Name
+    End With
+End Sub
+
+
+Function addEmptySlideUtility(ByVal regime As String) As Integer
+    Dim newEmptySlideIndex As Integer
+    Select Case regime
+        Case "insert"
+            newEmptySlideIndex = ActiveWindow.Selection.SlideRange.slideIndex + 1 ' ActivePresentation.Windows(1).View.Slide.slideIndex + 1
+        Case "add"
+            newEmptySlideIndex = ActivePresentation.Slides.Count + 1
+    End Select
+    
+    With ActivePresentation
+        Dim pptSlide As Slide
+        Dim pptLayout As CustomLayout
+        
+        Set pptLayout = .Slides(1).CustomLayout
+        Set pptSlide = .Slides.AddSlide(newEmptySlideIndex, pptLayout)
+    End With
+    
+    ActiveWindow.View.GotoSlide _
+    index:=newEmptySlideIndex
+    
+    addEmptySlideUtility = newEmptySlideIndex
+End Function
+
+Sub addSlideNSwitch(control As IRibbonControl, ByRef enabled)
+    enabled = addSlideNEnabledFlag
+End Sub
+
+Sub addSlideN(control As IRibbonControl)
+    slideNumber = ActiveWindow.Selection.SlideRange.slideIndex 'ActivePresentation.Windows(1).View.Slide.slideIndex
+    
+    Call eraseAllShapesLike(slideNumber, selectedPersonName & selectedPersonManagerType & "SlideN" & "Dotted")
+    Call eraseAllShapesLike(slideNumber, selectedPersonName & selectedPersonManagerType & "SlideN" & "Solid")
+    Call addSlideNUtility(slideNumber, selectedPersonName & "MainBackground" & selectedPersonManagerType, MyDictionaryPersonalInfo.Item(selectedPersonName).TerminationDate <> "")
+    
+    ActivePresentation.Slides(slideNumber).Shapes(ActivePresentation.Slides(slideNumber).Shapes.Count).Name = selectedPersonName & selectedPersonManagerType & "SlideN"
+End Sub
+
+Sub addSlideNUtility(ByVal slideNumber As Integer, ByVal shapeName As String, ByVal offsetYFlag As Boolean, Optional ByVal slideToLink As Integer = -1)
+    Dim tempTemplateName As String
+    Dim posX, posY As Double
+    
+    'checkShapeExists returns the reference ro Shape Object with given name
+    With checkShapeExists(slideNumber, shapeName)
+        tempTemplateName = "SlideN" & mapBoxSizeToHeight(.Height)
+        OffsetY = getCommentBoxHeight(inputBoxSize) * 1.25
+        
+        posX = .Left
+        posY = .Top + .Height
+        If offsetYFlag Then posY = posY + OffsetY
+    End With
+    
+    copiedShapeName = copyShapeErrorFree(tempTemplateName, slideNumber, tempTemplateName)
+    
+    With ActivePresentation.Slides(slideNumber).Shapes(ActivePresentation.Slides(slideNumber).Shapes.Count)
+        .Left = posX
+        .Top = posY
+        
+        'add link to slide if needed
+        If slideToLink > 0 Then
+            .TextFrame.TextRange.Text = "See slide " & CStr(slideToLink)
+            .ActionSettings(ppMouseClick).Action = ppActionHyperlink
+            .ActionSettings(ppMouseClick).Hyperlink.SubAddress = ActivePresentation.Slides(slideToLink).SlideID & "," & slideToLink & "," & ActivePresentation.Slides(slideToLink).Name
+        End If
+    End With
+End Sub
+
+Sub addDescription(control As IRibbonControl)
+    slideNumber = ActiveWindow.Selection.SlideRange.slideIndex 'ActivePresentation.Windows(1).View.Slide.slideIndex
+    Call addDescriptionUtility(slideNumber)
+End Sub
+
+Sub addDescriptionUtility(ByVal slideNumber As Integer, Optional ByVal personFullName As String = "")
+    tempTemplateName = "DepartmentGroup"
+    
+    copiedShapeName = copyShapeErrorFree(tempTemplateName, slideNumber, tempTemplateName)
+    
+    With ActivePresentation.Slides(slideNumber).Shapes(copiedShapeName)
+        If personFullName <> "" Then
+            .GroupItems("DepartmentManagerFullName").TextFrame.TextRange.Text = MyDictionaryPersonalInfo.Item(personFullName).FullName
+            .GroupItems("DepartmentName").TextFrame.TextRange.Text = MyDictionaryPersonalInfo.Item(personFullName).Department
+            With MyDictionaryPersonalInfo.Item(personFullName)
+                Call customReplace(checkShapeExists(slideNumber, "DepartmentStatistics"), "<pname>", .Name)
+                Call customReplace(checkShapeExists(slideNumber, "DepartmentStatistics"), "<ndirect>", CStr(.DirectReports("Unsorted").Item("All").Count))
+                
+                Call customReplace(checkShapeExists(slideNumber, "DepartmentStatistics"), "<nall>", CStr(.HeadcountStats.SubordinatesNumber))
+                Call customReplace(checkShapeExists(slideNumber, "DepartmentStatistics"), "<nordinary>", CStr(.HeadcountStats.OrdinaryNumber))
+                Call customReplace(checkShapeExists(slideNumber, "DepartmentStatistics"), "<nimportant>", CStr(.HeadcountStats.ImportantNumber))
+                Call customReplace(checkShapeExists(slideNumber, "DepartmentStatistics"), "<noutsource>", CStr(.HeadcountStats.OutsourceNumber))
+            End With
+        End If
+        
+        .Ungroup
+    End With
+End Sub
+
+Sub addAttentionFrame(control As IRibbonControl)
+    slideNumber = ActiveWindow.Selection.SlideRange.slideIndex 'ActivePresentation.Windows(1).View.Slide.slideIndex
+
+    tempTemplateName = "AttentionFrame"
+    
+    copiedShapeName = copyShapeErrorFree(tempTemplateName, slideNumber, tempTemplateName)
+End Sub
+
+Sub addOneOfShades(control As IRibbonControl)
+    slideNumber = ActiveWindow.Selection.SlideRange.slideIndex 'ActivePresentation.Windows(1).View.Slide.slideIndex
+    
+    'Copy + Paste shade
+    tempTemplateName = "Shade" & CStr(shadeIterator + 1) & "Department"
+    copiedShapeName = copyShapeErrorFree(tempTemplateName, slideNumber, tempTemplateName)
+    
+    'Send it to back to not cover org chart elements
+    ActivePresentation.Slides(slideNumber).Shapes(copiedShapeName).Select
+    ActiveWindow.Selection.ShapeRange.ZOrder msoSendToBack
+    
+    shadeIterator = (shadeIterator + 1) Mod defaultNumberOfShades
+End Sub
+
+Sub addEmptyCard(control As IRibbonControl)
+    slideNumber = ActiveWindow.Selection.SlideRange.slideIndex 'ActivePresentation.Windows(1).View.Slide.slideIndex
+    
+    'Copy + Paste all 4 types of cards
+    tempTemplateName = "Card" & "Ordinary" & inputBoxSize
+    copiedShapeName = copyShapeErrorFree(tempTemplateName, slideNumber, tempTemplateName)
+    
+    tempTemplateName = "Card" & "Important" & inputBoxSize
+    copiedShapeName = copyShapeErrorFree(tempTemplateName, slideNumber, tempTemplateName)
+    
+    tempTemplateName = "Card" & "OutSource" & inputBoxSize
+    copiedShapeName = copyShapeErrorFree(tempTemplateName, slideNumber, tempTemplateName)
+    
+    tempTemplateName = "Card" & "Tbh" & inputBoxSize
+    copiedShapeName = copyShapeErrorFree(tempTemplateName, slideNumber, tempTemplateName)
+End Sub
+
+Sub addLine(control As IRibbonControl)
+    slideNumber = ActiveWindow.Selection.SlideRange.slideIndex 'ActivePresentation.Windows(1).View.Slide.slideIndex
+    
+    'Rnd is used to always get the unique ID of shape
+    Call drawLineHorizontal(slideNumber, "connectorRandom" & CStr(Int((100 - 1 + 1) * Rnd + 1)), 100, 100, 100)
+End Sub

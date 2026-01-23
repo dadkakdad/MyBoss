@@ -1,0 +1,13 @@
+Private m_oRibbon As IRibbonUI
+
+Public Property Get RibbonObj() As Object
+        Set RibbonObj = m_oRibbon
+End Property
+
+Public Property Set RibbonObj(ByVal NewValue As Object)
+    Set m_oRibbon = NewValue
+End Property
+
+Public Sub RibbonOnLoad(Ribbon As IRibbonUI)
+    Set m_oRibbon = Ribbon
+End Sub

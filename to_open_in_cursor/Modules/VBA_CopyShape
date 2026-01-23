@@ -1,0 +1,95 @@
+'Windows-only Clipboard API declarations - wrapped for Mac compatibility
+#If Mac Then
+    'Mac doesn't need these - clipboard handling is different
+    Private Function GetClipboardSequenceNumber() As Long
+        'Return a dummy value that changes each time (Mac workaround)
+        Static macClipboardCounter As Long
+        macClipboardCounter = macClipboardCounter + 1
+        GetClipboardSequenceNumber = macClipboardCounter
+    End Function
+#Else
+    Declare PtrSafe Function OpenClipboard Lib "User32" (ByVal hWnd As Long) As Long
+    Declare PtrSafe Function CloseClipboard Lib "User32" () As Long
+    
+    Declare PtrSafe Function EnumClipboardFormats Lib "User32" (ByVal wFormat As Long) As Long
+    
+    Declare PtrSafe Function GetClipboardSequenceNumber Lib "User32" () As Long
+    Declare PtrSafe Function GetClipboardFormatName Lib "User32" Alias "GetClipboardFormatNameA" (ByVal wFormat As Long, ByVal lpString As String, ByVal nMaxCount As Long) As Long
+#End If
+
+    Function copyShapeErrorFree(ByVal shapeName As String, ByVal slideNumberTo As Integer, ByVal shapeNameNew As String) As String
+        On Error GoTo copyShapeErrorHandler
+        With ActivePresentation
+            shapeNameNewCandidate = shapeNameNew
+            Do While fastCheckShapeExists(slideNumberTo, shapeNameNewCandidate) = True
+                shapeNameNewCandidate = shapeNameNewCandidate & Int((100 - 1 + 1) * Rnd + 1)
+            Loop
+            
+            #If Mac Then
+                'Mac: just record that we're about to copy
+                sequenceNumberBeforeCopy = GetClipboardSequenceNumber()
+            #Else
+                sequenceNumberBeforeCopy = GetClipboardSequenceNumber()
+            #End If
+            
+            If fastCheckShapeExists(paletteSlideNumber, shapeName) Then
+                .Slides(paletteSlideNumber).Shapes(shapeName).Copy
+            Else
+                Call findFullPalette
+                If paletteSlideNumber > 0 Then
+                    .Slides(paletteSlideNumber).Shapes(shapeName).Copy
+                Else
+                    copyShapeErrorFree = ""
+                    Exit Function
+                End If
+            End If
+            
+            #If Mac Then
+                'Mac: Give the clipboard time to process (simpler approach)
+                Dim macWaitEnd As Double
+                macWaitEnd = Timer + 0.5  'Wait up to 500ms
+                Do While Timer < macWaitEnd
+                    DoEvents
+                Loop
+            #Else
+                 pausesIterator = 0
+                 pausesLimit = 200 'this is equivalent to 10 seconds waiting
+                 
+                 'Wait until copied shape gets into the buffer
+                 Do While sequenceNumberBeforeCopy = GetClipboardSequenceNumber()
+                     Sleep 50
+                
+                     pausesIterator = pausesIterator + 1
+                     If pausesIterator > pausesLimit Then
+                         Err.Raise 42, "copyShapeErrorFree", "copy buffer freezed"
+                     End If
+                 Loop
+            #End If
+            
+            nShapesBefore = .Slides(slideNumberTo).Shapes.Count
+            nShapesAfter = .Slides(slideNumberTo).Shapes.Count
+            
+            pasteIterator = 0
+            pasteLimit = 10
+            'Finish "pasting" when the number of shapes increases
+            Do While nShapesAfter = nShapesBefore
+                .Slides(slideNumberTo).Shapes.Paste
+                nShapesAfter = .Slides(slideNumberTo).Shapes.Count
+                
+                pasteIterator = pasteIterator + 1
+                If pasteIterator > pasteLimit Then
+                    Err.Raise 42, "copyShapeErrorFree", "paste doesnt work"
+                End If
+            Loop
+            
+            'Rename the shape to access it via .Shapes(<shapeName>)
+            .Slides(slideNumberTo).Shapes(.Slides(slideNumberTo).Shapes.Count).Name = shapeNameNewCandidate
+        End With
+        
+        copyShapeErrorFree = shapeNameNewCandidate
+        Exit Function
+    
+copyShapeErrorHandler:
+        MsgBox ("Something seriously went wrong during copy process. Please close OC Creator and open again.")
+        End
+    End Function

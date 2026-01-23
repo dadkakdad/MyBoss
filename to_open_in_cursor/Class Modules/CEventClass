@@ -1,0 +1,85 @@
+Public WithEvents PPTEvent As Application
+
+Private Sub PPTEvent_WindowSelectionChange(ByVal Sel As Selection)
+    'Wrap entire event handler in error handling for Mac compatibility
+    On Error GoTo EventErrorHandler
+    
+    With ActiveWindow.Selection 'ActivePresentation.Windows(1).Selection
+         addSlideNEnabledFlag = False
+         
+         If .Type = ppSelectionShapes Or .Type = ppSelectionText Then
+             'Get status for "Ungroup" button
+             ungroupShapesEnabledFlag = False
+             
+             For Each shapeSelected In .ShapeRange
+                If shapeSelected.Type = msoGroup Then
+                    ungroupShapesEnabledFlag = True
+                End If
+             Next shapeSelected
+             
+             'Get status for "Group" button
+             If .ShapeRange.Count = 1 Then
+                groupShapesEnabledFlag = False
+                
+                selectedPersonName = ""
+                selectedPersonManagerType = ""
+                
+                On Error GoTo errorResolvingShapeName
+                Set ShapeNameParsed = parseShapeName(.ShapeRange(1).Name)
+                
+                If ShapeNameParsed.Item("FullNameKey") <> "" Then
+                    selectedPersonName = ShapeNameParsed.Item("FullNameKey")
+                    selectedPersonManagerType = ShapeNameParsed.Item("ManagerType")
+                        
+                    inputPersonFullName = selectedPersonName 'MyDictionaryPersonalInfo.Item(selectedPersonName).Surname & " " & MyDictionaryPersonalInfo.Item(selectedPersonName).Name
+                    inputCategoryName = UCase(Left(Trim(inputPersonFullName), 1))
+                    getRibbon().InvalidateControl ("personCategory")
+                    
+                    If autodetectSizeAndWhiteSpaceFlag And (ShapeNameParsed.Item("ElementName") = "" Or ShapeNameParsed.Item("ElementName") = "Card") Then
+                        'Set new box size
+                        mCurrentBoxSizeID = "boxSize" & mapBoxSizeToHeight(.ShapeRange(1).GroupItems(selectedPersonName & "MainBackground" & selectedPersonManagerType).Height)
+                        getRibbon().InvalidateControl ("dropDownBoxSize")
+                            
+                        'Set new white space
+                        If fastCheckShapeExists(ActivePresentation.Windows(1).View.Slide.slideIndex, selectedPersonName & "Tick" & selectedPersonManagerType, .ShapeRange(1).Name) Then
+                            If .ShapeRange(1).GroupItems(selectedPersonName & "Tick" & selectedPersonManagerType).Width > .ShapeRange(1).GroupItems(selectedPersonName & "Tick" & selectedPersonManagerType).Height Then
+                                tempTickLength = .ShapeRange(1).GroupItems(selectedPersonName & "Tick" & selectedPersonManagerType).Width
+                            Else
+                                tempTickLength = .ShapeRange(1).GroupItems(selectedPersonName & "Tick" & selectedPersonManagerType).Height
+                            End If
+                                
+                            For Each tickLength In MyDictionaryTickLengths
+                                If Abs(CInt(tickLength) - tempTickLength) < 1 Then
+                                    mCurrentWhiteSpaceCoefID = "whiteSpaceCoef" & tickLength
+                                    getRibbon().InvalidateControl ("dropDownWhiteSpace")
+                                    Exit For
+                                End If
+                            Next tickLength
+                        End If
+                        
+                        addSlideNEnabledFlag = True
+                    End If
+                End If
+            Else
+                groupShapesEnabledFlag = True
+            End If
+        Else
+            groupShapesEnabledFlag = False
+            ungroupShapesEnabledFlag = False
+        End If
+    End With
+    
+    getRibbon().InvalidateControl ("groupShapes")
+    getRibbon().InvalidateControl ("ungroupShapes")
+    getRibbon().InvalidateControl ("addSlideN")
+    
+    Exit Sub
+    
+errorResolvingShapeName:
+    On Error GoTo -1
+    Exit Sub
+    
+EventErrorHandler:
+    'Silently ignore errors on Mac - event handling may not be fully supported
+    On Error GoTo -1
+End Sub

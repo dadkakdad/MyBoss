@@ -1,0 +1,83 @@
+'---------- GROUPING / UNGROUPING
+Sub ungroupShapesSwitch(control As IRibbonControl, ByRef returnedVal)
+    returnedVal = ungroupShapesEnabledFlag
+End Sub
+
+Sub ungroupShapes(control As IRibbonControl)
+    'ungroup all group objects
+    For Each shapeSelected In ActiveWindow.Selection.ShapeRange 'ActivePresentation.Windows(1).Selection.ShapeRange
+        If shapeSelected.Type = msoGroup Then
+            shapeSelected.Ungroup.Select
+        End If
+    Next shapeSelected
+    
+    'double check if there are any groups
+    For Each shapeSelected In ActiveWindow.Selection.ShapeRange 'ActivePresentation.Windows(1).Selection.ShapeRange
+        If shapeSelected.Type = msoGroup Then
+            Exit Sub
+        End If
+    Next shapeSelected
+    
+    ungroupShapesEnabledFlag = False
+    getRibbon().InvalidateControl ("ungroupShapes")
+End Sub
+
+Sub groupShapesSwitch(control As IRibbonControl, ByRef returnedVal)
+    returnedVal = groupShapesEnabledFlag
+End Sub
+
+Sub groupShapes(control As IRibbonControl)
+    If ActiveWindow.Selection.ShapeRange.Count > 1 Then 'ActivePresentation.Windows(1).Selection.ShapeRange.Count > 1 Then
+        Set newGroup = ActiveWindow.Selection.ShapeRange.Group 'ActivePresentation.Windows(1).Selection.ShapeRange.Group
+        newGroup.Select
+        
+        groupShapesEnabledFlag = False
+        getRibbon().InvalidateControl ("groupShapes")
+        
+        ungroupShapesEnabledFlag = True
+        getRibbon().InvalidateControl ("ungroupShapes")
+    Else
+        MsgBox ("It's already a Group object. :(")
+    End If
+End Sub
+
+'---------- ALIGNMENT
+Sub alignTop(control As IRibbonControl)
+    With ActiveWindow.Selection.ShapeRange 'ActivePresentation.Windows(1).Selection.ShapeRange
+        If .Count > 1 Then
+            .Align msoAlignTops, msoFalse
+        End If
+    End With
+End Sub
+
+Sub alignLeft(control As IRibbonControl)
+    With ActiveWindow.Selection.ShapeRange 'ActivePresentation.Windows(1).Selection.ShapeRange
+        If .Count > 1 Then
+            .Align msoAlignLefts, msoFalse
+        End If
+    End With
+End Sub
+
+Sub alignCenter(control As IRibbonControl)
+    With ActiveWindow.Selection.ShapeRange 'ActivePresentation.Windows(1).Selection.ShapeRange
+        If .Count > 1 Then
+            .Align msoAlignCenter, msoFalse
+        End If
+    End With
+End Sub
+
+Sub distributeHorizontally(control As IRibbonControl)
+    With ActiveWindow.Selection.ShapeRange 'ActivePresentation.Windows(1).Selection.ShapeRange
+        If .Count > 2 Then
+            .Distribute msoDistributeHorizontally, msoFalse
+        End If
+    End With
+End Sub
+
+Sub distributeVertically(control As IRibbonControl)
+    With ActiveWindow.Selection.ShapeRange 'ActivePresentation.Windows(1).Selection.ShapeRange
+        If .Count > 2 Then
+            .Distribute msoDistributeVertically, msoFalse
+        End If
+    End With
+End Sub

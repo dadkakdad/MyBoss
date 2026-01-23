@@ -1,0 +1,74 @@
+'Custom sorting routine: compare people in the orgstructure
+Function compare(p1FullNameKey As Variant, p2FullNameKey As Variant, regime As String, inverseOrderFlag As Boolean) As Boolean
+    Select Case regime
+        Case "alphabet"
+            compare = UCase(p1FullNameKey) < UCase(p2FullNameKey)
+            If inverseOrderFlag Then compare = Not (compare)
+        Case "number"
+            compare = p1FullNameKey < p2FullNameKey
+            If inverseOrderFlag Then compare = Not (compare)
+        Case "maturity"
+            p1SubordinatesNumber = CInt(MyDictionaryPersonalInfo.Item(p1FullNameKey).HeadcountStats.SubordinatesNumber)
+            p2SubordinatesNumber = CInt(MyDictionaryPersonalInfo.Item(p2FullNameKey).HeadcountStats.SubordinatesNumber)
+        
+            'the one who have more subordinates is more major
+            If p1SubordinatesNumber > p2SubordinatesNumber Then compare = True
+            If p1SubordinatesNumber < p2SubordinatesNumber Then compare = False
+            
+            If inverseOrderFlag Then compare = Not (compare)
+            
+            If p1SubordinatesNumber = p2SubordinatesNumber Then compare = UCase(p1FullNameKey) < UCase(p2FullNameKey)
+    End Select
+End Function
+
+'Quicksort for orgelements
+'http://en.allexperts.com/q/Visual-Basic-1048/string-manipulation.htm
+Public Sub sortUtility(vArray As Variant, inLow As Long, inHi As Long, regime As String, inverseOrderFlag As Boolean)
+  Dim pivot As Variant 'value of "central" element in the array
+  Dim tmpSwap As Variant 'temporary variable for swapping values
+  Dim tmpLow  As Long 'array index
+  Dim tmpHi   As Long 'array index
+   
+  tmpLow = inLow
+  tmpHi = inHi
+   
+  pivot = vArray((inLow + inHi) \ 2)
+  
+  While (tmpLow <= tmpHi)
+     While (compare(vArray(tmpLow), pivot, regime, inverseOrderFlag) And tmpLow < inHi) 'hidden elements comparison
+        tmpLow = tmpLow + 1
+     Wend
+     
+     While (compare(pivot, vArray(tmpHi), regime, inverseOrderFlag) And tmpHi > inLow) 'hidden elements comparison
+        tmpHi = tmpHi - 1
+     Wend
+
+     If (tmpLow <= tmpHi) Then 'comparison of indexes
+        'swap the values
+        tmpSwap = vArray(tmpLow)
+        vArray(tmpLow) = vArray(tmpHi)
+        vArray(tmpHi) = tmpSwap
+        
+        tmpLow = tmpLow + 1
+        tmpHi = tmpHi - 1
+     End If
+  Wend
+ 
+  If (inLow < tmpHi) Then sortUtility vArray, inLow, tmpHi, regime, inverseOrderFlag
+  If (tmpLow < inHi) Then sortUtility vArray, tmpLow, inHi, regime, inverseOrderFlag
+End Sub
+
+'Transform list of keys to list of names for drop-down list
+Public Sub makeLegibleAfterSort(listOfKeys As Variant)
+    For i = 0 To UBound(listOfKeys)
+        personFullName = listOfKeys(i)
+        
+        With MyDictionaryPersonalInfo.Item(personFullName)
+            If Not .IsToBeHired Then
+                listOfKeys(i) = .FullName
+            Else
+                listOfKeys(i) = .Name
+            End If
+        End With
+    Next i
+End Sub

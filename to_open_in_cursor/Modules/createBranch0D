@@ -1,0 +1,47 @@
+Sub makeHeadOfTree(ByVal slideNumber As Integer, ByVal personFullName As String)
+    'Switch parameters
+    inputBoxSizeToSave = inputBoxSize
+    inputWhiteSpaceYToSave = inputWhiteSpaceY
+    
+    inputBoxSize = "Large"
+    inputWhiteSpaceY = 15
+
+    With MyDictionaryPersonalInfo.Item(personFullName)
+         'Start counting shapes
+         ticShapesCounter = ActivePresentation.Slides(slideNumber).Shapes.Count
+         
+        'Create card
+        Call createOrgChartElement(slideNumber, personFullName, .DefaultManagerType(), Application.ActivePresentation.PageSetup.SlideWidth / 2, 140, 3)
+    
+        'Delete wrong ticks
+        ActivePresentation.Slides(slideNumber).Shapes(personFullName & .DefaultManagerType()).Ungroup
+        Call eraseShape(slideNumber, personFullName & "Tick" & "Solid")
+        Call eraseShape(slideNumber, personFullName & "Tick" & "Dotted")
+        
+        'Create proper ticks
+        If .DirectReports("Unsorted").Item("Solid").Count > 0 Then
+            Call drawLineVertical(slideNumber, personFullName & "Tick" & "Solid", Application.ActivePresentation.PageSetup.SlideWidth / 2, 139, -15, "Solid")
+        End If
+        
+        If .DirectReports("Unsorted").Item("Dotted").Count > 0 Then
+            Call drawLineVertical(slideNumber, personFullName & "Tick" & "Dotted", Application.ActivePresentation.PageSetup.SlideWidth / 2, 139, -15, "Dotted")
+        End If
+    
+        'Move some of elements to front for visual appeal
+        ActiveWindow.Selection.SlideRange.Shapes(personFullName & "Card" & .DefaultManagerType()).Select
+        ActiveWindow.Selection.ShapeRange.ZOrder msoBringToFront
+            
+        If .TerminationDate <> "" Then
+            ActiveWindow.Selection.SlideRange.Shapes(personFullName & "CommentBox" & .DefaultManagerType()).Select
+            ActiveWindow.Selection.ShapeRange.ZOrder msoBringToFront
+        End If
+        'Stop counting shapes
+        tocShapesCounter = ActivePresentation.Slides(slideNumber).Shapes.Count
+                   
+        Call groupAllShapesInIndexList(slideNumber, ticShapesCounter, tocShapesCounter, personFullName & .DefaultManagerType())
+    End With
+    
+    inputBoxSize = inputBoxSizeToSave
+    inputWhiteSpaceY = inputWhiteSpaceYToSave
+End Sub
+

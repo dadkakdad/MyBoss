@@ -1,0 +1,9 @@
+Option Explicit
+
+Private Sub statusLabel_Click()
+    'Unload Me
+End Sub
+
+Private Sub UProgressBar_Click()
+    'Unload Me
+End Sub

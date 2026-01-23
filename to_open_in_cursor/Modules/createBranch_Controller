@@ -1,0 +1,172 @@
+Function makeTree(ByVal slideNumber As Integer, ByVal personFullName As String, ByVal ManagerType As String, ByVal originX As Double, ByVal originY As Double, ByVal regime As String, ByVal treeType As String, Optional ByVal subtreesVisibilityFlags As Dictionary) As String
+    'Start counting Shapes
+    ticShapesCounter = ActivePresentation.Slides(slideNumber).Shapes.Count
+    
+    '----------------- CREATE SUBORDINATES (Subordinates are created both in "Full" and "Subordinates" regimes)-----------------
+    With MyDictionaryPersonalInfo.Item(personFullName)
+        If .DirectReports("Unsorted").Item("All").Count > 0 Then
+            'Select the type of branch
+            Select Case treeType
+                Case "branch_1"
+                    Call make1DSubordinates(slideNumber, personFullName, originX, originY)
+                    makeTree = personFullName & "Subordinates"
+                    
+                Case "branch_2", "branch_4"
+                    Call makeNDSubordinates(slideNumber, personFullName, originX, originY, Replace(treeType, "branch_", ""))
+                    makeTree = personFullName & "Subordinates"
+                    
+                Case "branch_auto"
+                    '[AM] NOTE: same BUG (wrong IF) workaround
+                    directReportsUnsortedCount = .DirectReports("Unsorted").Item("All").Count
+                    If directReportsUnsortedCount = 1 Then
+                        directReport = .DirectReports("Unsorted").Item("All").Item(1)
+                        
+                        Call createOrgChartElement(slideNumber, directReport, MyDictionaryPersonalInfo.Item(directReport).ManagerType(personFullName), originX, originY, 1)
+                        makeTree = directReport & MyDictionaryPersonalInfo.Item(directReport).ManagerType(personFullName)
+                    Else
+                        If .DirectReports("Unsorted").Item("All").Count <= MAX_PEOPLE_FOR_2D_BRANCH Then
+                            Call make1DSubordinates(slideNumber, personFullName, originX, originY)
+                        Else
+                            If .DirectReports("Unsorted").Item("All").Count <= MAX_PEOPLE_FOR_4D_BRANCH Then
+                                Call makeNDSubordinates(slideNumber, personFullName, originX, originY, "2")
+                            Else
+                                Call makeNDSubordinates(slideNumber, personFullName, originX, originY, "4")
+                            End If
+                        End If
+                        makeTree = personFullName & "Subordinates"
+                    End If
+                    
+                Case "branch_clever", "full_tree"
+                    Dim createdTreeName As String
+
+                    If countVisibleTrees(subtreesVisibilityFlags) = 0 And .DirectReports("Unsorted").Item("Managers").Count > 0 And .nBranchesHorizontallyLimitExceeded(False) Then
+                        Call makeNDSubordinates(slideNumber, personFullName, originX, originY, "4")
+                        makeTree = personFullName & "Subordinates"
+                    Else
+                        createdTreeName = makeFullTree(slideNumber, personFullName, subtreesVisibilityFlags, originY, "Subordinates", CBool(treeType = "branch_clever"))
+                        If createdTreeName = "brokenFullTree" Then
+                            makeTree = "brokenTree"
+                            Exit Function
+                        End If
+                        
+                        makeTree = createdTreeName
+                        Call removeComplexGrouping(slideNumber, createdTreeName)
+                        
+                        With ActivePresentation.Slides(slideNumber).Shapes(createdTreeName)
+                            .Left = 0
+                            .Left = originX - .GroupItems(getReferenceTickNames(personFullName, CBool(treeType = "branch_clever"), subtreesVisibilityFlags).Item(1)).Left
+                        End With
+                    End If
+            End Select
+        End If
+    End With
+    
+    '----------------- CREATE HEAD -----------------
+    If regime = "Full" Then
+        Call createOrgChartElement(slideNumber, personFullName, ManagerType, originX, originY, 1)
+        makeTree = personFullName & ManagerType
+    End If
+        
+    'Stop counting Shapes
+    tocShapesCounter = ActivePresentation.Slides(slideNumber).Shapes.Count
+        
+    '----------------- GROUP HEAD AND SUBORDINATES -----------------
+    '"Subordinates" is a single shape, "Head" is a single shape
+    If tocShapesCounter - ticShapesCounter > 1 Then
+        'Shift subordinates under the head
+        With ActivePresentation.Slides(slideNumber).Shapes(personFullName & "Subordinates")
+            .Top = .Top - sizeOfOrgChartElement(personFullName, 1).tHeight
+            If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then .Top = .Top - getCommentBoxHeight()
+        End With
+        
+        Call groupAllShapesInIndexList(slideNumber, ticShapesCounter, tocShapesCounter, personFullName & "Full")
+        makeTree = personFullName & "Full"
+    End If
+    
+    createdShapeType = "Subordinates"
+    If InStr(makeTree, "Full") Then createdShapeType = "Full"
+
+    wActual = Round(ActiveWindow.Selection.SlideRange.Shapes(makeTree).Width, 1)
+    hActual = Round(ActiveWindow.Selection.SlideRange.Shapes(makeTree).Height, 1)
+    
+    wCalc = Round(sizeOfTree(personFullName, subtreesVisibilityFlags, regime, treeType).tWidth, 1)
+    hCalc = Round(sizeOfTree(personFullName, subtreesVisibilityFlags, regime, treeType).tHeight, 1)
+    
+    maximumDeviation = 25
+    If Abs(wCalc - wActual) > maximumDeviation Or Abs(hCalc - hActual) > maximumDeviation Then
+        MsgBox (makeTree & vbCrLf & "--- Size Elementary Tree ---" & vbCrLf & _
+        "regime: " & createdShapeType & vbCrLf & _
+        "distribution style: " & treeType & vbCrLf & _
+        "w: " & wActual & "(as is) VS " & wCalc & "(calc)" & vbCrLf & _
+        "h: " & hActual & "(as is) VS " & hCalc & "(calc)")
+    End If
+End Function
+
+'chura
+'full
+'full_tree
+
+Function sizeOfTree(ByVal personFullName As String, ByVal directReportsVisibilityFlags As Dictionary, ByVal regime As String, ByVal treeType As String) As CTreeSize
+    Dim treeSize, treeSizeTemp As CTreeSize
+    Set treeSize = New CTreeSize
+    Set treeSizeTemp = New CTreeSize
+    
+    Select Case regime
+        Case "Subordinates", "Full"
+            With MyDictionaryPersonalInfo.Item(personFullName).DirectReports("Sorted").Item("All")
+                'Accounts for subordinates
+                If .Count > 0 Then
+                    Select Case treeType
+                        Case "branch_1"
+                            Set treeSizeTemp = sizeOf1DSubordinates(personFullName)
+                        Case "branch_2", "branch_4"
+                            Set treeSizeTemp = sizeOfNDSubordinates(personFullName, Replace(treeType, "branch_", ""))
+                        Case "branch_auto"
+                            If .Count = 1 Then
+                                Set treeSizeTemp = sizeOfOrgChartElement(.Item(1), 1)
+                            Else
+                                If .Count <= 6 Then
+                                    Set treeSizeTemp = sizeOf1DSubordinates(personFullName)
+                                Else
+                                    If .Count <= 14 Then
+                                        Set treeSizeTemp = sizeOfNDSubordinates(personFullName, "2")
+                                    Else
+                                        Set treeSizeTemp = sizeOfNDSubordinates(personFullName, "4")
+                                    End If
+                                End If
+                            End If
+                        'Reminder: "full tree" creates branches of "branch_auto" tree type
+                        Case "branch_clever"
+                            Set treeSizeTemp = sizeOfFullTree(personFullName, directReportsVisibilityFlags, "Subordinates", True)
+                        Case "full_tree"
+                            Set treeSizeTemp = sizeOfFullTree(personFullName, directReportsVisibilityFlags, "Subordinates", False)
+                    End Select
+                End If
+            End With
+                
+            With treeSize
+                'Accounts for subordinates
+                .tWidth = treeSizeTemp.tWidth
+                .tHeight = treeSizeTemp.tHeight
+                
+                'Accounts for tick
+                '!!! Avoid corner case of summing heights of two ticks !!!
+                'Case 1: one direct report (manager) having complex orgstructure
+                'Case 2: many direct reports (not managers) in single department
+                If Not ((treeType = "branch_clever" Or treeType = "full_tree") Or (treeType = "branch_auto" And MyDictionaryPersonalInfo.Item(personFullName).DirectReports("Sorted").Item("All").Count = 1)) Then
+                    .tHeight = .tHeight + inputWhiteSpaceY
+                    If regime = "Subordinates" And MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then .tHeight = .tHeight + getCommentBoxHeight()
+                End If
+                    
+                'Accounts for card on top
+                If regime = "Full" Then
+                    If sizeOfOrgChartElement(personFullName, 1).tWidth > .tWidth Then .tWidth = sizeOfOrgChartElement(personFullName, 1).tWidth
+                    .tHeight = .tHeight + sizeOfOrgChartElement(personFullName, 1).tHeight
+                End If
+            End With
+            
+            Set sizeOfTree = treeSize
+        Case "Element"
+            Set sizeOfTree = sizeOfOrgChartElement(personFullName, 1)
+    End Select
+End Function

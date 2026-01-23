@@ -1,0 +1,7 @@
+Private Sub UFProgressBar_Activate()
+    Call updateProgress
+End Sub
+
+Private Sub CancelButton_Click()
+    Call cancelProgress
+End Sub

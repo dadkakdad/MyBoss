@@ -1,0 +1,187 @@
+Function checkGroupHasShapesLike(ByVal oSh As Shape, ByVal identificator As String) As Collection
+    Set checkGroupHasShapesLike = New Collection
+    
+    'check the group itself
+    If endsWith(oSh.Name, identificator) = True Then
+        checkGroupHasShapesLike.add oSh.Name
+    End If
+    
+    'check group contents
+    For Each oShItem In oSh.GroupItems
+        If oShItem.Type = msoGroup Then
+            Set candidatesCollection = checkGroupHasShapesLike(oShItem, identificator)
+            For Each candidate In candidatesCollection
+                checkGroupHasShapesLike.add candidate
+            Next candidate
+        Else
+            candidate = checkShapeIsLike(oShItem, identificator)
+            If candidate <> "" Then
+                checkGroupHasShapesLike.add candidate
+            End If
+        End If
+    Next oShItem
+End Function
+
+Function checkShapeIsLike(ByVal oSh As Shape, ByVal identificator As String) As String
+    If identificator = "<TEXTBOX>" Then
+        If (oSh.Type = msoTextBox) Then
+            checkShapeIsLike = oSh.Name
+        Else
+            checkShapeIsLike = ""
+        End If
+    Else
+        If endsWith(oSh.Name, identificator) Then
+            checkShapeIsLike = oSh.Name
+        Else
+            checkShapeIsLike = ""
+        End If
+    End If
+End Function
+
+'--------- USED ONLY FOR SLIDE N AND DEPARTMENTS ONLY ----------
+Function eraseAllShapesLike(ByVal slideNumber As Double, ByVal identificator As String) As Boolean
+    Set shapesLike = New Collection
+    
+    'Create the list of shapes with names like
+    For Each oSh In ActivePresentation.Slides(slideNumber).Shapes
+        If oSh.Type = msoGroup Then
+            Set candidatesCollection = checkGroupHasShapesLike(oSh, identificator)
+            For Each candidate In candidatesCollection
+                shapesLike.add candidate
+            Next candidate
+        Else
+            candidate = checkShapeIsLike(oSh, identificator)
+            If candidate <> "" Then
+                shapesLike.add candidate
+            End If
+        End If
+    Next oSh
+    
+    'Kill them one by one
+    If shapesLike.Count > 0 Then
+        For Each shapeName In shapesLike
+            Call eraseShape(slideNumber, shapeName)
+        Next shapeName
+        eraseAllShapesLike = True
+    Else
+        eraseAllShapesLike = False
+    End If
+End Function
+
+'Fastest way to check if shape exists or not is to ask a property from it
+Function fastCheckShapeExists(ByVal slideNumber As Double, ByVal shapeName As String, Optional ByVal shapesGroup As String = "") As Boolean
+    Dim tempShapeName As String
+    
+On Error GoTo Handler
+    If shapesGroup = "" Then
+        tempShapeName = ActivePresentation.Slides(slideNumber).Shapes(shapeName).Name
+        fastCheckShapeExists = True
+        Exit Function
+    Else
+        tempShapeName = ActivePresentation.Slides(slideNumber).Shapes(shapesGroup).GroupItems(shapeName).Name
+        fastCheckShapeExists = True
+        Exit Function
+    End If
+Handler:
+        fastCheckShapeExists = False
+End Function
+
+'Check if there is a shape with given name on slide, return link to it
+Function checkShapeExists(ByVal slideNumber As Double, ByVal shapeName As String) As Object
+    If fastCheckShapeExists(slideNumber, shapeName) Then
+        Set checkShapeExists = ActivePresentation.Slides(slideNumber).Shapes(shapeName)
+        Exit Function
+    End If
+    
+    For Each oSh In ActivePresentation.Slides(slideNumber).Shapes
+        If oSh.Type = msoGroup Then
+             If fastCheckShapeExists(slideNumber, shapeName, oSh.Name) Then
+                Set checkShapeExists = ActivePresentation.Slides(slideNumber).Shapes(shapeName)
+                Exit Function
+            End If
+        End If
+    Next oSh
+    
+    Set checkShapeExists = Nothing
+End Function
+
+'Erase shape and all it's copies (shape copy has the same shapeName)
+Sub eraseShape(ByVal slideNumber As Integer, ByVal shapeName As String)
+    With ActivePresentation.Slides(slideNumber)
+        Set shapeToBeDeleted = checkShapeExists(slideNumber, shapeName)
+        Do While Not shapeToBeDeleted Is Nothing
+            shapeToBeDeleted.Delete
+            Set shapeToBeDeleted = checkShapeExists(slideNumber, shapeName)
+        Loop
+    End With
+End Sub
+
+Sub eraseManagerAttributes(ByVal slideNumber As Integer, ByVal personFullName As String)
+    Call eraseShape(slideNumber, personFullName + "Subordinates" + "Tick" & "Solid")
+    Call eraseShape(slideNumber, personFullName + "Subordinates" + "TickMain" & "Solid")
+    Call eraseShape(slideNumber, personFullName + "Subordinates" + "HorizontalConnector" & "Solid")
+    Call eraseShape(slideNumber, personFullName + "Subordinates" + "VerticalConnector" & "Solid")
+        
+    Call eraseShape(slideNumber, personFullName + "Subordinates" + "Tick" & "Dotted")
+    Call eraseShape(slideNumber, personFullName + "Subordinates" + "TickMain" & "Dotted")
+    Call eraseShape(slideNumber, personFullName + "Subordinates" + "HorizontalConnector" & "Dotted")
+    Call eraseShape(slideNumber, personFullName + "Subordinates" + "VerticalConnector" & "Dotted")
+End Sub
+
+Sub eraseCardAttributes(ByVal slideNumber As Integer, ByVal personFullName As String, ByVal ManagerType As String)
+    Call eraseShape(slideNumber, personFullName & "HorizontalConnector" & ManagerType)
+
+    Call eraseShape(slideNumber, personFullName & "Tick" & ManagerType)
+    Call eraseShape(slideNumber, personFullName & "Tick" & inverseType(ManagerType))
+        
+    Call eraseShape(slideNumber, personFullName & "InfoBox" & ManagerType)
+    Call eraseShape(slideNumber, personFullName & "Location" & ManagerType)
+    Call eraseShape(slideNumber, personFullName & "HeadCount" & ManagerType)
+    Call eraseShape(slideNumber, personFullName & "BottomBackground" & ManagerType)
+    Call eraseShape(slideNumber, personFullName & "MainBackground" & ManagerType)
+        
+    Call eraseShape(slideNumber, personFullName & "Manager" & "Bubble" & inverseType(ManagerType))
+    Call eraseShape(slideNumber, personFullName & "Manager" & "Tick" & inverseType(ManagerType))
+        
+    Call eraseShape(slideNumber, personFullName & "CommentBox" & ManagerType)
+    Call eraseShape(slideNumber, personFullName & ManagerType & "SlideN")
+End Sub
+
+Sub eraseSingleElement(ByVal slideNumber As Integer, ByVal personFullName As String, ByVal ManagerType As String)
+    Call eraseCardAttributes(slideNumber, personFullName, ManagerType)
+End Sub
+
+'Choose from all shapes on slides only those which are relevant to personFullName subordinates
+Sub eraseSubordinates(ByVal slideNumber As Integer, ByVal personFullName As String)
+    Call refreshCardsChecklist("single_slide", slideNumber)
+    
+    Call eraseManagerAttributes(slideNumber, personFullName)
+    
+    orgchartElementToDelete = MyDictionaryCardsCheckList.Count
+    
+    For Each cardName In MyDictionaryCardsCheckList.keys
+        Set personOnSlide = parseShapeName(cardName)
+        With personOnSlide
+            If .Item("FullNameKey") <> personFullName And .Item("FullNameKey") <> "" Then
+                Set reportingSequence = extractReportingSequence(.Item("FullNameKey"), .Item("ManagerType"))
+                
+                If reportingSequence.Exists(personFullName) Then
+                    Call eraseSingleElement(slideNumber, .Item("FullNameKey"), .Item("ManagerType"))
+                    Call eraseManagerAttributes(slideNumber, .Item("FullNameKey"))
+                    
+                    orgchartElementDeletedCounter = orgchartElementDeletedCounter + 1
+                    Call updateProgressBar(orgchartElementDeletedCounter / orgchartElementToDelete)
+                End If
+            End If
+        End With
+    Next cardName
+End Sub
+
+'Sub erasePerson(ByVal slideNumber As Integer, ByVal personFullName As String, ByVal ManagerType As String)
+'    orgchartElementToDelete = 1
+'
+'    Call eraseSingleElement(slideNumber, .Item("FullNameKey"), .Item("ManagerType"))
+'
+'    orgchartElementDeletedCounter = orgchartElementDeletedCounter + 1
+'    Call updateProgressBar(orgchartElementDeletedCounter / orgchartElementToDelete)
+'End Sub

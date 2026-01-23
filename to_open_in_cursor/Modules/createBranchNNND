@@ -1,0 +1,489 @@
+Function makeFullTree(ByVal slideNumber As Integer, ByVal personFullName As String, ByVal directReportsVisibilityFlags As Dictionary, ByVal originY As Double, ByVal regime As String, Optional ByVal considerAllDirectReportsAsWorkers As Boolean = False) As String
+    Set MyInfo = MyDictionaryPersonalInfo
+    'All employee's direct reports are stored in MyDictionaryDirectReports as a non-organised list; during full tree creation we edit MyDictionaryDirectReports
+    'We save initial list of direct reports to revert to it later
+    Set directReportsListSaved = MyInfo.Item(personFullName).DirectReports("Sorted")
+    
+    subtreeNeedsShift = checkSolidLineDirectReportsNeedShiftDown(personFullName)
+    
+    'Accounts for corner cases when you need to create only one branch with only one orgelement -
+    'there will just be a card with tick up
+    If getNumberOfBranches(personFullName, "all") = 1 And getNumberOfBranches(personFullName, "ordinary") = 1 And MyInfo.Item(personFullName).TerminationDate <> "" Then
+        OffsetCornerCaseY = OffsetCornerCaseY + getCommentBoxHeight()
+    End If
+    
+    If getNumberOfBranches(personFullName, "all") = 1 And getNumberOfBranches(personFullName, "department") = 1 And MyInfo.Item(personFullName).DirectReports("Unsorted").Item("Workers").Count = 1 And MyInfo.Item(personFullName).TerminationDate <> "" Then
+        OffsetCornerCaseY = OffsetCornerCaseY + getCommentBoxHeight()
+    End If
+    
+    '-------------------- CREATE SUBTREES --------------------
+    subordinatesFullTreeName = ""
+    
+    If directReportsListSaved.Item("All").Count > 0 Then
+        'Storage for tree names for easy of alignment; last element in each item holds initial tree name;
+        'We revert to initial tree names before exiting
+        Set MyDictionaryTreesCreated = New Dictionary
+        
+        'Here we storage values about high level departments on slide
+        Set MyDictionaryTreesCreatedWithDepartments = New Dictionary
+        directReportWorker = ""
+        directReportManager = ""
+        
+        'OffsetY account for main tick length = distance from manager to horizontal connector; you need main tick if you have more than one subtrees
+        If getNumberOfBranches(personFullName) >= 2 Then
+            OffsetY = inputWhiteSpaceY
+            If MyInfo.Item(personFullName).TerminationDate <> "" Then
+                OffsetY = OffsetY + getCommentBoxHeight()
+            End If
+        Else
+            OffsetY = 0
+        End If
+        
+        'Start counting shapes
+        ticShapesCounter = ActivePresentation.Slides(slideNumber).Shapes.Count
+        
+        '------------------------ DEPARTMENT BRANCHES ------------------------
+        'Fill the buffer of department names
+        Set MyDictionaryDepartmentsList = MyInfo.Item(personFullName).ListOfDepartments("Workers")
+        If considerAllDirectReportsAsWorkers Then
+            Set MyDictionaryDepartmentsList = MyInfo.Item(personFullName).ListOfDepartments("All")
+        End If
+        
+        'Create branches based on distributed people
+        For Each DepartmentName In MyDictionaryDepartmentsList.keys
+            'Temporarily empty the list of employee's direct reports
+            Set MyDictionaryDirectReports.Item(personFullName) = New Collection
+                
+            'Fill the list of direct reports with people corresponding to single department
+            For Each personInDepartmentFullName In MyDictionaryDepartmentsList.Item(DepartmentName)
+                MyDictionaryDirectReports.Item(personFullName).add personInDepartmentFullName
+                directReportWorker = personInDepartmentFullName
+            Next personInDepartmentFullName
+                
+            'Shift lonely departments a bit below in case there are any people in the first row that are mixed-reporting
+            'Abs(CInt(Boolean)) gives -1 for True and 0 for False
+            directReportsSortedCount = MyInfo.Item(personFullName).DirectReports("Sorted").Item("All").Count
+            
+            firstDirectSorted = MyInfo.Item(personFullName).DirectReports("Sorted").Item("All").Item(1)
+            OffsetDueToAlignment = Abs(CInt(subtreeNeedsShift _
+                                            And (directReportsSortedCount = 1) _
+                                            And (Not MyInfo.Item(firstDirectSorted).HasTwoManagers))) _
+                                    * getBubbleHeight()
+                
+            'Create branch; ManagerType, actually, plays no role in case we create subordinates
+            '[AM] JUST NOTE about shitty VBA: The underscore must be immediately preceded by a space and immediately followed by a line terminator (carriage return)
+            createdTreeNameInitial = makeTree( _
+            slideNumber _
+            , personFullName _
+            , MyInfo.Item(personFullName).DefaultManagerType _
+            , 0 _
+            , originY + OffsetY + OffsetDueToAlignment + OffsetCornerCaseY _
+            , "Subordinates" _
+            , "branch_auto")
+            
+            If stopExecutionFlag Then
+                Set MyDictionaryDirectReports.Item(personFullName) = directReportsListSaved.Item("All")
+                makeFullTree = "brokenFullTree"
+                Exit Function
+            End If
+                
+            '----------- Stretch Ticks to make it look more appealing -----------
+            If OffsetDueToAlignment > 0 Or OffsetCornerCaseY > 0 Then
+                With ActivePresentation.Slides(slideNumber).Shapes(getReferenceTickNames(personFullName, considerAllDirectReportsAsWorkers).Item(1))
+                    'Shift it down
+                    .Top = .Top - OffsetDueToAlignment - OffsetCornerCaseY
+                    'Stretch it
+                    .Height = .Height + OffsetDueToAlignment + OffsetCornerCaseY
+                End With
+            End If
+                
+            'Rename the branch to be able to move it in future
+            createdTreeNameTemporary = DepartmentName & personFullName
+            ActivePresentation.Slides(slideNumber).Shapes.Range(createdTreeNameInitial).Name = createdTreeNameTemporary
+                    
+            'Save branch name; at this point of time list of direct reports is still changed from original and corresponds to single branch
+            MyDictionaryTreesCreated.add createdTreeNameTemporary, getReferenceTickNames(personFullName, considerAllDirectReportsAsWorkers)
+            MyDictionaryTreesCreated.Item(createdTreeNameTemporary).add createdTreeNameInitial
+                
+            MyDictionaryTreesCreatedWithDepartments.add createdTreeNameTemporary, directReportWorker
+        Next DepartmentName
+        
+        'Revert to original list of direct reports
+        Set MyDictionaryDirectReports.Item(personFullName) = directReportsListSaved.Item("All")
+        
+        '------------------------ ORDINARY BRANCHES ------------------------
+        'Usually we go one card + one space down, but in some cases we need extra shifts below from horizontalConnector
+        OffsetDueToHeadY = getCardHeight() + inputWhiteSpaceY
+        
+        'All ordinary trees have head card on top which looks like department branches of single card; that's why OffsetDueToAlignment is constant for every tree
+        OffsetDueToAlignment = 0
+        If subtreeNeedsShift Then
+            OffsetDueToAlignment = getBubbleHeight() 'due to alignment
+        End If
+        
+        'Now pick only managers from subordinates; Remember, each time we change direct reports list we influence calculations of departments and direct reports (pretty obvious but still)
+        Set MyDictionaryDirectReports.Item(personFullName) = directReportsListSaved.Item("Managers")
+        If considerAllDirectReportsAsWorkers Then
+            Set MyDictionaryDirectReports.Item(personFullName) = New Collection
+        End If
+        
+        'This list is created based on already adjusted list of direct reports
+        Set directReportsManagers = MyInfo.Item(personFullName).DirectReports("Sorted").Item("All")
+        
+        'Create full tree (call this function recursively) for every direct reporting manager
+        For Each directReportManager In directReportsManagers
+            With MyInfo.Item(directReportManager)
+                'Create tree (we create trees only under default managers who are set visible --> having hidden flag = 0)
+                If .ManagerType(personFullName) = .DefaultManagerType() And directReportsVisibilityFlags.Item(directReportManager) = 1 Then
+                'If .ManagerType(personFullName) = "Solid" And directReportsVisibilityFlags(directReportManager) = 1 Then
+                    'OffsetDueToAlignment applies to all trees
+                    createdTreeNameInitial = makeFullTree(slideNumber, directReportManager, synthesizeInputAllDirectReportsVisible(directReportManager), originY + OffsetY + OffsetDueToHeadY + OffsetDueToAlignment + OffsetCornerCaseY, "Full")
+                    If stopExecutionFlag Then
+                        Set MyDictionaryDirectReports.Item(personFullName) = directReportsListSaved.Item("All")
+                        makeFullTree = "brokenFullTree"
+                        Exit Function
+                    End If
+                Else
+                    'OffsetDueToAlignment applies to some of elements due to different definition of origin
+                    If OffsetDueToAlignment > 0 And Not .HasTwoManagers Then
+                        Call createOrgChartElement(slideNumber, directReportManager, .ManagerType(personFullName), 0, originY + OffsetY + OffsetDueToDifferentOriginY + OffsetDueToAlignment + OffsetCornerCaseY, 1)
+                    Else
+                        Call createOrgChartElement(slideNumber, directReportManager, .ManagerType(personFullName), 0, originY + OffsetY + OffsetDueToDifferentOriginY + OffsetCornerCaseY, 1)
+                    End If
+                        
+                    createdTreeNameInitial = directReportManager & .ManagerType(personFullName)
+                End If
+                        
+                '----------- Stretch Ticks to make it look more appealing -----------
+                If OffsetDueToAlignment > 0 And Not .HasTwoManagers Then
+                    With ActivePresentation.Slides(slideNumber).Shapes(directReportManager & "Tick" & "Solid")
+                        .Top = .Top - OffsetDueToAlignment
+                        .Height = .Height + OffsetDueToAlignment
+                    End With
+                End If
+                        
+                'Save tree's Name and tick's Name
+                MyDictionaryTreesCreated.add createdTreeNameInitial, New Collection
+                MyDictionaryTreesCreated.Item(createdTreeNameInitial).add directReportManager & "Tick" & .ManagerType(personFullName)
+                MyDictionaryTreesCreated.Item(createdTreeNameInitial).add createdTreeNameInitial
+                    
+                MyDictionaryTreesCreatedWithDepartments.add createdTreeNameInitial, directReportManager
+            End With
+        Next directReportManager
+        
+        'Revert to original list of direct reports
+        Set MyDictionaryDirectReports.Item(personFullName) = directReportsListSaved.Item("All")
+        
+        '-------------------- SHUFFLE BRANCHES --------------------
+        'Create new variable for reordered trees
+        Set MyDictionaryTreesCreatedReordered = New Dictionary
+        
+        Do While MyDictionaryTreesCreated.Count > 0
+            'Get tree key
+            tree1Key = MyDictionaryTreesCreated.keys()(0)
+            department1Key = MyDictionaryPersonalInfo.Item(MyDictionaryTreesCreatedWithDepartments.Item(tree1Key)).DepartmentKey
+            
+            'Copy to destination
+            MyDictionaryTreesCreatedReordered.add tree1Key, MyDictionaryTreesCreated.Item(tree1Key)
+            MyDictionaryTreesCreated.Remove tree1Key
+            
+            'Assume there are any, set to "found"
+            similarDepartmentNamesFound = True
+                
+            Do While similarDepartmentNamesFound And MyDictionaryTreesCreated.Count > 0
+                'Reset to "no found", start searching as if none to be met
+                similarDepartmentNamesFound = False
+                    
+                'Check all left branches
+                For i = 0 To MyDictionaryTreesCreated.Count - 1
+                    tree2Key = MyDictionaryTreesCreated.keys()(i)
+                    department2Key = MyDictionaryPersonalInfo.Item(MyDictionaryTreesCreatedWithDepartments.Item(tree2Key)).DepartmentKey
+                        
+                    If department1Key = department2Key Then
+                        similarDepartmentNamesFound = True
+                        
+                        MyDictionaryTreesCreatedReordered.add tree2Key, MyDictionaryTreesCreated.Item(tree2Key)
+                        MyDictionaryTreesCreated.Remove tree2Key
+                        Exit For
+                    End If
+                Next i
+            Loop
+        Loop
+        
+        
+        'At this point we have a list of trees' names in treesCreatedCollection to distribute
+        '-------------------- DISTRIBUTE SUBTREES ALONG X --------------------
+        xIterator = 0
+            
+        constMaxConnectorLength = 1000000
+            
+        leftSolidLineDirectReportX = constMaxConnectorLength
+        rightSolidLineDirectReportX = -1 * constMaxConnectorLength
+        
+        leftDottedLineDirectReportX = 1 * constMaxConnectorLength
+        rightDottedLineDirectReportX = -1 * constMaxConnectorLength
+    
+        For Each treeName In MyDictionaryTreesCreatedReordered.keys
+            With ActivePresentation.Slides(slideNumber).Shapes(treeName)
+                'Move the branch along X
+                .Left = xIterator
+                xIterator = xIterator + .Width + inputWhiteSpaceExt
+            End With
+            
+            'Save tick 's coordinates
+            For Each treeTickName In MyDictionaryTreesCreatedReordered.Item(treeName)
+                'initial tree name does not contain substring "Tick" so we use it for distinguishing tree names and tick names
+                If InStr(treeTickName, "Tick") <> 0 Then
+                    treeTickX = ActivePresentation.Slides(slideNumber).Shapes(treeName).GroupItems(treeTickName).Left
+        
+                    If InStr(treeTickName, "TickSolid") Then
+                        If leftSolidLineDirectReportX > treeTickX Then leftSolidLineDirectReportX = treeTickX
+                        If rightSolidLineDirectReportX < treeTickX Then rightSolidLineDirectReportX = treeTickX
+                    End If
+        
+                    If InStr(treeTickName, "TickDotted") Then
+                        If leftDottedLineDirectReportX > treeTickX Then leftDottedLineDirectReportX = treeTickX
+                        If rightDottedLineDirectReportX < treeTickX Then rightDottedLineDirectReportX = treeTickX
+                    End If
+                Else
+                    'Revert to original tree name after moving it to right place
+                    ActivePresentation.Slides(slideNumber).Shapes(treeName).Name = treeTickName
+                End If
+            Next treeTickName
+        Next treeName
+        
+        'Precalculate center of all ticks
+        Dim maxRightDirectReportX, minLeftDirectReportX As Double
+        If rightSolidLineDirectReportX > rightDottedLineDirectReportX Then
+            maxRightDirectReportX = rightSolidLineDirectReportX
+        Else
+            maxRightDirectReportX = rightDottedLineDirectReportX
+        End If
+        
+        If leftSolidLineDirectReportX < leftDottedLineDirectReportX Then
+            minLeftDirectReportX = leftSolidLineDirectReportX
+        Else
+            minLeftDirectReportX = leftDottedLineDirectReportX
+        End If
+        
+        horizontalConnectorCenterX = (minLeftDirectReportX + maxRightDirectReportX) / 2
+            
+        Dim leftEndX, rightEndX As Double
+        'Add long solid/dotted horizontal connecting lines if needed
+        If (leftSolidLineDirectReportX <> rightSolidLineDirectReportX Or (leftSolidLineDirectReportX = rightSolidLineDirectReportX And leftSolidLineDirectReportX <> horizontalConnectorCenterX)) And Abs(rightSolidLineDirectReportX) + Abs(leftSolidLineDirectReportX) < constMaxConnectorLength Then
+            If leftSolidLineDirectReportX < horizontalConnectorCenterX Then
+                leftEndX = leftSolidLineDirectReportX
+            Else
+                leftEndX = horizontalConnectorCenterX
+            End If
+            
+            If rightSolidLineDirectReportX > horizontalConnectorCenterX Then
+                rightEndX = rightSolidLineDirectReportX
+            Else
+                rightEndX = horizontalConnectorCenterX
+            End If
+            
+            Call drawLine(slideNumber, personFullName & "Subordinates" & "HorizontalConnector" & "Solid", leftEndX, originY + OffsetY, rightEndX, originY + OffsetY, "Solid")
+            Call drawLineVertical(slideNumber, personFullName & "SubordinatesTickMain" & "Solid", horizontalConnectorCenterX, originY + OffsetY, -OffsetY, "Solid")
+        End If
+            
+        If (leftDottedLineDirectReportX <> rightDottedLineDirectReportX Or (leftDottedLineDirectReportX = rightDottedLineDirectReportX And leftDottedLineDirectReportX <> horizontalConnectorCenterX)) And Abs(rightDottedLineDirectReportX) + Abs(leftDottedLineDirectReportX) < constMaxConnectorLength Then
+            If leftDottedLineDirectReportX < horizontalConnectorCenterX Then
+                leftEndX = leftDottedLineDirectReportX
+            Else
+                leftEndX = horizontalConnectorCenterX
+            End If
+            
+            If rightDottedLineDirectReportX > horizontalConnectorCenterX Then
+                rightEndX = rightDottedLineDirectReportX
+            Else
+                rightEndX = horizontalConnectorCenterX
+            End If
+            
+            Call drawLine(slideNumber, personFullName & "Subordinates" & "HorizontalConnector" & "Dotted", leftEndX, originY + OffsetY, rightEndX, originY + OffsetY, "Dotted")
+            Call drawLineVertical(slideNumber, personFullName & "SubordinatesTickMain" & "Dotted", horizontalConnectorCenterX, originY + OffsetY, -OffsetY, "Dotted")
+        End If
+        
+        'Stop counting shapes
+        tocShapesCounter = ActivePresentation.Slides(slideNumber).Shapes.Count
+        
+        If tocShapesCounter - ticShapesCounter > 1 Then
+            Call groupAllShapesInIndexList(slideNumber, ticShapesCounter, tocShapesCounter, personFullName & "Subordinates")
+            subordinatesFullTreeName = personFullName & "Subordinates"
+        Else
+            subordinatesFullTreeName = ActivePresentation.Slides(slideNumber).Shapes.Range(tocShapesCounter).Name
+        End If
+    End If
+
+    '-------------------- CREATE HEAD OF TREE --------------------
+    If regime = "Full" Then
+        'Origin (in terms of trees) is a place right under the card, but in terms of elements it is tick's apex
+        OffsetDueToDifferentOriginY = -sizeOfOrgChartElement(personFullName, 1).tHeight
+        If MyInfo.Item(personFullName).TerminationDate <> "" Then OffsetDueToDifferentOriginY = OffsetDueToDifferentOriginY + getCommentBoxHeight()
+        
+        Call createOrgChartElement(slideNumber, personFullName, MyInfo.Item(personFullName).DefaultManagerType(), horizontalConnectorCenterX, originY + OffsetDueToDifferentOriginY, 1)
+        
+        If OffsetCornerCaseY > 0 Then
+            With ActivePresentation.Slides(slideNumber).Shapes(getReferenceTickNames(personFullName, considerAllDirectReportsAsWorkers).Item(1))
+                'Shift it down
+                .Top = .Top - OffsetCornerCaseY
+                'Stretch it
+                .Height = .Height + OffsetCornerCaseY
+            End With
+        End If
+        
+        'Group it with subordinates if there are any
+        If subordinatesFullTreeName <> "" Then
+            Set newGroup = ActivePresentation.Slides(slideNumber).Shapes.Range(Array(subordinatesFullTreeName, personFullName & MyInfo.Item(personFullName).DefaultManagerType())).Group
+            newGroup.Name = personFullName & "Full"
+            makeFullTree = personFullName & "Full"
+        Else
+            makeFullTree = personFullName & MyInfo.Item(personFullName).DefaultManagerType()
+        End If
+    Else
+        makeFullTree = subordinatesFullTreeName
+    End If
+End Function
+
+Function sizeOfFullTree(ByVal personFullName As String, ByVal directReportsVisibilityFlags As Dictionary, ByVal regime As String, Optional ByVal considerAllDirectReportsAsWorkers As Boolean = False) As CTreeSize
+    'Set Timer1 = New CTimer
+
+    Dim treeSizeNDFull, treeSizeNDFullTemp As CTreeSize
+    Set treeSizeNDFull = New CTreeSize
+    Set treeSizeNDFullTemp = New CTreeSize
+    
+    With MyDictionaryPersonalInfo
+        'All employee's direct reports are stored in MyDictionaryDirectReports as a non-organised list
+        'We save this list to revert to it later
+        
+        Set directReportsListSaved = .Item(personFullName).DirectReports("Sorted")
+        
+        subtreeNeedsShift = checkSolidLineDirectReportsNeedShiftDown(personFullName)
+        
+        't1 = Timer1.TimeElapsed
+        'Accounts for corner cases when you need to create only one branch, but with orgelement tick up
+        If getNumberOfBranches(personFullName, "all") = 1 And getNumberOfBranches(personFullName, "ordinary") = 1 And .Item(personFullName).TerminationDate <> "" Then
+            OffsetCornerCaseY = OffsetCornerCaseY + getCommentBoxHeight()
+        End If
+        
+        If getNumberOfBranches(personFullName, "all") = 1 And getNumberOfBranches(personFullName, "department") = 1 And .Item(personFullName).DirectReports("Unsorted").Item("Workers").Count = 1 And .Item(personFullName).TerminationDate <> "" Then
+            OffsetCornerCaseY = OffsetCornerCaseY + getCommentBoxHeight()
+        End If
+        't2 = Timer1.TimeElapsed
+        '-------------------- SUBORDINATES --------------------
+        If directReportsListSaved.Item("All").Count > 0 Then
+            'Offset from origin to horizontal connector; offset depends on manager having termination date or not;
+            
+            'OffsetY account for main tick length = distance from manager to horizontal connector; you need main tick if you have more than one subtrees
+            If getNumberOfBranches(personFullName) >= 2 Then
+                OffsetY = inputWhiteSpaceY
+                If .Item(personFullName).TerminationDate <> "" Then OffsetY = OffsetY + getCommentBoxHeight()
+            Else
+                OffsetY = 0
+            End If
+        
+            '------------------------ DEPARTMENT BRANCHES ------------------------
+            'Fill the buffer of department names
+            Set MyDictionaryDepartmentsList = .Item(personFullName).ListOfDepartments("Workers")
+            If considerAllDirectReportsAsWorkers Then Set MyDictionaryDepartmentsList = .Item(personFullName).ListOfDepartments("All")
+            
+            'Create branches based on distributed people
+            For Each DepartmentName In MyDictionaryDepartmentsList.keys
+                'Temporarily empty the list of employee's direct reports
+                Set MyDictionaryDirectReports.Item(personFullName) = New Collection
+            
+                'Fill the list of direct reports with people corresponding to single department
+                For Each personInDepartmentFullName In MyDictionaryDepartmentsList.Item(DepartmentName)
+                    MyDictionaryDirectReports.Item(personFullName).add personInDepartmentFullName
+                Next personInDepartmentFullName
+                
+                'Shift lonely departments a bit below in case there are any people in the first row that are mixed-reporting
+                'Abs(CInt(Boolean)) gives -1 for True and 0 for False
+                OffsetDueToAlignment = Abs(CInt((subtreeNeedsShift) And (.Item(personFullName).DirectReports("Sorted").Item("All").Count = 1) And (Not .Item(.Item(personFullName).DirectReports("Sorted").Item("All").Item(1)).HasTwoManagers))) * getBubbleHeight()
+                
+                'Create branch; ManagerType, actually, plays no role in case we create subordinates
+                Set treeSizeNDFullTemp = sizeOfTree(personFullName, synthesizeInputAllDirectReportsVisible(personFullName), "Subordinates", "branch_auto")
+                
+                '----------- Stretch Ticks to make it look more appealing -----------
+                If OffsetDueToAlignment > 0 Or OffsetCornerCaseY > 0 Then treeSizeNDFullTemp.tHeight = treeSizeNDFullTemp.tHeight + OffsetDueToAlignment + OffsetCornerCaseY
+                
+                With treeSizeNDFull
+                    'CALCULATE TOTAL WIDTH
+                    If .tWidth > 0 Then .tWidth = .tWidth + inputWhiteSpaceExt
+                    .tWidth = .tWidth + treeSizeNDFullTemp.tWidth
+                    'CALCULATE TOTAL HEIGHT
+                    If treeSizeNDFullTemp.tHeight > .tHeight Then .tHeight = treeSizeNDFullTemp.tHeight
+                End With
+            Next DepartmentName
+            
+            'Revert to original list of direct reports
+            Set MyDictionaryDirectReports.Item(personFullName) = directReportsListSaved.Item("All")
+            
+            
+            
+            
+            '------------------------ ORDINARY BRANCHES ------------------------
+            'Usually we go one card + one space down, but in some cases we need extra shifts below from horizontalConnector
+            OffsetDueToHeadY = getCardHeight() + inputWhiteSpaceY
+            
+            'All ordinary trees have head card on top which looks like department branches of single card; that's why OffsetDueToAlignment is constant for every tree
+            OffsetDueToAlignment = 0
+            If subtreeNeedsShift Then OffsetDueToAlignment = getBubbleHeight() 'due to alignment
+            
+            'Now pick only managers from subordinates; Remember, each time we change direct reports list we influence calculations of departments and direct reports (pretty obvious but still)
+            Set MyDictionaryDirectReports.Item(personFullName) = directReportsListSaved.Item("Managers")
+            If considerAllDirectReportsAsWorkers Then Set MyDictionaryDirectReports.Item(personFullName) = New Collection
+            
+            'This list is created based on already adjusted list of direct reports
+            Set directReportsManagers = .Item(personFullName).DirectReports("Sorted").Item("All")
+            
+            'Create full tree (call this function recursively) for every direct reporting manager
+            For Each directReportManager In directReportsManagers
+                With .Item(directReportManager)
+                    'Create tree (we create trees only under default managers who are set visible --> having hidden flag = 0)
+                    'If .ManagerType(personFullName) = .DefaultManagerType() And directReportsVisibilityFlags(directReportManager) = 1 Then
+                    If .ManagerType(personFullName) = "Solid" And directReportsVisibilityFlags.Item(directReportManager) = 1 Then
+                        'OffsetDueToAlignment applies to all trees
+                        Set treeSizeNDFullTemp = sizeOfFullTree(directReportManager, synthesizeInputAllDirectReportsVisible(directReportManager), "Full")
+                    Else
+                        Set treeSizeNDFullTemp = sizeOfOrgChartElement(directReportManager, 1)
+                    End If
+                        
+                    '----------- Stretch Ticks to make it look more appealing -----------
+                    If OffsetDueToAlignment > 0 And Not .HasTwoManagers Then treeSizeNDFullTemp.tHeight = treeSizeNDFullTemp.tHeight + OffsetDueToAlignment
+                End With
+                
+                With treeSizeNDFull
+                    'CALCULATE TOTAL WIDTH
+                    If .tWidth > 0 Then .tWidth = .tWidth + inputWhiteSpaceExt
+                    .tWidth = .tWidth + treeSizeNDFullTemp.tWidth
+                    'CALCULATE TOTAL HEIGHT
+                    If treeSizeNDFullTemp.tHeight > .tHeight Then .tHeight = treeSizeNDFullTemp.tHeight
+                End With
+            Next directReportManager
+            
+            'Revert to original list of direct reports
+            Set MyDictionaryDirectReports.Item(personFullName) = directReportsListSaved.Item("All")
+            
+            'ACCOUNTS FOR MAIN TICK
+            treeSizeNDFull.tHeight = treeSizeNDFull.tHeight + OffsetY
+        End If
+        
+        '-------------------- HEAD OF TREE --------------------
+        If regime = "Full" Then
+             With treeSizeNDFull
+                'CALCULATE TOTAL WIDTH
+                If sizeOfOrgChartElement(personFullName, 1).tWidth > .tWidth Then .tWidth = sizeOfOrgChartElement(personFullName, 1).tWidth
+                'CALCULATE TOTAL HEIGHT
+                .tHeight = .tHeight + sizeOfOrgChartElement(personFullName, 1).tHeight
+                If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate() <> "" Then .tHeight = .tHeight - getCommentBoxHeight()
+                
+                If OffsetCornerCaseY > 0 Then .tHeight = .tHeight + OffsetCornerCaseY
+            End With
+        End If
+    End With
+    
+    Set sizeOfFullTree = treeSizeNDFull
+    
+    'times.Add CStr(Round(t2 - t1, 3)) & " " & personFullName
+End Function

@@ -1,0 +1,82 @@
+Sub make1DSubordinates(ByVal slideNumber As Integer, ByVal personFullName As String, ByVal originX As Double, ByVal originY As Double)
+    'Calculate offsets from origin (origin is always just under the employee's card
+    OffsetX = -getCardWidth() / 2 - inputWhiteSpaceX
+    OffsetY = inputWhiteSpaceY
+    If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then OffsetY = OffsetY + getCommentBoxHeight()
+        
+    'Use these variables to propagate top to bottom of branch
+    xIterator = originX + OffsetX 'offset of vertical trunk
+    yIterator = originY + OffsetY 'offset of top horizontal connector
+        
+    Dim lowestSolidLineDirectReportY, lowestDottedLineDirectReportY As Double
+        
+    Set directReportsList = MyDictionaryPersonalInfo.Item(personFullName).DirectReports("sorted")
+        
+    'Start counting Shapes
+    ticShapesCounter = ActivePresentation.Slides(slideNumber).Shapes.Count
+        
+    'Create cards
+    For Each directReport In directReportsList.Item("All")
+        With MyDictionaryPersonalInfo.Item(directReport)
+            'Shift lower to point of joint
+            yIterator = yIterator + inputWhiteSpaceY + getCardHeight / 2
+            If .HasTwoManagers() Then yIterator = yIterator + inputWhiteSpaceY / 2 + getBubbleHeight()
+            
+            'Create card
+            Call createOrgChartElement(slideNumber, directReport, .ManagerType(personFullName), xIterator, yIterator, 4)
+            
+            'Save coordinates for connector lines
+            Select Case .ManagerType(personFullName)
+                Case "Solid"
+                    lowestSolidLineDirectReportY = yIterator
+                Case "Dotted"
+                    lowestDottedLineDirectReportY = yIterator
+            End Select
+            
+            'Shift lower to the end on card
+            yIterator = yIterator + getCardHeight / 2
+            If .TerminationDate <> "" Then yIterator = yIterator + getCommentBoxHeight()
+        End With
+    Next directReport
+        
+    'SOLID CONNECTOR LINES - Draw solid lines if there is at least one person with solid-line reporting
+    If directReportsList.Item("Dotted").Count < directReportsList.Item("All").Count Then
+        Call drawLineVertical(slideNumber, personFullName & "Subordinates" & "Tick" & "Solid", originX, originY, OffsetY, "Solid")
+
+        Call drawLineHorizontal(slideNumber, personFullName & "Subordinates" & "HorizontalConnector" & "Solid", originX, originY + OffsetY, OffsetX, "Solid")
+
+        Call drawLine(slideNumber, personFullName & "Subordinates" & "VerticalConnector" & "Solid", originX + OffsetX, originY + OffsetY, originX + OffsetX, lowestSolidLineDirectReportY, "Solid")
+    End If
+
+    'DOTTED CONNECTOR LINES - Draw solid lines if there is at least one person with solid-line reporting
+    If directReportsList.Item("Dotted").Count > 0 Then
+        Call drawLineVertical(slideNumber, personFullName & "Subordinates" & "Tick" & "Dotted", originX, originY, OffsetY, "Dotted")
+
+        Call drawLineHorizontal(slideNumber, personFullName & "Subordinates" & "HorizontalConnector" & "Dotted", originX, originY + OffsetY, OffsetX, "Dotted")
+
+        Call drawLine(slideNumber, personFullName & "Subordinates" & "VerticalConnector" & "Dotted", originX + OffsetX, originY + OffsetY, originX + OffsetX, lowestDottedLineDirectReportY, "Dotted")
+    End If
+        
+    'Stop counting Shapes
+    tocShapesCounter = ActivePresentation.Slides(slideNumber).Shapes.Count
+        
+    'Group all the shapes created
+    Call groupAllShapesInIndexList(slideNumber, ticShapesCounter, tocShapesCounter, personFullName & "Subordinates")
+End Sub
+
+Function sizeOf1DSubordinates(ByVal personFullName As String) As CTreeSize
+    Dim treeSizeNDFull As CTreeSize
+    Set treeSizeNDFull = New CTreeSize
+    
+    With treeSizeNDFull
+        'CALCULATE TOTAL WIDTH
+        .tWidth = inputWhiteSpaceX + getCardWidth()
+                    
+        'CALCULATE TOTAL HEIGHT
+        For Each directReport In MyDictionaryDirectReports.Item(personFullName)
+            .tHeight = .tHeight + inputWhiteSpaceY + sizeOfOrgChartElement(directReport, 4).tHeight
+        Next directReport
+    End With
+    
+    Set sizeOf1DSubordinates = treeSizeNDFull
+End Function

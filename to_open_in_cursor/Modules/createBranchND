@@ -1,0 +1,156 @@
+'If you need 4 cards on row the function will return {-1.5, -0.5, 0.5, 1.5}
+'If you need 3 cards on row the function will return {-0.5, 0, 0.5}
+Function createHorizontalShiftsMap(ByVal numberOfElementsOnRow As Integer) As Object
+    Set horizontalShiftsMap = New Collection
+    
+    'decide upon largest shift
+    customMappingIterator = -1 * (numberOfElementsOnRow - numberOfElementsOnRow Mod 2) / 2
+    
+    'perform mapping
+    For i = 1 To numberOfElementsOnRow
+        horizontalShiftsMap.add customMappingIterator - Sgn(customMappingIterator) * 0.5
+        
+        customMappingIterator = customMappingIterator + 1
+        If numberOfElementsOnRow Mod 2 = 0 And customMappingIterator = 0 Then customMappingIterator = customMappingIterator + 1
+    Next i
+    
+    Set createHorizontalShiftsMap = horizontalShiftsMap
+End Function
+
+Sub makeNDSubordinates(ByVal slideNumber As Integer, ByVal personFullName As String, ByVal originX As Double, ByVal originY As Double, ByVal numberOfPeopleOnRow As String)
+    Set horizontalShiftsMap = createHorizontalShiftsMap(CInt(numberOfPeopleOnRow))
+    
+    'Calculate offsets from origin (origin is always just under the employee's card
+    OffsetX = 0
+    OffsetY = inputWhiteSpaceY
+    If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then OffsetY = OffsetY + getCommentBoxHeight()
+        
+    'Use these variables to propagate top to bottom of branch
+    xIterator = originX + OffsetX 'offset of vertical trunk
+    yIterator = originY + OffsetY 'offset of top horizontal connector
+        
+    Dim lowestSolidLineDirectReportY, lowestDottedLineDirectReportY As Double
+        
+    Set directReportsAllList = MyDictionaryPersonalInfo.Item(personFullName).DirectReports("Sorted").Item("All")
+    
+    'Start counting Shapes
+    ticShapesCounter = ActivePresentation.Slides(slideNumber).Shapes.Count
+    
+    'Visualize part after part
+    Do While directReportsAllList.Count > 0
+        'Refresh the buffer variables
+        Set directReportsSublist = New Collection
+        
+        mixedlinePeopleOnCurrentRow = False
+        
+        minPeopleOnRow = CInt(numberOfPeopleOnRow)
+        If directReportsAllList.Count < minPeopleOnRow Then minPeopleOnRow = directReportsAllList.Count
+        
+        'Cut the people from directReportsAllList portion by portion to be visualized on this row
+        For i = 1 To minPeopleOnRow
+            directReport = directReportsAllList.Item(1)
+            'Add person to buffer
+            directReportsSublist.add directReport
+            
+            If MyDictionaryPersonalInfo.Item(directReport).ManagerType(personFullName) = "Solid" Then
+                lowestSolidLineDirectReportY = yIterator
+            Else
+                lowestDottedLineDirectReportY = yIterator
+            End If
+            
+            mixedlinePeopleOnCurrentRow = mixedlinePeopleOnCurrentRow Or MyDictionaryPersonalInfo.Item(directReport).HasTwoManagers()
+            
+            'remove from source
+            directReportsAllList.Remove (1)
+        Next i
+        
+        'Create cards, ticks and connectors
+        For i = 1 To directReportsSublist.Count
+            directReport = directReportsSublist(i)
+            hLineLength = horizontalShiftsMap(i) * (inputWhiteSpaceX + getCardWidth())
+            
+            'Create cards with beautiful ticks and connectors
+            With MyDictionaryPersonalInfo.Item(directReport)
+                If Not .HasTwoManagers() And mixedlinePeopleOnCurrentRow Then inputWhiteSpaceY = inputWhiteSpaceY + getBubbleHeight()
+                Call createOrgChartElement(slideNumber, directReport, .ManagerType(personFullName), originX + hLineLength, yIterator, 1)
+                If Not .HasTwoManagers() And mixedlinePeopleOnCurrentRow Then inputWhiteSpaceY = inputWhiteSpaceY - getBubbleHeight()
+                
+                Call drawLineHorizontal(slideNumber, directReport & "HorizontalConnector" & .ManagerType(personFullName), originX, yIterator, hLineLength, .ManagerType(personFullName))
+            End With
+        Next i
+            
+        yIterator = yIterator + inputWhiteSpaceY + getAlignedRowHeight(directReportsSublist)
+    Loop
+    Set directReportsList = MyDictionaryPersonalInfo.Item(personFullName).DirectReports("sorted")
+
+    'Bring all dotted-line horizontal connectors to front
+    For Each directReport In MyDictionaryPersonalInfo.Item(personFullName).DirectReports("sorted").Item("Dotted")
+        ActiveWindow.Selection.SlideRange.Shapes(directReport & "HorizontalConnector" & "Dotted").Select
+        ActiveWindow.Selection.ShapeRange.ZOrder msoBringToFront
+    Next directReport
+    
+   'SOLID CONNECTOR LINES - Draw solid lines if there is at least one person with solid-line reporting
+    If directReportsList.Item("Dotted").Count < directReportsList.Item("All").Count Then
+        Call drawLineVertical(slideNumber, personFullName & "Subordinates" & "Tick" & "Solid", originX, originY, OffsetY, "Solid")
+
+        Call drawLine(slideNumber, personFullName & "Subordinates" & "VerticalConnector" & "Solid", originX + OffsetX, originY + OffsetY, originX + OffsetX, lowestSolidLineDirectReportY, "Solid")
+    End If
+
+    'DOTTED CONNECTOR LINES - Draw solid lines if there is at least one person with solid-line reporting
+    If directReportsList.Item("Dotted").Count > 0 Then
+        Call drawLineVertical(slideNumber, personFullName & "Subordinates" & "Tick" & "Dotted", originX, originY, OffsetY, "Dotted")
+
+        Call drawLine(slideNumber, personFullName & "Subordinates" & "VerticalConnector" & "Dotted", originX + OffsetX, originY + OffsetY, originX + OffsetX, lowestDottedLineDirectReportY, "Dotted")
+    End If
+'
+    'Stop counting Shapes
+    tocShapesCounter = ActivePresentation.Slides(slideNumber).Shapes.Count
+        
+    'Group all the shapes created
+    Call groupAllShapesInIndexList(slideNumber, ticShapesCounter, tocShapesCounter, personFullName & "Subordinates")
+End Sub
+
+Function sizeOfNDSubordinates(ByVal personFullName As String, ByVal regimePeopleOnRow As String) As CTreeSize
+    Dim treeSizeNDFull As CTreeSize
+    Set treeSizeNDFull = New CTreeSize
+    
+    With treeSizeNDFull
+        numberOfPeopleOnRow = CInt(regimePeopleOnRow)
+                    
+        Set directReportsList = MyDictionaryPersonalInfo.Item(personFullName).DirectReports("Sorted").Item("All")
+             
+        'CALCULATE TOTAL WIDTH
+        Dim minPeopleOnRow As Double
+            
+        Set horizontalShiftsMap = createHorizontalShiftsMap(numberOfPeopleOnRow)
+        hLineLeftAbs = Abs(horizontalShiftsMap(1) * (inputWhiteSpaceX + getCardWidth()))
+        If directReportsList.Count <= numberOfPeopleOnRow / 2 Then
+            hLineRightAbs = -getCardWidth() / 2
+        Else
+            minPeopleOnRow = directReportsList.Count
+            If numberOfPeopleOnRow < directReportsList.Count Then minPeopleOnRow = numberOfPeopleOnRow
+        
+            hLineRightAbs = Abs(horizontalShiftsMap(minPeopleOnRow) * (inputWhiteSpaceX + getCardWidth()))
+        End If
+                    
+        .tWidth = hLineLeftAbs + hLineRightAbs + getCardWidth()
+                    
+        'CALCULATE TOTAL HEIGHT
+        Do While directReportsList.Count > 0
+            Set directReportsSublist = New Collection
+            
+            minPeopleOnRow = directReportsList.Count
+            If numberOfPeopleOnRow < directReportsList.Count Then minPeopleOnRow = numberOfPeopleOnRow
+            
+            For i = 1 To minPeopleOnRow
+                directReportsSublist.add directReportsList.Item(1)
+                directReportsList.Remove (1)
+            Next i
+                        
+            .tHeight = .tHeight + getAlignedRowHeight(directReportsSublist)
+            If directReportsList.Count > 0 Then .tHeight = .tHeight + inputWhiteSpaceY
+        Loop
+    End With
+    
+    Set sizeOfNDSubordinates = treeSizeNDFull
+End Function

@@ -1,0 +1,16 @@
+Private etWidth As Double
+Private etHeight As Double
+
+Public Property Get tWidth() As Double
+    tWidth = etWidth
+End Property
+Public Property Let tWidth(Value As Double)
+    etWidth = Value
+End Property
+
+Public Property Get tHeight() As Double
+    tHeight = etHeight
+End Property
+Public Property Let tHeight(Value As Double)
+    etHeight = Value
+End Property

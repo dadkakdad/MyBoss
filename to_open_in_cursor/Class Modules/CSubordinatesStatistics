@@ -1,0 +1,112 @@
+Private eSubordinatesCardsInFullTree As Integer
+
+Private eSubordinatesNumber As Integer
+Private eSubordinatesInHomeCityNumber As Integer
+
+Private eOrdinaryNumber As Integer
+Private eImportantNumber As Integer
+Private eOutsourceNumber As Integer
+
+
+'--- Synthetic info about employee
+Public Property Get SubordinatesCardsInFullTree() As Integer
+    SubordinatesCardsInFullTree = eSubordinatesCardsInFullTree
+End Property
+
+Public Property Let SubordinatesCardsInFullTree(Value As Integer)
+    eSubordinatesCardsInFullTree = Value
+End Property
+
+Public Property Get SubordinatesNumber() As Integer
+    SubordinatesNumber = eSubordinatesNumber
+End Property
+
+Public Property Let SubordinatesNumber(Value As Integer)
+    eSubordinatesNumber = Value
+End Property
+
+Public Property Get SubordinatesInHomeCityNumber() As Integer
+    SubordinatesInHomeCityNumber = eSubordinatesInHomeCityNumber
+End Property
+
+Public Property Let SubordinatesInHomeCityNumber(Value As Integer)
+    eSubordinatesInHomeCityNumber = Value
+End Property
+
+Public Property Get OrdinaryNumber() As Integer
+    OrdinaryNumber = eOrdinaryNumber
+End Property
+
+Public Property Let OrdinaryNumber(Value As Integer)
+    eOrdinaryNumber = Value
+End Property
+
+Public Property Get OutsourceNumber() As Integer
+    OutsourceNumber = eOutsourceNumber
+End Property
+
+Public Property Let OutsourceNumber(Value As Integer)
+    eOutsourceNumber = Value
+End Property
+
+Public Property Get ImportantNumber() As Integer
+    ImportantNumber = eImportantNumber
+End Property
+
+Public Property Let ImportantNumber(Value As Integer)
+    eImportantNumber = Value
+End Property
+
+Public Sub ResetToZero()
+    Me.SubordinatesCardsInFullTree = 0
+    Me.SubordinatesNumber = 0
+    Me.SubordinatesInHomeCityNumber = 0
+    Me.OrdinaryNumber = 0
+    Me.OutsourceNumber = 0
+    Me.ImportantNumber = 0
+End Sub
+
+Public Sub ResetToDefault()
+     Me.SubordinatesCardsInFullTree = -1
+     Me.SubordinatesNumber = -1
+     Me.SubordinatesInHomeCityNumber = -1
+     Me.OrdinaryNumber = -1
+     Me.OutsourceNumber = -1
+     Me.ImportantNumber = -1
+End Sub
+
+Public Property Get IsDefault() As Boolean
+    If Me.SubordinatesCardsInFullTree = -1 And Me.SubordinatesNumber = -1 And Me.SubordinatesInHomeCityNumber = -1 And Me.OrdinaryNumber = -1 And Me.OutsourceNumber = -1 And Me.ImportantNumber = -1 Then
+        IsDefault = True
+    Else
+        IsDefault = False
+    End If
+End Property
+
+Public Sub add(Value As CSubordinatesStatistics)
+     Me.SubordinatesCardsInFullTree = Me.SubordinatesCardsInFullTree + Value.SubordinatesCardsInFullTree
+     Me.SubordinatesNumber = Me.SubordinatesNumber + Value.SubordinatesNumber
+     Me.SubordinatesInHomeCityNumber = Me.SubordinatesInHomeCityNumber + Value.SubordinatesInHomeCityNumber
+     Me.OrdinaryNumber = Me.OrdinaryNumber + Value.OrdinaryNumber
+     Me.OutsourceNumber = Me.OutsourceNumber + Value.OutsourceNumber
+     Me.ImportantNumber = Me.ImportantNumber + Value.ImportantNumber
+End Sub
+
+Public Property Get ByType(employeeType As String) As Integer
+     Select Case employeeType
+        Case "cards"
+            ByType = Me.SubordinatesCardsInFullTree
+        Case "all"
+            ByType = Me.SubordinatesNumber
+        Case "allinhomecity"
+            ByType = Me.SubordinatesInHomeCityNumber
+        Case "ordinary"
+            ByType = Me.OrdinaryNumber
+        Case "important"
+            ByType = Me.ImportantNumber
+        Case "outsource"
+            ByType = Me.OutsourceNumber
+        Case Else
+            ByType = -1
+    End Select
+End Property

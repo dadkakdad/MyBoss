@@ -1,0 +1,243 @@
+Public selectedPersonName As String
+Public selectedPersonManagerType As String
+
+'straightforward tree creation functions
+Sub create0DKingBranch(control As IRibbonControl)
+    mainSwitch ("element_head")
+End Sub
+Sub create0DBranch(control As IRibbonControl)
+    mainSwitch ("element_single")
+End Sub
+Sub create1DBranch(control As IRibbonControl)
+    mainSwitch ("branch_1")
+End Sub
+Sub create2DBranch(control As IRibbonControl)
+    mainSwitch ("branch_2")
+End Sub
+Sub create4DBranch(control As IRibbonControl)
+    mainSwitch ("branch_4")
+End Sub
+Sub createAutoDBranch(control As IRibbonControl)
+    mainSwitch ("branch_clever")
+End Sub
+
+Sub createFullTreeStraightforward(control As IRibbonControl)
+    mainSwitch ("full_tree")
+End Sub
+
+'clever tree creation functions
+Sub createFullTreeClever(control As IRibbonControl)
+    mainSwitch ("full_tree_clever")
+End Sub
+Sub createFullTreeInfinity(control As IRibbonControl)
+    mainSwitch ("full_tree_infinity")
+End Sub
+
+'clever tree functions depending of input Full Name
+Sub checkPeople(control As IRibbonControl)
+    mainSwitch ("check_people")
+End Sub
+
+Sub mainSwitch(ByVal regime As String)
+    stopExecutionFlag = False
+    
+    On Error GoTo globalErrorHandler
+    slideNumber = ActiveWindow.Selection.SlideRange.slideIndex  'ActivePresentation.Windows(1).View.Slide.slideIndex
+    
+    On Error GoTo 0
+    
+    Dim personFullName As String
+    
+    Dim selectedShapeType As String
+    
+    'First get the name of person written in textbox
+    If inputPersonFullName = "" Then
+        'personFullName = checkPersonExists(inputPersonFullName)
+        MsgBox ("Employee's full name undefined. Might be you clicked on a person from another Excel sheet.")
+        Exit Sub
+    Else
+        personFullName = inputPersonFullName
+    End If
+    
+    positionSetFlag = False
+    
+    'Define head of tree and his position (X,Y)
+    Dim posX, posY As Double
+    With ActiveWindow.Selection 'ActivePresentation.Windows(1).Selection
+        If personFullName = selectedPersonName And (.Type = ppSelectionShapes Or .Type = ppSelectionText) Then
+            If .ShapeRange.Count = 1 Then
+                Select Case .ShapeRange(1).Name
+                    Case selectedPersonName & selectedPersonManagerType
+                        selectedShapeType = ""
+                        positionSetFlag = True
+                    Case selectedPersonName & "Card" & selectedPersonManagerType
+                        selectedShapeType = "Card"
+                        positionSetFlag = True
+                    Case Else
+                        MsgBox ("Too complex object selected." & vbCrLf & _
+                                "Please ungroup it and select only ONE employee's card.")
+                        Exit Sub
+                End Select
+            Else
+                MsgBox ("More than one shape selected - can't figure out the head of tree." & vbCrLf & _
+                        "Please select only ONE employee's card.")
+                Exit Sub
+            End If
+        End If
+
+        If positionSetFlag = False Then
+            posX = Application.ActivePresentation.PageSetup.SlideWidth / 4
+            posY = 140 / 2
+        Else
+            'middle of card
+            posX = .ShapeRange(1).GroupItems(selectedPersonName & "MainBackground" & selectedPersonManagerType).Left + .ShapeRange(1).GroupItems(selectedPersonName & "MainBackground" & selectedPersonManagerType).Width / 2
+            'bottom of card
+            posY = .ShapeRange(1).GroupItems(selectedPersonName & "MainBackground" & selectedPersonManagerType).Top + .ShapeRange(1).GroupItems(selectedPersonName & "MainBackground" & selectedPersonManagerType).Height
+            
+            'case when card tick is below the card
+            If selectedShapeType = "" Then
+                tickPosX = .ShapeRange(1).GroupItems(selectedPersonName & "Tick" & selectedPersonManagerType).Left + .ShapeRange(1).GroupItems(selectedPersonName & "Tick" & selectedPersonManagerType).Width / 2
+                tickPosY = .ShapeRange(1).GroupItems(selectedPersonName & "Tick" & selectedPersonManagerType).Top + .ShapeRange(1).GroupItems(selectedPersonName & "Tick" & selectedPersonManagerType).Height
+                
+                If tickPosY > posY Then
+                    posY = tickPosY
+                End If
+            End If
+        End If
+    End With
+    
+    'Figure out person-to-be-visualized full name key
+    Dim personToBeVisualizedFullName, personToBeVisualizedManagerType As String
+    Dim OffsetY As Double
+    If positionSetFlag Then
+        personToBeVisualizedFullName = selectedPersonName
+        personToBeVisualizedManagerType = selectedPersonManagerType
+        
+        'calculate offset in case card is selected; offset is to keep the center of the card on it's place
+        OffsetY = ActivePresentation.Slides(slideNumber).Shapes(selectedPersonName & selectedShapeType & selectedPersonManagerType).Height
+        If MyDictionaryPersonalInfo.Item(selectedPersonName).TerminationDate <> "" Then
+            OffsetY = OffsetY - getCommentBoxHeight()
+        End If
+        If selectedShapeType = "Card" Then
+            OffsetY = OffsetY + inputWhiteSpaceY
+        End If
+    Else
+        personToBeVisualizedFullName = personFullName
+        personToBeVisualizedManagerType = MyDictionaryPersonalInfo.Item(personToBeVisualizedFullName).ManagerType(MyDictionaryPersonalInfo.Item(personToBeVisualizedFullName).FullNameManagerKey)
+    End If
+    
+    Call openProgressBar("", -1, False)
+    
+    '------------------ DELETE EXISTING CARDS -------------------
+    If regime <> "full_tree_clever" And regime <> "full_tree_infinity" And regime <> "check_people" Then
+        Call updateTaskBar("Erasing...")
+        Call updateProgressBar(0)
+        orgchartElementDeletedCounter = 0
+    End If
+    
+    Select Case regime
+        Case "element_head", "element_single"
+            Call eraseSingleElement(slideNumber, personToBeVisualizedFullName, personToBeVisualizedManagerType)
+            Call eraseShape(slideNumber, "DepartmentGroup")
+            Call eraseShape(slideNumber, "DepartmentManagerFullName")
+            Call eraseShape(slideNumber, "DepartmentName")
+            Call eraseShape(slideNumber, "DepartmentStatistics")
+            
+            Call eraseShape(slideNumber, "LegendGroup")
+            Call eraseShape(slideNumber, "LegendTitle")
+            Call eraseShape(slideNumber, "OrdinaryStyle")
+            Call eraseShape(slideNumber, "OrdinaryTitle")
+            Call eraseShape(slideNumber, "OrdinaryExample")
+            Call eraseShape(slideNumber, "ImportantStyle")
+            Call eraseShape(slideNumber, "ImportantTitle")
+            Call eraseShape(slideNumber, "ImportantExample")
+            Call eraseShape(slideNumber, "OutsourceStyle")
+            Call eraseShape(slideNumber, "OutsourceTitle")
+            Call eraseShape(slideNumber, "OutsourceExample")
+            
+        Case "branch_1", "branch_2", "branch_4", "branch_clever", "full_tree"
+            Call eraseSubordinates(slideNumber, personToBeVisualizedFullName)
+    End Select
+    
+    '------------------ CREATE NEW CARDS -------------------
+    orgchartElementCreatedCounter = 0
+    'create cards
+    If regime <> "full_tree_clever" And regime <> "full_tree_infinity" And regime <> "check_people" Then
+        Call updateTaskBar("Creating...")
+        Call updateProgressBar(0)
+    End If
+    
+    Select Case regime
+        Case "element_head"
+            orgchartElementToCreate = 1
+            
+            Call makeHeadOfTree(slideNumber, personToBeVisualizedFullName)
+            Call addDescriptionUtility(slideNumber, personToBeVisualizedFullName)
+        Case "element_single"
+            orgchartElementToCreate = 1
+            
+            Call createOrgChartElement(slideNumber, personToBeVisualizedFullName, personToBeVisualizedManagerType, posX, posY - OffsetY, 1)
+        Case "branch_1", "branch_2", "branch_4", "branch_clever", "full_tree" 'creates only subordinates
+            If regime = "full_tree" Then
+                Call updateCancelButtonVisibility(True)
+            End If
+            
+            'for mixed-line person : we draw tree if he is dotted line connected
+            'for non-mixed-line person: we always draw tree
+            'Change 30/03/2018 - to show people under solid-line managers
+            'If ((MyDictionaryPersonalInfo(personToBeVisualizedFullName).HasTwoManagers() And personToBeVisualizedManagerType = "Dotted") Or Not (MyDictionaryPersonalInfo(personToBeVisualizedFullName).HasTwoManagers())) And MyDictionaryDirectReports.Item(personToBeVisualizedFullName).Count > 0 Then
+            If ((MyDictionaryPersonalInfo.Item(personToBeVisualizedFullName).HasTwoManagers() And personToBeVisualizedManagerType = "Solid") Or Not (MyDictionaryPersonalInfo.Item(personToBeVisualizedFullName).HasTwoManagers())) And MyDictionaryDirectReports.Item(personToBeVisualizedFullName).Count > 0 Then
+                
+                'Get the number of cards to be created
+                orgchartElementToCreate = MyDictionaryPersonalInfo.Item(personToBeVisualizedFullName).DirectReports("Unsorted").Item("All").Count
+                If regime = "full_tree" Then
+                    orgchartElementToCreate = MyDictionaryPersonalInfo.Item(personToBeVisualizedFullName).HeadcountStats.SubordinatesCardsInFullTree
+                End If
+                
+                createdTreeName = makeTree(slideNumber, personToBeVisualizedFullName, personToBeVisualizedManagerType, posX, posY, "Subordinates", regime, synthesizeInputAllDirectReportsVisible(personToBeVisualizedFullName))
+                If createdTreeName = "brokenTree" Then
+                    Exit Sub
+                End If
+                
+                'Send Subordinates back for visual appeal
+                ActiveWindow.Selection.SlideRange.Shapes(createdTreeName).Select
+                ActiveWindow.Selection.ShapeRange.ZOrder msoSendToBack
+            End If
+        Case "full_tree_clever"
+            Call updateCancelButtonVisibility(True)
+            Call refreshSubordinatesChecklist(personToBeVisualizedFullName)
+            orgchartElementToCreate = MyDictionarySubordinatesChecklist.Count
+            
+            Call makeFullTreeAuto(addEmptySlideUtility("insert"), personToBeVisualizedFullName, False)
+        Case "full_tree_infinity"
+            Call updateCancelButtonVisibility(True)
+            Call refreshSubordinatesChecklist(personToBeVisualizedFullName)
+            orgchartElementToCreate = MyDictionarySubordinatesChecklist.Count
+            
+            Call makeFullTreeAuto(addEmptySlideUtility("add"), personToBeVisualizedFullName, True)
+        Case "check_people"
+            'doesn't involve any shapes copy/paste
+            Call showWhomIForgot(personFullName)
+    End Select
+    
+    Call closeProgressBar
+    
+    'Select the "mother" shape before quiting
+    If positionSetFlag And regime <> "full_tree_clever" And regime <> "full_tree_infinity" And regime <> "check_people" Then
+        'Try "Card" (if tick was erased by accident)
+        If Not checkShapeExists(slideNumber, personToBeVisualizedFullName & "Card" & personToBeVisualizedManagerType) Is Nothing Then
+            checkShapeExists(slideNumber, personToBeVisualizedFullName & "Card" & personToBeVisualizedManagerType).Select
+        End If
+        
+        'Try full card
+        If Not checkShapeExists(slideNumber, personToBeVisualizedFullName & personToBeVisualizedManagerType) Is Nothing Then
+            checkShapeExists(slideNumber, personToBeVisualizedFullName & personToBeVisualizedManagerType).Select
+        End If
+    End If
+    
+    Exit Sub
+globalErrorHandler:
+    If Err.Number = -2147188160 Then
+        MsgBox ("Please select the slide before creating orgtree.")
+    End If
+End Sub

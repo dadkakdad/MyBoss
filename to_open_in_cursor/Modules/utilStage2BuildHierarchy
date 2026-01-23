@@ -1,0 +1,99 @@
+Function buildHierarchy() As Boolean
+    MyDictionaryCeoCandidates.RemoveAll
+    
+    MyDictionaryPersonalInfo.RemoveAll
+    
+    MyDictionaryDirectReports.RemoveAll
+     
+    Dim numberOfEmptyRows As Integer
+    numberOfEmptyRows = 0
+
+    Dim numberOfPeopleUploaded As Integer
+    numberOfPeopleUploaded = 0
+    totalNumberOfEmployeesToLoad = UBound(employeesList, 1)
+    
+    Dim bufferEmployee As CEmployee
+    Dim bufferEmployeeManager As String
+    
+    Call openProgressBar("Initializing...", -1, False)
+    
+    Call updateTaskBar("Uploading...")
+    Call updateProgressBar(0)
+    
+    'Iterate throught the whole excel sheet line by line
+    For rowIterator = LBound(employeesList, 1) To UBound(employeesList, 1)
+        'Extract row from Excel and save it in collection
+        Set bufferEmployee = extractEmployeeInfo(rowIterator)
+       
+        If bufferEmployee Is Nothing Then
+            buildHierarchy = False
+            Call closeProgressBar
+            Exit Function
+        End If
+
+        If bufferEmployee.FullNameKey = "" Then
+            numberOfEmptyRows = numberOfEmptyRows + 1
+        Else
+            If MyDictionaryPersonalInfo.Exists(bufferEmployee.FullNameKey) Then
+                MyDictionaryPersonalInfo.Item(bufferEmployee.FullNameKey).Duplicates = MyDictionaryPersonalInfo.Item(bufferEmployee.FullNameKey).Duplicates + 1
+                bufferEmployee.DuplicateId = CStr(MyDictionaryPersonalInfo.Item(bufferEmployee.FullNameKey).Duplicates + 1)
+            End If
+            
+            'PERSONAL INFO - Add employee to the list of all people
+            MyDictionaryPersonalInfo.add bufferEmployee.FullNameKey, bufferEmployee
+            
+            'TOP-LEVEL MANAGER INFO - Pre-save CEO candidates
+            If bufferEmployee.FullNameSolidLineManagerKey = "" Then
+                MyDictionaryCeoCandidates.add bufferEmployee.FullNameKey, New Collection
+                MyDictionaryCeoCandidates.Item(bufferEmployee.FullNameKey).add rowIterator
+            End If
+            
+            'DIRECT REPORTS INFO - Check if there is a direct report container already, otherwise create new one
+            If Not MyDictionaryDirectReports.Exists(bufferEmployee.FullNameKey) Then MyDictionaryDirectReports.add bufferEmployee.FullNameKey, New Collection
+            
+            'Add Solid-Line Manager
+            bufferEmployeeManager = bufferEmployee.FullNameSolidLineManagerKey
+            If Not MyDictionaryDirectReports.Exists(bufferEmployeeManager) Then MyDictionaryDirectReports.add bufferEmployeeManager, New Collection
+            MyDictionaryDirectReports.Item(bufferEmployeeManager).add bufferEmployee.FullNameKey
+            
+            'Add Dotted-Line Manager if any
+            bufferEmployeeManager = bufferEmployee.FullNameDottedLineManagerKey
+            If bufferEmployeeManager <> "" Then
+                If Not MyDictionaryDirectReports.Exists(bufferEmployeeManager) Then MyDictionaryDirectReports.add bufferEmployeeManager, New Collection
+                MyDictionaryDirectReports.Item(bufferEmployeeManager).add bufferEmployee.FullNameKey
+            End If
+            
+            If Not bufferEmployee.IsToBeHired Then numberOfPeopleUploaded = numberOfPeopleUploaded + 1
+            
+            Call updateProgressBar(numberOfPeopleUploaded / totalNumberOfEmployeesToLoad)
+       End If
+    Next rowIterator
+    Call closeProgressBar
+    
+    Select Case MyDictionaryCeoCandidates.Count
+        Case 0
+            Call closeProgressBar
+            MsgBox ("Couldn't identify CEO in the list of employees." & vbCrLf & _
+            "Remember: CEO should have emply Solid Line Manager fields.")
+            buildHierarchy = False
+        Case 1
+            inputCEOFullName = MyDictionaryCeoCandidates.keys(0)
+            inputCompanySize = numberOfPeopleUploaded
+            buildHierarchy = True
+        Case Else
+             bufferOutput = "Data Input Error. Multiple employees without Solid Line Manager:" & vbCrLf & vbCrLf
+            For Each candidate In MyDictionaryCeoCandidates
+                RowIndex = MyDictionaryCeoCandidates.Item(candidate).Item(1)
+            
+                bufferOutput = bufferOutput & " - " & MyDictionaryPersonalInfo.Item(candidate).FullName & " (line " & RowIndex & ")" & vbCrLf
+            Next candidate
+        
+            bufferOutput = bufferOutput & vbCrLf & "Remember: Solid Line Manager fields must be filled for everyone except CEO."
+            
+            Call closeProgressBar
+            MsgBox (bufferOutput)
+        
+            buildHierarchy = False
+        Exit Function
+    End Select
+End Function

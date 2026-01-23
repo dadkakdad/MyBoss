@@ -1,0 +1,233 @@
+'-----------------------------------------------------------
+'---------- BORDERS AND SAFEZONES NAME CONVENTION ----------
+'-----------------------------------------------------------
+  
+'  |-------------------------------------------------------------- ---> (X)
+'  |                       verticalStripeTop
+'  |
+'  |                         ---- TOP -- --
+'  |                        |              |
+'  |                        |              |
+'  |  verticalStripeLeft    LEFT           RIGHT    verticalStripeRight
+'  |                        |              |
+'  |                        |              |
+'  |                         --- BOTTOM ---
+'  |
+'  |                      verticalStripeBottom
+'  |
+'  V
+' (Y)
+
+'Each shape is approximated as square
+Private eTopBorder As Double
+Private eRightBorder As Double
+Private eBottomBorder As Double
+Private eLeftBorder As Double
+
+Private eDepartmentName As String
+
+Private eShapeName As String
+Private eShapeZOrder As Integer
+
+'Assign value to left border X
+Public Property Let LeftBorder(Value As Double)
+    eLeftBorder = Value
+End Property
+
+Public Property Get LeftBorder() As Double
+    LeftBorder = eLeftBorder
+End Property
+
+'Assign value to right border X
+Public Property Let RightBorder(Value As Double)
+    eRightBorder = Value
+End Property
+
+Public Property Get RightBorder() As Double
+    RightBorder = eRightBorder
+End Property
+
+'Assign value to top border Y
+Public Property Let TopBorder(Value As Double)
+    eTopBorder = Value
+End Property
+
+Public Property Get TopBorder() As Double
+    TopBorder = eTopBorder
+End Property
+
+'Assign value to bottom border Y
+Public Property Let BottomBorder(Value As Double)
+    eBottomBorder = Value
+End Property
+
+Public Property Get BottomBorder() As Double
+    BottomBorder = eBottomBorder
+End Property
+
+'Recalculation methods for convenience
+Public Property Get Width() As Integer
+    Width = Me.RightBorder - Me.LeftBorder
+End Property
+
+Public Property Get Height() As Integer
+    Height = Me.BottomBorder - Me.TopBorder
+End Property
+
+'Save text to use as shade signature
+Public Property Let DepartmentName(Value As String)
+    eDepartmentName = Value
+End Property
+
+Public Property Get DepartmentName() As String
+    DepartmentName = eDepartmentName
+End Property
+
+'To save connection to real shapes on slide
+Public Property Let shapeName(Value As String)
+    eShapeName = Value
+End Property
+
+Public Property Get shapeName() As String
+    shapeName = eShapeName
+End Property
+
+'Save custom zorder value
+Public Property Let ShapeZOrder(Value As Integer)
+    eShapeZOrder = Value
+End Property
+
+Public Property Get ShapeZOrder() As Integer
+    ShapeZOrder = eShapeZOrder
+End Property
+
+'-----------------------------------------------------------
+'----------- METHODS AFFECTING VIRTUAL RECT SIZE -----------
+'-----------------------------------------------------------
+
+'Custom class constructor
+Public Sub dimensions(ByVal topBorderValue As Double, ByVal rightBorderValue As Double, ByVal bottomBorderValue As Double, ByVal leftBorderValue As Double)
+    Me.TopBorder = topBorderValue
+    Me.RightBorder = rightBorderValue
+    Me.BottomBorder = bottomBorderValue
+    Me.LeftBorder = leftBorderValue
+End Sub
+
+'Class constructor aka VBA Object Model
+Public Sub dimensionsVBAStyle(ByVal topLeftCornerX As Double, ByVal topLeftCornerY As Double, ByVal shapeWidth As Double, ByVal shapeHeight As Double)
+    Me.dimensions topLeftCornerY, topLeftCornerX + shapeWidth, topLeftCornerY + shapeHeight, topLeftCornerX
+End Sub
+
+'Copy function for convenience
+Public Sub dimensionsCopy(shapeDimensionsDonor As CVirtualShade)
+    With shapeDimensionsDonor
+        Me.dimensions .TopBorder, .RightBorder, .BottomBorder, .LeftBorder
+    End With
+End Sub
+
+Public Sub dimensionsPreset(ByVal regime As String)
+    Select Case regime
+        Case "default"
+            Call Me.dimensions(1000000, -1000000, -1000000, 1000000)
+        Case "full_slide"
+            Call Me.dimensions(const_slideTopBorder, const_slideRightBorder, const_slideBottomBorder, const_slideLeftBorder)
+    End Select
+End Sub
+
+'Stretch original shape to make it include candidate shape
+Public Sub insertShapeInside(shapeCandidate As CVirtualShade)
+    With shapeCandidate
+        If .TopBorder < Me.TopBorder Then Me.TopBorder = .TopBorder
+        If .RightBorder > Me.RightBorder Then Me.RightBorder = .RightBorder
+        If .BottomBorder > Me.BottomBorder Then Me.BottomBorder = .BottomBorder
+        If .LeftBorder < Me.LeftBorder Then Me.LeftBorder = .LeftBorder
+    End With
+End Sub
+
+'-----------------------------------------------------------
+'----------- METHODS ABOUT VIRTUAL RECT LOCATION -----------
+'-----------------------------------------------------------
+
+'Check whether vertex is inside shape area of Me
+Public Function vertexInsideUtil(ByVal xCandidate As Double, ByVal yCandidate As Double) As Boolean
+    If xCandidate >= Me.LeftBorder And xCandidate <= Me.RightBorder And yCandidate <= Me.BottomBorder And yCandidate >= Me.TopBorder Then
+        vertexInsideUtil = True
+    Else
+        vertexInsideUtil = False
+    End If
+End Function
+
+'If any of 4 vertexes of candidate's area is INSIDE ME shape's area, then True (at least the tip of a corner is over iriginal shape)
+'INTERSECTION SHOULD BE CHECKED VICE VERSA because no matter what shape is over what shape
+Public Function intersectsWith(shapeCandidate As CVirtualShade) As Boolean
+    With shapeCandidate
+        If vertexInsideUtil(.RightBorder, .TopBorder) Or .vertexInsideUtil(Me.RightBorder, Me.TopBorder) Or _
+            vertexInsideUtil(.RightBorder, .BottomBorder) Or .vertexInsideUtil(Me.RightBorder, Me.BottomBorder) Or _
+            vertexInsideUtil(.LeftBorder, .BottomBorder) Or .vertexInsideUtil(Me.LeftBorder, Me.BottomBorder) Or _
+            vertexInsideUtil(.LeftBorder, .TopBorder) Or .vertexInsideUtil(Me.LeftBorder, Me.TopBorder) Then
+            intersectsWith = True
+        Else
+            intersectsWith = False
+        End If
+    End With
+End Function
+
+'If all 4 vertexes of candidate's area are INSIDE ME shape's area, then True (the whole candidate shape is inside original shape)
+'shape order is important
+Public Function hasShapeInside(shapeCandidate As CVirtualShade) As Boolean
+    If vertexInsideUtil(shapeCandidate.RightBorder, shapeCandidate.TopBorder) And _
+        vertexInsideUtil(shapeCandidate.RightBorder, shapeCandidate.BottomBorder) And _
+        vertexInsideUtil(shapeCandidate.LeftBorder, shapeCandidate.BottomBorder) And _
+        vertexInsideUtil(shapeCandidate.LeftBorder, shapeCandidate.TopBorder) Then
+        hasShapeInside = True
+    Else
+        hasShapeInside = False
+    End If
+End Function
+
+'Check whether stretching reference shape should take original shape position into account
+Public Function Location(shapeReference As CVirtualShade) As String
+    Location = "intersecting"
+    If Not Me.intersectsWith(shapeReference) Then
+        Location = "safe_zone"
+        
+        'Initialize variables
+        Dim verticalStripeTop, verticalStripeBottom  As CVirtualShade
+        Dim horizontalStripeRight, horizontalStripeLeft  As CVirtualShade
+        
+        Set verticalStripeTop = New CVirtualShade
+        Set horizontalStripeRight = New CVirtualShade
+        Set verticalStripeBottom = New CVirtualShade
+        Set horizontalStripeLeft = New CVirtualShade
+        
+        'Set the values
+        With shapeReference
+            verticalStripeTop.dimensions -1000, .RightBorder, .TopBorder, .LeftBorder
+            horizontalStripeRight.dimensions .TopBorder, 1000, .BottomBorder, .RightBorder
+            verticalStripeBottom.dimensions .BottomBorder, .RightBorder, 1000, .LeftBorder
+            horizontalStripeLeft.dimensions .TopBorder, .LeftBorder, .BottomBorder, -1000
+        End With
+        
+        'Run location check
+        If verticalStripeTop.intersectsWith(Me) Then Location = "top"
+        If horizontalStripeRight.intersectsWith(Me) Then Location = "right"
+        If verticalStripeBottom.intersectsWith(Me) Then Location = "bottom"
+        If horizontalStripeLeft.intersectsWith(Me) Then Location = "left"
+    End If
+End Function
+
+'-----------------------------------------------------------
+'------------------- DIAGNOSTICS METHODS -------------------
+'-----------------------------------------------------------
+
+'Visualize the area occupied by virtual rectangle
+Public Sub visualizeColorful(ByVal slideNumber As Integer)
+    With ActivePresentation.Slides(slideNumber).Shapes.AddShape(msoShapeRectangle, Me.LeftBorder, Me.TopBorder, Me.Width, Me.Height).Fill
+        .ForeColor.RGB = RGB(wfRandomIntegerInRange(0, 255), wfRandomIntegerInRange(0, 255), wfRandomIntegerInRange(0, 255))
+    End With
+End Sub
+
+'------------------------------------------- HELPFUL COMMENT ----------------------------------------------
+'MyDictionaryOrgElements.Item(personFullName).visualize (slideNumber)
+'ActivePresentation.Slides(slideNumber).Shapes(ActivePresentation.Slides(slideNumber).Shapes.count).Delete
+'----------------------------------------------------------------------------------------------------------

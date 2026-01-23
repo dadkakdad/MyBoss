@@ -1,0 +1,53 @@
+'https://warwick.ac.uk/fac/sci/systemsbiology/staff/dyer/software/excelvbafileopen/
+
+Function browseFile() As String
+    #If Mac Then
+        seedPath = Replace(ActivePresentation.Path, "/", ":")
+    
+        If CheckAppleScriptTaskPowerPointScriptFile("MyBoss-browse_files_on_mac.scpt") = True Then
+            filePath = CStr(AppleScriptTask("MyBoss-browse_files_on_mac.scpt", "openDialog", seedPath))
+            
+            If startsWith(filePath, "-") = True And isNumeric(Mid(filePath, 2, Len(filePath))) = True Then
+                browseFile = ""
+            Else
+                browseFile = Replace(filePath, ":", Chr(92))
+                browseFile = Replace(browseFile, "Macintosh HD", "")
+            End If
+        Else
+            MsgBox "Sorry, the MyBoss-browse_files_on_mac.scpt is not in the correct location"
+            browseFile = ""
+            Exit Function
+        End If
+    #Else
+        Set diaFolder = Application.FileDialog(msoFileDialogFilePicker)
+        diaFolder.AllowMultiSelect = False
+        diaFolder.Show
+        
+        If diaFolder.SelectedItems.Count > 0 Then
+            browseFile = diaFolder.SelectedItems.Item(1)
+        Else
+            browseFile = ""
+        End If
+    #End If
+End Function
+
+'https://www.rondebruin.nl/mac/applescripttask.htm
+Function CheckAppleScriptTaskPowerPointScriptFile(ScriptFileName As String) As Boolean
+    'Function to Check if the AppleScriptTask script file exists
+    'Ron de Bruin : 6-March-2016
+    Dim AppleScriptTaskFolder As String
+    Dim TestStr As String
+
+    AppleScriptTaskFolder = MacScript("return POSIX path of (path to desktop folder) as string")
+    AppleScriptTaskFolder = Replace(AppleScriptTaskFolder, "/Desktop", "") & _
+        "Library/Application Scripts/com.microsoft.PowerPoint/"
+
+    On Error Resume Next
+    TestStr = Dir(AppleScriptTaskFolder & ScriptFileName, vbDirectory)
+    On Error GoTo 0
+    If TestStr = vbNullString Then
+        CheckAppleScriptTaskPowerPointScriptFile = False
+    Else
+        CheckAppleScriptTaskPowerPointScriptFile = True
+    End If
+End Function

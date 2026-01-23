@@ -1,0 +1,323 @@
+Sub createOrgChartElement(ByVal slideNumber As Integer, ByVal personFullName As String, ByVal ManagerType As String, ByVal X As Double, ByVal Y As Double, ByVal tickDirection)
+    With ActivePresentation.Slides(slideNumber)
+        'start building the shape
+        ticShapesCounter = .Shapes.Count
+        
+        'Add tiny connector to the orgtree
+        shapeToCreateName = personFullName & "Tick"
+        Select Case tickDirection
+            Case 1 'pointing UP
+                tickLength = inputWhiteSpaceY
+                If MyDictionaryPersonalInfo.Item(personFullName).HasTwoManagers Then tickLength = tickLength + getBubbleHeight()
+                
+                Call drawLineVertical(slideNumber, shapeToCreateName, getCardWidth() / 2, 0, -tickLength, ManagerType)
+            Case 2 'pointing RIGHT
+                Call drawLineHorizontal(slideNumber, shapeToCreateName, getCardWidth(), getCardHeight / 2, inputWhiteSpaceX, ManagerType)
+            Case 3 'pointing DOWN
+                Call drawLineVertical(slideNumber, shapeToCreateName, getCardWidth() / 2, getCardHeight, inputWhiteSpaceY, ManagerType)
+            Case 4 'pointing LEFT
+                Call drawLineHorizontal(slideNumber, shapeToCreateName, 0, getCardHeight / 2, -inputWhiteSpaceX, ManagerType)
+        End Select
+            
+        'add link to additional manager (additional tick)
+        If MyDictionaryPersonalInfo.Item(personFullName).HasTwoManagers Then
+            'a little shift along X when two ticks point up
+            shapeToCreateName = personFullName & "Manager" & "Tick" & inverseType(ManagerType)
+            If tickDirection = 1 Then
+                Call drawLineVertical(slideNumber, shapeToCreateName, getCardWidth() / 2 + 5, 0, -inputWhiteSpaceY / 2 - getBubbleHeight() / 2, inverseType(ManagerType))
+            Else
+                Call drawLineVertical(slideNumber, shapeToCreateName, getCardWidth() / 2, 0, -inputWhiteSpaceY / 2 - getBubbleHeight() / 2, inverseType(ManagerType))
+            End If
+            
+            additionalManagerFullNameKey = MyDictionaryPersonalInfo.Item(personFullName).ManagerByType(inverseType(ManagerType))
+            
+            'create bubble
+            baldShapeName = copyShape(slideNumber, "Bubble", additionalManagerFullNameKey)
+            'move bubble over the card
+            Call moveShape(.Shapes(baldShapeName), getCardWidth() / 2 - getBubbleWidth() / 2, -inputWhiteSpaceY / 2 - getBubbleHeight())
+            'fill it with proper info
+            Call fillBubble(.Shapes(baldShapeName), additionalManagerFullNameKey, inverseType(ManagerType))
+            'give it a proper name
+            .Shapes(baldShapeName).Name = personFullName & "Manager" & "Bubble" & inverseType(ManagerType)
+        End If
+        
+        'add comment box with termination date
+        If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then
+            'create comment box
+            baldShapeName = copyShape(slideNumber, "commentBox")
+            'move comment box below the card
+            Call moveShape(.Shapes(baldShapeName), 0, getCardHeight())
+            'fill it with proper info
+            Call fillCommentBox(.Shapes(baldShapeName), personFullName)
+            'give it a proper name
+            .Shapes(baldShapeName).Name = personFullName & "CommentBox" & ManagerType
+        End If
+                
+        'create card
+        baldShapeName = copyShape(slideNumber, "Card", personFullName)
+        'move card to top left corner
+        Call moveShape(.Shapes(baldShapeName), 0, 0)
+        'fill it with proper info
+        Call fillCard(.Shapes(baldShapeName), personFullName)
+        'call this new card like "<personFullName>Card" and mark it
+        .Shapes(baldShapeName).Name = personFullName & "Card"
+        
+        'add marker to primitives' names
+        Call addMarkerToShape(.Shapes(personFullName & "Tick"), ManagerType)
+        Call addMarkerToAllShapeElements(.Shapes(personFullName & "Card"), ManagerType)
+            
+        tocShapesCounter = .Shapes.Count
+            
+        'Group all the shapes created
+        Call groupAllShapesInIndexList(slideNumber, ticShapesCounter, tocShapesCounter, personFullName & ManagerType)
+            
+        'move the element so that tick apex touches (originX, originY)
+        Call moveShape(.Shapes(personFullName & ManagerType), X, Y)
+            
+        Dim tickApexDx, tickApexDy As Integer
+        With checkShapeExists(slideNumber, personFullName & "Tick" & ManagerType)
+                Select Case tickDirection
+                    Case 1, 4
+                        tickApexDx = .Left - X
+                        tickApexDy = .Top - Y
+                    Case 2, 3
+                        tickApexDx = .Left + .Width - X
+                        tickApexDy = .Top + .Height - Y
+                End Select
+        End With
+            
+        Call moveShape(.Shapes(personFullName & ManagerType), X - tickApexDx, Y - tickApexDy)
+
+        'select the just created element
+        If ActiveWindow.Selection.SlideRange.slideIndex <> slideNumber Then
+            ActiveWindow.View.GotoSlide index:=slideNumber
+        End If
+        
+        .Shapes(personFullName & ManagerType).Select
+    End With
+    
+    '-1 for created element
+    orgchartElementCreatedCounter = orgchartElementCreatedCounter + 1
+    Call updateProgressBar(orgchartElementCreatedCounter / orgchartElementToCreate)
+    
+'    wTemp = ActiveWindow.Selection.SlideRange.Shapes(personFullName & ManagerType).Width
+'    hTemp = ActiveWindow.Selection.SlideRange.Shapes(personFullName & ManagerType).Height
+'
+'    MsgBox (personFullName & ManagerType & vbCrLf & "--- Size Card ---" & vbCrLf & _
+'    "tickDirection: " & tickDirection & vbCrLf & _
+'    "w: " & Int(wTemp) & "(as is) VS " & Int(sizeOfOrgChartElement(personFullName, tickDirection).tWidth) & "(calc)" & vbCrLf & _
+'    "h: " & Int(hTemp) & "(as is) VS " & Int(sizeOfOrgChartElement(personFullName, tickDirection).tHeight) & "(calc)")
+End Sub
+
+Function sizeOfOrgChartElement(ByVal personFullName As String, ByVal tickDirection As Integer) As CTreeSize
+    Dim orgChartElementSize As CTreeSize
+    Set orgChartElementSize = New CTreeSize
+    
+    With orgChartElementSize
+        'account for card
+        .tWidth = getCardWidth()
+        .tHeight = getCardHeight()
+        
+        'account for tick (zero tick thickness approximation)
+        Select Case tickDirection
+            Case 1 'UP
+                'account for tick
+                .tWidth = .tWidth + 0
+                .tHeight = .tHeight + inputWhiteSpaceY
+                
+                'account for bubble
+                 If MyDictionaryPersonalInfo.Item(personFullName).HasTwoManagers() Then .tHeight = .tHeight + getBubbleHeight()
+                 
+                 'account for comment box
+                 If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then .tHeight = .tHeight + getCommentBoxHeight()
+            Case 4 'LEFT
+                'account for tick
+                .tWidth = .tWidth + inputWhiteSpaceX
+                .tHeight = .tHeight + 0
+                
+                'account for bubble
+                 If MyDictionaryPersonalInfo.Item(personFullName).HasTwoManagers() Then .tHeight = .tHeight + inputWhiteSpaceY / 2 + getBubbleHeight()
+                 
+                 'account for comment box
+                 If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then .tHeight = .tHeight + getCommentBoxHeight()
+        End Select
+    End With
+    Set sizeOfOrgChartElement = orgChartElementSize
+End Function
+
+Sub fillCard(ByRef shapeObject As Shape, ByVal personFullName As String)
+    With shapeObject
+        tempSurname = MyDictionaryPersonalInfo.Item(personFullName).SurnameModerated
+        tempName = MyDictionaryPersonalInfo.Item(personFullName).NameModerated
+        tempJobTitle = MyDictionaryPersonalInfo.Item(personFullName).JobTitle
+        
+        If MyDictionaryPersonalInfo.Item(personFullName).IsToBeHired Then
+            .GroupItems("InfoBox").TextFrame.TextRange.Text = "To Be Hired" & Chr(10) & " " & tempJobTitle
+        Else
+            If inputBoxSize <> "ExtraSmall" Then
+                .GroupItems("InfoBox").TextFrame.TextRange.Text = tempSurname & vbCr & tempName & vbCr & tempJobTitle
+            Else
+                .GroupItems("InfoBox").TextFrame.TextRange.Text = tempSurname & vbCr & tempName & vbCr
+            End If
+        End If
+        
+        Select Case inputBoxSize
+            Case "ExtraSmall"
+                tempFullNameFontSize = 7
+                tempJobTitleFontSize = 4
+            Case "Small"
+                tempFullNameFontSize = 7
+                tempJobTitleFontSize = 4
+            Case "Medium"
+                tempFullNameFontSize = 9
+                tempJobTitleFontSize = 5
+            Case "Large"
+                tempFullNameFontSize = 11
+                tempJobTitleFontSize = 6
+        End Select
+        
+        With .GroupItems("InfoBox").TextFrame.TextRange.Paragraphs(1, 2).Font
+            .Size = tempFullNameFontSize
+            .Bold = True
+        End With
+        
+        If MyDictionaryPersonalInfo.Item(personFullName).IsToBeHired Then
+            With .GroupItems("InfoBox").TextFrame.TextRange.Paragraphs(2).Font
+                .Size = tempJobTitleFontSize
+                .Bold = False
+            End With
+        Else
+            With .GroupItems("InfoBox").TextFrame.TextRange.Paragraphs(3).Font
+                .Size = tempJobTitleFontSize
+                .Bold = False
+            End With
+        End If
+        
+        'HeadCount Design
+        tempSubordinatesAll = MyDictionaryPersonalInfo.Item(personFullName).HeadcountStats.SubordinatesNumber
+        tempSubordinatesOutsourcers = MyDictionaryPersonalInfo.Item(personFullName).HeadcountStats.OutsourceNumber
+        If tempSubordinatesOutsourcers > 0 Then
+            tempConcatenated = CStr(tempSubordinatesAll) & " (" & tempSubordinatesOutsourcers & ")"
+        Else
+            tempConcatenated = CStr(tempSubordinatesAll)
+        End If
+        
+        With .GroupItems("HeadCount").TextFrame.TextRange
+            .Text = CStr(tempConcatenated)
+            .Font.Bold = True
+        End With
+            
+        If tempSubordinatesAll <= 1 Then
+             .GroupItems("HeadCount").Visible = False
+        End If
+        
+        
+            'Location Design
+            tempLocation = MyDictionaryPersonalInfo.Item(personFullName).Location
+            
+            'If location is specified
+            If StrComp(Trim(CStr(tempLocation)), "") = 0 Then
+                .GroupItems("BottomBackground").Visible = False
+                .GroupItems("Location").Visible = False
+                
+                tempOutsourceFlag = MyDictionaryPersonalInfo.Item(personFullName).OutsourceFlag
+                tempImportantFlag = MyDictionaryPersonalInfo.Item(personFullName).ImportantFlag
+                If (CInt(tempImportantFlag) = 0 And CInt(tempOutsourceFlag) = 0) Or (CInt(tempImportantFlag) = -1) Then
+                    With .GroupItems("HeadCount").TextFrame.TextRange.Font
+                        .Color.RGB = RGB(255, 255, 255)
+                    End With
+                End If
+            Else
+                .GroupItems("Location").TextFrame.TextRange.Text = tempLocation
+            End If
+            
+            .GroupItems("Location").Name = personFullName & "Location"
+            .GroupItems("BottomBackground").Name = personFullName & "BottomBackground"
+        
+    
+        .GroupItems("InfoBox").Name = personFullName & "InfoBox"
+        .GroupItems("HeadCount").Name = personFullName & "HeadCount"
+        .GroupItems("MainBackground").Name = personFullName & "MainBackground"
+    End With
+End Sub
+
+Sub fillBubble(ByRef shapeObject As Shape, ByVal additionalManagerFullNameKey As String, ByVal ManagerType As String)
+    shapeObject.TextFrame.TextRange.Text = MyDictionaryPersonalInfo.Item(additionalManagerFullNameKey).Surname
+    Call applyLineStyle(shapeObject, ManagerType, 3)
+End Sub
+
+Sub fillCommentBox(ByRef shapeObject As Shape, ByVal personFullName As String)
+    terminationDateText = MyDictionaryPersonalInfo.Item(personFullName).TerminationDate
+    If InStr(1, terminationDateText, "at") > 0 Then
+        terminationDateText = Trim(Left(terminationDateText, InStr(1, terminationDateText, "at") - 1))
+        terminationDateText = Trim(Right(terminationDateText, Len(terminationDateText) - InStr(1, terminationDateText, ",") - 1))
+    End If
+    
+    If Len(terminationDateText) > 0 Then
+        If IsDate(terminationDateText) Then
+            shapeObject.TextFrame.TextRange.Text = shapeObject.TextFrame.TextRange.Text & " " & Format(CDate(terminationDateText), "d mmmm yyyy")
+        Else
+            shapeObject.TextFrame.TextRange.Text = terminationDateText
+        End If
+    Else
+        shapeObject.TextFrame.TextRange.Text = ""
+    End If
+End Sub
+
+'-----------------------------------------------------------
+'----------- UTILITIES TO USE WITH ALL SHAPES --------------
+'-----------------------------------------------------------
+
+Function copyShape(ByVal slideNumber As Integer, ByVal shapeName As String, Optional ByVal personFullName As String = "") As String
+    Dim tempTemplateName As String
+    With MyDictionaryPersonalInfo.Item(personFullName)
+        If personFullName <> "" Then
+            If .IsToBeHired Then
+                tempTemplateName = shapeName & "Tbh" & inputBoxSize
+            Else
+                If .ImportantFlag Then
+                    tempTemplateName = shapeName & "Important" & inputBoxSize
+                End If
+                
+                If .OutsourceFlag Then
+                    tempTemplateName = shapeName & "Outsource" & inputBoxSize
+                End If
+                
+                If (Not .ImportantFlag) And (Not .OutsourceFlag) Then
+                    tempTemplateName = shapeName & "Ordinary" & inputBoxSize
+                End If
+            End If
+        Else
+            tempTemplateName = shapeName & inputBoxSize
+        End If
+    End With
+    
+    copyShape = copyShapeErrorFree(tempTemplateName, slideNumber, tempTemplateName)
+End Function
+
+Sub moveShape(ByRef shapeObject As Shape, ByVal X As Double, ByVal Y As Double)
+    With shapeObject
+        .Left = X
+        .Top = Y
+    End With
+End Sub
+
+Sub addMarkerToShape(ByRef shapeObject As Shape, ByVal marker As String)
+    With shapeObject
+        .Name = .Name & marker
+    End With
+End Sub
+
+Sub addMarkerToAllShapeElements(ByRef shapeObject As Shape, ByVal marker As String)
+    With shapeObject
+        If .Type = msoGroup Then
+            .Name = .Name & marker
+            For X = 1 To .GroupItems.Count
+                .GroupItems(X).Name = .GroupItems(X).Name & marker
+            Next X
+        Else
+            .Name = .Name & marker
+        End If
+    End With
+End Sub
+

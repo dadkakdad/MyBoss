@@ -1,0 +1,97 @@
+Function mapBoxSizeToHeight(ByVal cardHeight As Double) As String
+    mapBoxSizeToHeight = CStr(MyDictionaryCardSizes(1))
+    
+    For Each sizeKey In MyDictionaryCardSizes
+        If Abs(getCardHeight(sizeKey) - cardHeight) < 5 Then
+            mapBoxSizeToHeight = sizeKey
+            Exit Function
+        End If
+    Next sizeKey
+End Function
+
+Function getCardHeight(Optional ByVal sizeId As String = "inputBoxSize") As Double
+    Dim templateName As String
+    Select Case sizeId
+        Case "inputBoxSize"
+            templateName = "Card" & "Ordinary" & inputBoxSize
+        Case Else
+           templateName = "Card" & "Ordinary" & sizeId
+    End Select
+
+    getCardHeight = templatesNamesCollection.Item(templateName)(2)
+End Function
+
+Function getCardWidth(Optional ByVal sizeId As String = "inputBoxSize") As Double
+    Dim templateName As String
+    Select Case sizeId
+        Case "inputBoxSize"
+            templateName = "Card" & "Ordinary" & inputBoxSize
+        Case Else
+            templateName = "Card" & "Ordinary" & sizeId
+    End Select
+    
+    getCardWidth = templatesNamesCollection.Item(templateName)(1)
+End Function
+
+Function getLineWeight() As Double
+    Select Case inputBoxSize
+        Case "ExtraSmall"
+            getLineWeight = 2
+        Case "Small"
+            getLineWeight = 2
+        Case "Medium"
+            getLineWeight = 3
+        Case "Large"
+            getLineWeight = 4
+        Case Else
+            getLineWeight = 3
+    End Select
+End Function
+
+Function getBubbleHeight(Optional ByVal sizeId As String = "inputBoxSize") As Double
+    Dim templateName As String
+    Select Case sizeId
+        Case "inputBoxSize"
+            templateName = "Bubble" & "Ordinary" & inputBoxSize
+        Case Else
+            templateName = "Bubble" & "Ordinary" & sizeId
+    End Select
+
+    getBubbleHeight = templatesNamesCollection.Item(templateName)(2) + 2 * (getLineWeight() / 3)
+End Function
+
+Function getBubbleWidth(Optional ByVal sizeId As String = "inputBoxSize") As Double
+    Dim templateName As String
+    Select Case sizeId
+        Case "inputBoxSize"
+            templateName = "Bubble" & "Ordinary" & inputBoxSize
+        Case Else
+            templateName = "Bubble" & "Ordinary" & sizeId
+    End Select
+    
+    getBubbleWidth = templatesNamesCollection.Item(templateName)(1) + 2 * (getLineWeight() / 3)
+End Function
+
+Function getCommentBoxHeight(Optional ByVal sizeId As String = "inputBoxSize") As Double
+    Dim templateName As String
+    Select Case sizeId
+        Case "inputBoxSize"
+            templateName = "CommentBox" & inputBoxSize
+        Case Else
+            templateName = "CommentBox" & sizeId
+    End Select
+    
+    getCommentBoxHeight = templatesNamesCollection.Item(templateName)(2)
+End Function
+
+Function getCommentBoxWidth(Optional ByVal sizeId As String = "inputBoxSize") As Double
+    Dim templateName As String
+    Select Case sizeId
+        Case "inputBoxSize"
+            templateName = "CommentBox" & inputBoxSize
+        Case Else
+            templateName = "CommentBox" & sizeId
+    End Select
+    
+    getCommentBoxWidth = templatesNamesCollection.Item(templateName)(1)
+End Function

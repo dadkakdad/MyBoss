@@ -1,0 +1,236 @@
+Sub makeFullTreeAuto(ByVal slideNumber As Integer, ByVal personFullName As String, ByVal infinityRegimeFlag As Boolean)
+    Call updateTaskBar("Optimizing tree size...")
+    
+    Dim fullTreeSize As CTreeSize
+    
+    Dim fullTreeDirectReportsVisibilityFlags As Dictionary
+    'We use inverse logic for very heavy trees
+    If MyDictionaryPersonalInfo.Item(personFullName).HeadcountStats.SubordinatesNumber < 100 Then
+        Set fullTreeDirectReportsVisibilityFlags = synthesizeInputAllDirectReportsVisible(personFullName)
+        
+        'Hide the corner case people
+        For Each directReport In fullTreeDirectReportsVisibilityFlags.keys
+            With MyDictionaryPersonalInfo.Item(directReport)
+                If .IsManager = True And fullTreeDirectReportsVisibilityFlags.Item(directReport) = 1 And .ShouldBeShownUnderManager(personFullName) = False Then
+                    fullTreeDirectReportsVisibilityFlags.Item(directReport) = 0
+                End If
+            End With
+        Next directReport
+    Else
+        Set fullTreeDirectReportsVisibilityFlags = synthesizeInputAllDirectReportsInvisible(personFullName)
+    End If
+    
+    'Save current size parameters
+    inputBoxSizeToSave = inputBoxSize
+    inputWhiteSpaceExtToSave = inputWhiteSpaceExt
+    inputWhiteSpaceXToSave = inputWhiteSpaceX
+    inputWhiteSpaceYToSave = inputWhiteSpaceY
+    
+    'Switch to the tiniest scale
+    inputBoxSize = "Small"
+    inputWhiteSpaceExt = 5
+    inputWhiteSpaceX = 5
+    inputWhiteSpaceY = 5
+    
+    Set fullTreeSize = sizeOfFullTree(personFullName, fullTreeDirectReportsVisibilityFlags, "Subordinates")
+    
+    If fullTreeSize.tWidth * fullTreeSize.tHeight > 0 Then
+        '------------------ FIRST PRIORITY - THE SMALLEST NUMBER OF SLIDES ------------------
+         If MyDictionaryPersonalInfo.Item(personFullName).HeadcountStats.SubordinatesNumber < 100 Then
+            'Do while you not hide the whole team or until you can put a tree on a slide
+            Do While countVisibleTrees(fullTreeDirectReportsVisibilityFlags) > 0 And (fullTreeSize.tWidth > maxWidthGuideline Or fullTreeSize.tHeight > maxHeightGuideline)
+                'Pick the next largest team among visible ones...
+                largestVisibleTeamSize = -1
+                largestVisibleTeamManager = ""
+                For Each directReport In fullTreeDirectReportsVisibilityFlags.keys
+                    With MyDictionaryPersonalInfo.Item(directReport)
+                        If .IsManager = True And fullTreeDirectReportsVisibilityFlags.Item(directReport) = 1 Then
+                            If .HeadcountStats.SubordinatesNumber > largestVisibleTeamSize Then
+                                largestVisibleTeamSize = .HeadcountStats.SubordinatesNumber
+                                largestVisibleTeamManager = directReport
+                            End If
+                        End If
+                    End With
+                Next directReport
+                
+                '...and hide everyone except manager
+                If largestVisibleTeamManager <> "" Then
+                    fullTreeDirectReportsVisibilityFlags.Item(largestVisibleTeamManager) = 0
+                    Set fullTreeSize = sizeOfFullTree(personFullName, fullTreeDirectReportsVisibilityFlags, "Subordinates")
+                End If
+            Loop
+        Else
+            'Do while you not hide the whole team or until you can put a tree on a slide
+            Do While countInvisibleTrees(fullTreeDirectReportsVisibilityFlags) > 0 And (fullTreeSize.tWidth < maxWidthGuideline And fullTreeSize.tHeight < maxHeightGuideline)
+                'Pick the next smallest team among visible ones...
+                smallestVisibleTeamSize = 10000
+                smallestVisibleTeamManager = ""
+                For Each directReport In fullTreeDirectReportsVisibilityFlags.keys
+                    With MyDictionaryPersonalInfo.Item(directReport)
+                        If .IsManager = True And fullTreeDirectReportsVisibilityFlags.Item(directReport) = 0 And .ShouldBeShownUnderManager(personFullName) = True Then
+                            If .HeadcountStats.SubordinatesNumber < smallestVisibleTeamSize Then
+                                smallestVisibleTeamSize = .HeadcountStats.SubordinatesNumber
+                                smallestVisibleTeamManager = directReport
+                            End If
+                        End If
+                    End With
+                Next directReport
+                
+                '...and make it visible
+                If smallestVisibleTeamManager <> "" Then
+                    fullTreeDirectReportsVisibilityFlags.Item(smallestVisibleTeamManager) = 1
+                    Set fullTreeSize = sizeOfFullTree(personFullName, fullTreeDirectReportsVisibilityFlags, "Subordinates")
+                    
+                    If fullTreeSize.tWidth > maxWidthGuideline Or fullTreeSize.tHeight > maxHeightGuideline Then
+                        fullTreeDirectReportsVisibilityFlags.Item(smallestVisibleTeamManager) = 0
+                    End If
+                End If
+            Loop
+            Set fullTreeSize = sizeOfFullTree(personFullName, fullTreeDirectReportsVisibilityFlags, "Subordinates")
+        End If
+        
+        shrinkedTreeFlag = False
+        'If you had to hide all the subordinates...
+        If countVisibleTrees(fullTreeDirectReportsVisibilityFlags) = 0 And MyDictionaryPersonalInfo.Item(personFullName).DirectReports("Unsorted").Item("Managers").Count > 0 And MyDictionaryPersonalInfo.Item(personFullName).nBranchesHorizontallyLimitExceeded(False) Then
+            shrinkedTreeFlag = True
+        End If
+        
+        'SECOND PRIORITY - THE BIGGER CARDS -> THE BETTER; Optimize for card size
+        '2 = Small, 3 = Medium
+        For sizeKey = 2 To MyDictionaryCardSizes.Count
+            Set previousFullTreeSize = fullTreeSize
+            
+            'Change card size
+            inputBoxSize = MyDictionaryCardSizes(sizeKey)
+            
+            'Recalculate tree size
+            If shrinkedTreeFlag Then
+                Set fullTreeSize = sizeOfTree(personFullName, fullTreeDirectReportsVisibilityFlags, "Subordinates", "branch_4")
+            Else
+                Set fullTreeSize = sizeOfFullTree(personFullName, fullTreeDirectReportsVisibilityFlags, "Subordinates")
+            End If
+            
+            'If we started to go beyond the limit in width or depth - revert to previous card size
+            If fullTreeSize.tWidth > maxWidthGuideline Or fullTreeSize.tHeight > maxHeightGuideline Then
+                inputBoxSize = MyDictionaryCardSizes(sizeKey - 1)
+                Set fullTreeSize = previousFullTreeSize
+                Exit For
+            End If
+        Next sizeKey
+        
+        
+        'THIRD PRIORITY - SCALE THE TREE; Optimize for DX and DY sizes, two extra constraints for DX and DY for visual appeal
+        'Save current size
+        Set fullTreeSize1 = fullTreeSize
+        
+        'Blow it a bit
+        inputWhiteSpaceX = inputWhiteSpaceX + 1 / 3
+        inputWhiteSpaceY = inputWhiteSpaceY + 1
+        
+        If shrinkedTreeFlag Then
+            Set fullTreeSize = sizeOfTree(personFullName, fullTreeDirectReportsVisibilityFlags, "Subordinates", "branch_4")
+        Else
+            Set fullTreeSize = sizeOfFullTree(personFullName, fullTreeDirectReportsVisibilityFlags, "Subordinates")
+        End If
+        
+        'Save new size
+        Set fullTreeSize2 = fullTreeSize
+        
+        
+        If fullTreeSize2.tWidth = fullTreeSize1.tWidth Then
+            nDxMax = 0
+        Else
+            nDxMax = Abs(fullTreeSize1.tWidth - maxWidthGuideline) / (fullTreeSize2.tWidth - fullTreeSize1.tWidth)
+        End If
+        
+        nDyMax = Abs(fullTreeSize1.tHeight - maxHeightGuideline) / (fullTreeSize2.tHeight - fullTreeSize1.tHeight)
+        
+        nDMin = nDxMax
+        If nDyMax < nDxMax Then nDMin = nDyMax
+        nDMin = Round(nDMin, 0) - 1
+        
+        'Remove extra added space
+        inputWhiteSpaceX = (inputWhiteSpaceX - 1 / 3) + nDMin * 1 / 3
+        If inputWhiteSpaceX > getCardWidth() / 2 Then inputWhiteSpaceX = getCardWidth() / 2
+        
+        inputWhiteSpaceY = (inputWhiteSpaceY - 1) + nDMin * 1
+        If inputWhiteSpaceY > getCardHeight() / 3 Then inputWhiteSpaceY = getCardHeight() / 3
+        
+        'FORTH PRIORITY - DISTRIBUTE TREES HORIZONTALLY
+        If shrinkedTreeFlag Then
+            Set fullTreeSize = sizeOfTree(personFullName, fullTreeDirectReportsVisibilityFlags, "Subordinates", "branch_4")
+        Else
+            Set fullTreeSize = sizeOfFullTree(personFullName, fullTreeDirectReportsVisibilityFlags, "Subordinates")
+        End If
+        
+        numberOfBranches = getNumberOfBranches(personFullName, "allRecursive", fullTreeDirectReportsVisibilityFlags)
+        If numberOfBranches > 1 Then
+            inputWhiteSpaceExt = inputWhiteSpaceExt + Abs(fullTreeSize.tWidth - maxWidthGuideline) / (numberOfBranches - 1)
+            If inputWhiteSpaceExt > getCardWidth() Then
+                inputWhiteSpaceExt = getCardWidth()
+            End If
+        End If
+            
+        Call updateTaskBar("Creating...")
+        updateProgressBar (0)
+        
+        'Create tree
+        If shrinkedTreeFlag Then
+             createdTreeName = makeTree(slideNumber, personFullName, MyDictionaryPersonalInfo.Item(personFullName).DefaultManagerType, Application.ActivePresentation.PageSetup.SlideWidth / 2, 140, "Subordinates", "branch_4")
+              If createdTreeName = "brokenTree" Then Exit Sub
+        Else
+            createdTreeName = makeTree(slideNumber, personFullName, MyDictionaryPersonalInfo.Item(personFullName).DefaultManagerType, 0, 140, "Subordinates", "full_tree", fullTreeDirectReportsVisibilityFlags)
+            If createdTreeName = "brokenTree" Then Exit Sub
+            
+            ActivePresentation.Slides(slideNumber).Shapes(createdTreeName).Left = (Application.ActivePresentation.PageSetup.SlideWidth - ActivePresentation.Slides(slideNumber).Shapes(createdTreeName).Width) / 2
+            
+            'Corner case is 1D branch since tick is not in the middle of group
+            If MyDictionaryPersonalInfo.Item(personFullName).DirectReports("Unsorted").Item("Managers").Count = 0 And MyDictionaryPersonalInfo.Item(personFullName).DirectReports("Unsorted").Item("All").Count < MAX_PEOPLE_FOR_2D_BRANCH Then
+                treeCenterX = ActivePresentation.Slides(slideNumber).Shapes(createdTreeName).Left + ActivePresentation.Slides(slideNumber).Shapes(createdTreeName).Width / 2
+                tickPositionX = ActivePresentation.Slides(slideNumber).Shapes(createdTreeName).GroupItems(getReferenceTickNames(personFullName, False, fullTreeDirectReportsVisibilityFlags).Item(1)).Left
+                extraShiftX = tickPositionX - treeCenterX
+                
+                ActivePresentation.Slides(slideNumber).Shapes(createdTreeName).Left = ActivePresentation.Slides(slideNumber).Shapes(createdTreeName).Left - extraShiftX
+            End If
+        End If
+        
+        'Hide tree ticks
+        For Each tickName In getReferenceTickNames(personFullName, False, fullTreeDirectReportsVisibilityFlags)
+            checkShapeExists(slideNumber, tickName).Visible = msoFalse
+        Next tickName
+            
+        'Shift tree up
+        With ActivePresentation.Slides(slideNumber).Shapes(createdTreeName)
+            .Top = .Top - checkShapeExists(slideNumber, getReferenceTickNames(personFullName, False, fullTreeDirectReportsVisibilityFlags).Item(1)).Height
+        End With
+    End If
+    
+    Call makeHeadOfTree(slideNumber, personFullName)
+    
+    Call addDescriptionUtility(slideNumber, personFullName)
+    
+    Call makeDepartments(slideNumber)
+    
+    'make trees for all people hidden
+    For Each directReport In fullTreeDirectReportsVisibilityFlags.keys
+        If Not (stopExecutionFlag) Then
+            Call openProgressBar("", -1, True)
+            If directReport <> "" Then
+                If fullTreeDirectReportsVisibilityFlags.Item(directReport) = 0 And MyDictionaryPersonalInfo.Item(directReport).IsManager = True And MyDictionaryPersonalInfo.Item(directReport).ShouldBeShownUnderManager(personFullName) Then
+                    If infinityRegimeFlag Then
+                        orgchartElementToCreate = orgchartElementToCreate + 1
+                        Call makeFullTreeAuto(addEmptySlideUtility("add"), directReport, infinityRegimeFlag)
+                    End If
+                End If
+            End If
+        Else
+            Exit Sub
+        End If
+    Next directReport
+    
+    
+    inputBoxSize = inputBoxSizeToSave
+    inputWhiteSpaceExt = inputWhiteSpaceExtToSave
+    inputWhiteSpaceX = inputWhiteSpaceXToSave
+    inputWhiteSpaceY = inputWhiteSpaceYToSave
+End Sub

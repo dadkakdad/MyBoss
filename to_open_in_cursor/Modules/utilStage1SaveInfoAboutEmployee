@@ -1,0 +1,116 @@
+Function fillEmployeeInfo(ByVal rowIterator As Integer) As Object
+    Dim tempEmployee As CEmployee
+    Set tempEmployee = New CEmployee
+    
+    indexOffset = LBound(employeesList, 2)
+    
+    With tempEmployee
+        .Surname = Trim(employeesList(rowIterator, indexOffset))
+        
+        .Name = Trim(employeesList(rowIterator, indexOffset + 1))
+                
+        If .Surname = "" Or .Name = "" Then
+            Set tempEmployee = Nothing
+            Exit Function
+        End If
+                
+        .JobTitle = Trim(employeesList(rowIterator, indexOffset + 2))
+        
+        .Department = Trim(employeesList(rowIterator, indexOffset + 3))
+        
+        .SurnameSolidLineManager = Trim(employeesList(rowIterator, indexOffset + 4))
+        .NameSolidLineManager = Trim(employeesList(rowIterator, indexOffset + 5))
+        
+        .SurnameDottedLineManager = Trim(employeesList(rowIterator, indexOffset + 6))
+        .NameDottedLineManager = Trim(employeesList(rowIterator, indexOffset + 7))
+                
+        .Location = Trim(employeesList(rowIterator, indexOffset + 8))
+        
+        .TerminationDate = Trim(employeesList(rowIterator, indexOffset + 9))
+        
+        Dim OutsourcerFlag As String
+        OutsourcerFlag = employeesList(rowIterator, indexOffset + 10)
+        Select Case OutsourcerFlag
+            Case "1"
+                .OutsourceFlag = True
+            Case "1.0"
+                .OutsourceFlag = True
+            Case "1,0"
+                .OutsourceFlag = True
+            Case 1
+                .OutsourceFlag = True
+            Case 1#
+                .OutsourceFlag = True
+            Case Else
+                .OutsourceFlag = False
+        End Select
+        
+        Dim ImportantFlag As String
+        ImportantFlag = employeesList(rowIterator, indexOffset + 11)
+        Select Case ImportantFlag
+            Case "1"
+                .ImportantFlag = True
+            Case "1.0"
+                .ImportantFlag = True
+            Case "1,0"
+                .ImportantFlag = True
+            Case 1
+                .ImportantFlag = True
+            Case 1#
+                .ImportantFlag = True
+            Case Else
+                .ImportantFlag = False
+        End Select
+        
+        Dim CostCenter As String
+        CostCenter = Trim(employeesList(rowIterator, indexOffset + 12))
+        If isNumeric(CostCenter) = True Then
+            .CostCenter = Int(CostCenter)
+        End If
+        
+        .DuplicateId = ""
+        .Duplicates = 0
+        
+        .HeadcountStats = New CSubordinatesStatistics
+        Call .HeadcountStats.ResetToDefault
+    End With
+    
+    Set fillEmployeeInfo = tempEmployee
+End Function
+
+Function extractEmployeeInfo(ByVal row As Double) As Object
+    Dim numberOfBlankCells
+    Dim rowOfInfo As Object
+    
+    '----- manually count empty cells to detect empty row
+    numberOfBlankCells = 0
+    
+    For i = LBound(employeesList, 2) To UBound(employeesList, 2)
+        If TypeName(employeesList(row, i)) <> "Error" Then
+            If Replace(employeesList(row, i), " ", "") = "" Then
+                numberOfBlankCells = numberOfBlankCells + 1
+            End If
+        Else
+            UFProgressBar.Hide
+            MsgBox ("Some cells on line " & CStr(row + inputFirstRow - 1) & " on Sheet " & inputSheetIndex & " have errors - please check it.")
+            Set extractEmployeeInfo = Nothing
+            Exit Function
+        End If
+    Next i
+    
+    If numberOfBlankCells = defaultInputNumberOfColumns Then
+        Set extractEmployeeInfo = New CEmployee
+        Exit Function
+    End If
+    '------------------------------------------
+    
+    Set extractEmployeeInfo = fillEmployeeInfo(row)
+    rowProcessedIndex = row + inputFirstRow - 1
+    
+    If extractEmployeeInfo Is Nothing Then
+        MsgBox ("Check entry on line " & CStr(rowProcessedIndex) & ". Either Name of Surname for this person is empty." & vbCrLf & _
+        "Remember you always should specify the full name of employee.")
+    Else
+        extractEmployeeInfo.RowIndexInExcelFile = rowProcessedIndex
+    End If
+End Function

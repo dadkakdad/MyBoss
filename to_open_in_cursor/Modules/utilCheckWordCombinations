@@ -1,0 +1,91 @@
+Public fullNameCandidatesArray As Dictionary
+Public tempPartCandidates As Collection
+
+Sub synthesizeFullNameCandidates(ByVal iBegin As Integer, ByVal iEnd As Integer, ByVal partCandidates As Collection, ByVal firstRunFlag As Boolean)
+    Dim nIterations, period As Integer
+    nIterations = iEnd - iBegin + 1
+    
+    If nIterations Mod partCandidates.Count = 0 Then
+        period = nIterations / partCandidates.Count
+        
+        If period = 1 Then
+            If iEnd > iBegin Then
+                With fullNameCandidatesArray
+                    .Item(Replace(str(iBegin), " ", "")) = .Item(Replace(str(iBegin), " ", "")) & partCandidates(1) & partCandidates(2)
+                    .Item(Replace(str(iEnd), " ", "")) = .Item(Replace(str(iEnd), " ", "")) & partCandidates(2) & partCandidates(1)
+                End With
+            Else
+                With fullNameCandidatesArray
+                    .Item(Replace(str(iBegin), " ", "")) = .Item(Replace(str(iBegin), " ", "")) & partCandidates(1)
+                End With
+            End If
+            Exit Sub
+        Else
+            'save the index of current period
+            Dim numberOfPeriod As Integer
+            numberOfPeriod = 1
+            
+            For i = iBegin To iEnd 'external iterator
+                j = i - iBegin + 1 'internal iterator; from 1 to N
+                
+                'move forward, if you go first time - add elements; if not - simply concatenate
+                If firstRunFlag Then
+                    fullNameCandidatesArray.add Replace(str(i), " ", ""), partCandidates(numberOfPeriod)
+                Else
+                    With fullNameCandidatesArray
+                        .Item(Replace(str(i), " ", "")) = .Item(Replace(str(i), " ", "")) & partCandidates(numberOfPeriod)
+                    End With
+                End If
+                
+                If j Mod period = 0 Then
+                    numberOfPeriod = j / period
+                    
+                    'first copy the string parts we have left...
+                    Set tempPartCandidates = New Collection
+                    
+                    For Each element In partCandidates
+                        tempPartCandidates.add element
+                    Next element
+                    
+                    '... then remove the part we used to put
+                    tempPartCandidates.Remove (numberOfPeriod)
+                    Call synthesizeFullNameCandidates(i - period + 1, i, tempPartCandidates, False)
+                    'MsgBox (i - period & " " & i - 1)
+                    
+                    numberOfPeriod = numberOfPeriod + 1
+                End If
+            Next i
+        End If
+    End If
+End Sub
+
+Function checkPersonExists(ByVal fullNameCandidateString As String) As String
+    Set fullNameCandidatesArray = New Dictionary
+    
+    If fullNameCandidateString <> "" Then
+        fullNameCandidatesArray.RemoveAll
+        
+        Dim fullNamePartsCollection As Collection
+        Set fullNamePartsCollection = New Collection
+        
+        'Copy candidate string parts from Array of strings to Collection
+        For Each element In Split(fullNameCandidateString)
+            fullNamePartsCollection.add Replace(element, " ", "")
+        Next element
+        
+        'Generate all the combinations of parts
+        Call synthesizeFullNameCandidates(1, wfFactorial(fullNamePartsCollection.Count), fullNamePartsCollection, True)
+        
+        Dim fullNameCandidateValue As String
+        For Each fullNameCandidateKey In fullNameCandidatesArray.keys
+            fullNameCandidateValue = LCase(Replace(fullNameCandidatesArray.Item(fullNameCandidateKey), " ", ""))
+            If CBool(MyDictionaryDirectReports.Exists(fullNameCandidateValue)) = True Then
+                checkPersonExists = fullNameCandidateValue
+                Exit Function
+            End If
+        Next fullNameCandidateKey
+    End If
+    
+    checkPersonExists = ""
+End Function
+

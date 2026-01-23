@@ -1,0 +1,359 @@
+Public inputFilePath As String
+Public inputFileName As String
+Public oXL As Excel.Application
+Public oWB As Excel.Workbook
+
+'--------- INPUT FILE NAME ---------
+Sub uiShowInputFileName(control As IRibbonControl, ByRef returnedVal)
+    Select Case (control.id)
+        Case "inputFileName"
+            If StrComp(inputFilePath, "") <> 0 Then
+                returnedVal = inputFileName
+            Else
+                inputFilePath = returnedVal
+            End If
+    End Select
+End Sub
+
+Sub uiCopyFileNameToScreentip(control As IRibbonControl, ByRef returnedVal)
+    returnedVal = inputFileName
+End Sub
+
+Sub uiGetInputDescription(control As IRibbonControl, ByRef returnedVal)
+    Dim dictCount As Long
+    
+    If inputCompanySize = 1 Then
+        inputCompanySizeText = CStr(inputCompanySize) & " person"
+    Else
+        inputCompanySizeText = CStr(inputCompanySize) & " people"
+    End If
+    
+    'Mac-compatible Dictionary check - avoid IsEmpty on objects and short-circuit issues
+    On Error Resume Next
+    dictCount = 0
+    dictCount = MyDictionaryPersonalInfo.Count
+    On Error GoTo 0
+    
+    If dictCount > 0 Then
+        On Error Resume Next
+        returnedVal = "Input File: " & inputFileName & vbCr & _
+                    "Sheet: " & inputSheetName & vbCr & _
+                    "CEO Name: " & MyDictionaryPersonalInfo.Item(inputCEOFullName).FullName & vbCr & _
+                    "Company Size: " & inputCompanySizeText
+        If Err.Number <> 0 Then
+            returnedVal = ""
+            Err.Clear
+        End If
+        On Error GoTo 0
+    Else
+        returnedVal = ""
+    End If
+End Sub
+
+Sub pickExcelSheet(control As IRibbonControl)
+    Call disableCreationStage
+    Call enableUploadingStage
+    
+    getRibbon().InvalidateControl ("inputFileName")
+    getRibbon().InvalidateControl ("sheetName")
+End Sub
+
+'Callback for "pick an Excel file"
+Sub pickExcelFile(control As IRibbonControl)
+    ' Open the file dialog, let user select Excel file
+    inputFilePath = browseFile()
+    
+    If inputFilePath <> "" Then
+        'Mac-compatible path parsing: handle both / and \ separators
+        Dim pathSeparatorPos As Long
+        Dim pathSeparator As String
+        
+        reversedInputFilePath = StrReverse(inputFilePath)
+        
+        #If Mac Then
+            'Mac: paths might use / (POSIX) or \ (converted from HFS)
+            'Find whichever separator appears first in the reversed string
+            Dim backslashPos As Long, forwardslashPos As Long
+            backslashPos = InStr(1, reversedInputFilePath, "\")
+            forwardslashPos = InStr(1, reversedInputFilePath, "/")
+            
+            If backslashPos = 0 And forwardslashPos = 0 Then
+                'No separator found - just use the whole path as filename
+                inputFileName = inputFilePath
+                pathSeparatorPos = 0
+            ElseIf backslashPos = 0 Then
+                pathSeparatorPos = forwardslashPos
+            ElseIf forwardslashPos = 0 Then
+                pathSeparatorPos = backslashPos
+            Else
+                'Both found - use whichever comes first (closest to end of original path)
+                pathSeparatorPos = IIf(backslashPos < forwardslashPos, backslashPos, forwardslashPos)
+            End If
+            
+            If pathSeparatorPos > 0 Then
+                inputFileName = StrReverse(Left(reversedInputFilePath, pathSeparatorPos - 1))
+            End If
+        #Else
+            'Windows: always use backslash
+            pathSeparatorPos = InStr(1, reversedInputFilePath, "\")
+            If pathSeparatorPos > 0 Then
+                inputFileName = StrReverse(Left(reversedInputFilePath, pathSeparatorPos - 1))
+            Else
+                inputFileName = inputFilePath
+            End If
+        #End If
+        
+        inputFileExtension = StrReverse(Left(reversedInputFilePath, InStr(1, reversedInputFilePath, ".")))
+        
+        inputFileDirectory = Replace(inputFilePath, inputFileName, "")
+        
+        ' Check file's extension whether it is Excel file or not
+        If LCase(inputFileExtension) = ".xls" Or LCase(inputFileExtension) = ".xlsx" Or LCase(inputFileExtension) = ".xlsm" Then
+            getRibbon().InvalidateControl ("inputFileName")
+            
+            #If Mac Then
+                Dim macPath As String
+                macPath = Replace(inputFilePath, Chr(92), "/")
+                
+                Dim appleScriptResult As String
+                appleScriptResult = CStr(AppleScriptTask("MyBoss-browse_files_on_mac.scpt", "openExcelGetSheets", macPath))
+                
+                Dim sheetsText As String
+                sheetsText = textInBraces(appleScriptResult)
+                
+                'Remove trailing comma if present (AppleScript quirk)
+                If Right(sheetsText, 1) = "," Then
+                    sheetsText = Left(sheetsText, Len(sheetsText) - 1)
+                End If
+                
+                worksheetNames = Split(sheetsText, ",")
+                
+                ReDim mCurrentSheet(0)
+                ReDim MyVariantListOfSheets(UBound(worksheetNames))
+                For i = 0 To UBound(worksheetNames)
+                    MyVariantListOfSheets(i) = worksheetNames(i)
+                Next i
+            #Else
+                Set oXL = CreateObject("Excel.Application")
+                Set oWB = oXL.Workbooks.Open(inputFilePath)
+                
+                ReDim mCurrentSheet(0)
+                ReDim MyVariantListOfSheets(oWB.Worksheets.Count - 1)
+                For i = 1 To oWB.Worksheets.Count
+                    MyVariantListOfSheets(i - 1) = oWB.Worksheets(i).Name
+                Next i
+                
+                oWB.Close SaveChanges:=False
+                oXL.Quit
+            #End If
+            
+            getRibbon().InvalidateControl ("sheetName")
+            
+            'Hide interface and offer user to upload the file
+            Call disableCreationStage
+            Call enableUploadingStage
+        Else
+            MsgBox ("File can't be uploaded:" & vbCrLf & _
+            "1. File extension should be either .xls OR .xlsm" & vbCrLf & _
+            "2. Only latin letters can be used in file name")
+            Exit Sub
+        End If
+    End If
+End Sub
+
+Sub isExcelSelected(control As IRibbonControl, ByRef returnedVal)
+    returnedVal = fileSelectionSuccessful
+    Debug.Print "isExcelSelected called for " & control.id & ", returning " & fileSelectionSuccessful
+End Sub
+
+Sub enableUploadingStage()
+    fileSelectionSuccessful = True
+    
+    getRibbon().InvalidateControl ("excelParametersBox")
+    getRibbon().InvalidateControl ("uploadExcelFile")
+    
+    getRibbon().InvalidateControl ("inputFileName")
+    getRibbon().InvalidateControl ("sheetName")
+    getRibbon().InvalidateControl ("sheetHasTitles")
+End Sub
+
+Sub disableUploadingStage()
+    fileSelectionSuccessful = False
+    
+    getRibbon().InvalidateControl ("excelParametersBox")
+    getRibbon().InvalidateControl ("uploadExcelFile")
+    
+    getRibbon().InvalidateControl ("inputFileName")
+    getRibbon().InvalidateControl ("sheetName")
+    getRibbon().InvalidateControl ("sheetHasTitles")
+End Sub
+
+'Callback for "Upload File" button
+Sub uploadExcelFile(control As IRibbonControl)
+    If StrComp(inputFilePath, "") <> 0 Then
+        If sheetHasTitlesFlag Then
+            inputFirstRow = 2
+        Else
+            inputFirstRow = 1
+        End If
+        
+        #If Mac Then
+            parameterString = CStr(Replace(inputFilePath, Chr(92), "/"))
+            excelFileValidation = CStr(AppleScriptTask("MyBoss-browse_files_on_mac.scpt", "checkExcelExists", parameterString))
+            
+            If excelFileValidation = "success" Then
+                parameterString = CStr(Replace(inputFilePath, Chr(92), "/") & "|" & inputSheetName)
+                excelSheetValidation = CStr(AppleScriptTask("MyBoss-browse_files_on_mac.scpt", "checkSheetExists", parameterString))
+                
+                If excelSheetValidation = "success" Then
+                    ReDim employeesList(defaultInputNumberOfColumns - 1, 0)
+                    eRowNonEmptyCounter = 0
+                    eOffset = 0
+                    employeesListLength = 0
+                    
+                    parameterString = CStr(Replace(inputFilePath, Chr(92), "/") & "|" & inputSheetName & "|" & CStr(eOffset) & "|" & CStr(100))
+                    excelSheetData = CStr(AppleScriptTask("MyBoss-browse_files_on_mac.scpt", "openExcelGetSheetData", parameterString))
+                    
+                    Do While Len(excelSheetData) > 0
+                        ReDim Preserve employeesList(defaultInputNumberOfColumns - 1, UBound(employeesList, 2) + 100)
+                        'Rows are split by ";", columns are split by "|"
+                        excelSheetDataRows = Split(excelSheetData, ";")
+                        
+                        For Each eRow In excelSheetDataRows
+                            If Len(eRow) > 0 Then
+                                If eRowNonEmptyCounter >= inputFirstRow - 1 Then
+                                    eCells = Split(eRow, "|")
+                                    
+                                    If UBound(eCells, 1) >= defaultInputNumberOfColumns Then
+                                        For i = 0 To defaultInputNumberOfColumns - 1
+                                            employeesList(i, employeesListLength) = Replace(Replace(eCells(i), vbLf, ""), vbCrLf, "")
+                                        Next i
+                                        employeesListLength = employeesListLength + 1
+                                    Else
+                                        GoTo askToCheckTheData
+                                    End If
+                                End If
+                            End If
+                            eRowNonEmptyCounter = eRowNonEmptyCounter + 1
+                        Next eRow
+                        
+                        eOffset = eOffset + 100
+                        parameterString = CStr(Replace(inputFilePath, Chr(92), "/") & "|" & inputSheetName & "|" & CStr(eOffset) & "|" & CStr(100))
+                        excelSheetData = CStr(AppleScriptTask("MyBoss-browse_files_on_mac.scpt", "openExcelGetSheetData", parameterString))
+                    Loop
+                    
+                    employeesList = wfTransposeArray(employeesList)
+                Else
+                    GoTo askToSelectAnotherSheet
+                End If
+            Else
+                GoTo askToSelectAnotherFile
+            End If
+        #Else
+            On Error GoTo askToSelectAnotherFile
+            Set oXL = CreateObject("Excel.Application")
+            Set oWB = oXL.Workbooks.Open(inputFilePath)
+        
+            ReDim employeesList(oWB.Worksheets(inputSheetName).UsedRange.Rows.Count - 1, defaultInputNumberOfColumns - 1)
+    
+            rangeExplicit = "A" & CStr(inputFirstRow) & ":" & Chr(Asc("A") + defaultInputNumberOfColumns - 1) & oWB.Worksheets(inputSheetName).UsedRange.Rows.Count
+    
+            employeesList = oWB.Worksheets(inputSheetName).Range(rangeExplicit).Value
+            oWB.Close SaveChanges:=False
+            oXL.Quit
+        #End If
+
+        If buildHierarchy() Then
+            If checkConnectionsToCEO() Then
+                Call openProgressBar("Calculating...", -1, False)
+                'Firstly, pre-calculate all subordinates numbers to save time
+                MyDictionaryPersonalInfo.Item(fullNameTopLevelManagerKey).HeadcountStats = CalculateSubordinates(fullNameTopLevelManagerKey, "number")
+                    
+                'Secondly, sort the list of Employees
+                MyVariantListOfEmployees = MyDictionaryPersonalInfo.keys
+                Call sortUtility(MyVariantListOfEmployees, 0, UBound(MyVariantListOfEmployees), "alphabet", False)
+                    
+                'Last thing - structure the employees
+                Set MyDictionaryEmployeesPerCategory = New Dictionary
+                MyDictionaryEmployeesPerCategory.add "CEO", getEmployeesListByCategory("CEO")
+                MyDictionaryEmployeesPerCategory.add "Managers", getEmployeesListByCategory("Managers")
+                MyDictionaryEmployeesPerCategory.add "AZ", getEmployeesListByCategory("AZ")
+                For i = Asc("A") To Asc("Z")
+                    MyDictionaryEmployeesPerCategory.add Chr(i), getEmployeesListByCategory(Chr(i))
+                Next i
+            
+                Call closeProgressBar
+                    
+                inputCategoryName = "CEO"
+                
+                'Empty the editbox to start from scratch
+                getRibbon().InvalidateControl ("refreshExcelFile")
+                getRibbon().InvalidateControl ("personCategory")
+                getRibbon().InvalidateControl ("personFullName")
+                    
+                Call disableUploadingStage
+                Call enableCreationStage
+            End If
+        End If
+    Else
+        MsgBox ("You didn't specify input file")
+    End If
+    Exit Sub
+        
+askToSelectAnotherFile:
+    Call disableCreationStage
+    Call enableUploadingStage
+    
+    MsgBox ("Can't find this file: " & inputFileNmae & ". Please select it again or pick another one.")
+    Call closeProgressBar
+    Exit Sub
+
+askToSelectAnotherSheet:
+    Call disableCreationStage
+    Call enableUploadingStage
+            
+    MsgBox ("Can't find this sheet: " & inputSheetName & ". Please select it again or pick another one.")
+    Call closeProgressBar
+    Exit Sub
+    
+askToCheckTheData:
+    Call disableCreationStage
+    Call enableUploadingStage
+    
+    MsgBox ("Please check you selected the right sheet: " & inputSheetName & ". It doesn't have enough columns for the template.")
+    Call closeProgressBar
+    Exit Sub
+
+End Sub
+
+Sub isExcelOK(control As IRibbonControl, ByRef returnedVal)
+    returnedVal = fileUploadingSuccessful
+End Sub
+
+Sub isExcelNotOK(control As IRibbonControl, ByRef returnedVal)
+    returnedVal = Not (fileUploadingSuccessful)
+End Sub
+
+Sub enableCreationStage()
+    fileUploadingSuccessful = True
+    
+    getRibbon().InvalidateControl ("pickInputFile")
+    getRibbon().InvalidateControl ("UpdateInputSplitButton")
+    
+    getRibbon().InvalidateControl ("createStage")
+    
+    getRibbon().InvalidateControl ("decorationStageElements")
+    getRibbon().InvalidateControl ("decorationStageManipulation")
+End Sub
+
+Sub disableCreationStage()
+    fileUploadingSuccessful = False
+    
+    getRibbon().InvalidateControl ("pickInputFile")
+    getRibbon().InvalidateControl ("UpdateInputSplitButton")
+    
+    getRibbon().InvalidateControl ("createStage")
+    
+    getRibbon().InvalidateControl ("decorationStageElements")
+    getRibbon().InvalidateControl ("decorationStageManipulation")
+End Sub

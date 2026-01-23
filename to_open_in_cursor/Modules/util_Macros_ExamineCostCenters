@@ -1,0 +1,132 @@
+Sub showCostCenters()
+    On Error GoTo ErrorHandler
+    
+    Call hideCostCenters
+    
+    Call openProgressDigit("Adding CCs...")
+    Call updateProgressDigit(0)
+    
+    Call refreshCardsChecklist("all_slides")
+    
+    numberOfPeopleToProcess = MyDictionaryCardsCheckList.Count
+    numberOfPeopleProcessed = 0
+    
+    nTextBoxesWithCostCenter = 0
+    
+    'Check if dictionary is valid
+    If MyDictionaryCardsCheckList Is Nothing Then
+        Call closeProgressDigit
+        MsgBox "No cards found to process.", vbInformation
+        Exit Sub
+    End If
+    
+    If MyDictionaryCardsCheckList.Count = 0 Then
+        Call closeProgressDigit
+        MsgBox "No cards found to process.", vbInformation
+        Exit Sub
+    End If
+    
+    'Use .Keys to iterate over Dictionary (more compatible)
+    For Each cardName In MyDictionaryCardsCheckList.Keys
+        On Error Resume Next
+        personFullName = parseShapeName(cardName).Item("FullNameKey")
+        If Err.Number <> 0 Then
+            Err.Clear
+            GoTo NextCard
+        End If
+        On Error GoTo ErrorHandler
+        
+        Set bufferSlideList = MyDictionaryCardsCheckList.Item(cardName)
+        
+        On Error Resume Next
+        shapeName = personFullName & "MainBackground" & parseShapeName(cardName).Item("ManagerType")
+        If Err.Number <> 0 Then
+            Err.Clear
+            GoTo NextCard
+        End If
+        On Error GoTo ErrorHandler
+        
+        For Each slideNumber In bufferSlideList
+            On Error Resume Next
+            
+            'checkShapeExists returns the reference to Shape Object with given name
+            Dim shapeObj As Object
+            Set shapeObj = checkShapeExists(slideNumber, shapeName)
+            If shapeObj Is Nothing Or Err.Number <> 0 Then
+                Err.Clear
+                GoTo NextSlide
+            End If
+            
+            posX = shapeObj.Left + shapeObj.Width - 50
+            posY = shapeObj.Top + shapeObj.Height - 20
+            
+            If Err.Number <> 0 Then
+                Err.Clear
+                GoTo NextSlide
+            End If
+            On Error GoTo ErrorHandler
+            
+            nTextBoxesWithCostCenter = nTextBoxesWithCostCenter + 1
+            newTextBoxName = "ccTextBox" & CStr(nTextBoxesWithCostCenter)
+            Call ActivePresentation.Slides(slideNumber).Shapes.AddTextbox(msoTextOrientationHorizontal, posX, posY, 50, 30)
+            ActivePresentation.Slides(slideNumber).Shapes(ActivePresentation.Slides(slideNumber).Shapes.Count).Name = newTextBoxName
+            ActivePresentation.Slides(slideNumber).Shapes(newTextBoxName).Fill.ForeColor.RGB = RGB(0, 255, 0)
+            
+            With ActivePresentation.Slides(slideNumber).Shapes(newTextBoxName).TextFrame.TextRange
+                'Handle both text and numeric cost centers
+                On Error Resume Next
+                ccValue = ""
+                ccValue = CStr(MyDictionaryPersonalInfo.Item(personFullName).CostCenter)
+                If Err.Number <> 0 Then
+                    ccValue = ""
+                    Err.Clear
+                End If
+                On Error GoTo ErrorHandler
+                
+                'Show value if it's not empty, not "0", and not just whitespace
+                If Len(Trim(ccValue)) > 0 And ccValue <> "0" Then
+                    .Text = Trim(ccValue)
+                Else
+                    .Text = "?"
+                End If
+                .Paragraphs.Font.Size = 10
+                .Paragraphs.Font.Bold = True
+                .Paragraphs.ParagraphFormat.Alignment = ppAlignCenter
+            End With
+NextSlide:
+        Next slideNumber
+        
+        numberOfPeopleProcessed = numberOfPeopleProcessed + 1
+        Call updateProgressDigit(numberOfPeopleProcessed / numberOfPeopleToProcess)
+NextCard:
+    Next cardName
+    
+    Call closeProgressDigit
+    Exit Sub
+    
+ErrorHandler:
+    Call closeProgressDigit
+    MsgBox "Error in showCostCenters: " & Err.Description, vbExclamation
+End Sub
+
+Sub hideCostCenters()
+    Call openProgressDigit("Removing CCs...")
+    
+    For Each oSl In ActivePresentation.Slides
+        ccTextBoxFound = True
+        
+        Do While ccTextBoxFound
+            For Each oSh In oSl.Shapes
+                If InStr(1, oSh.Name, "ccTextBox") > 0 Then oSh.Delete
+            Next oSh
+            
+            ccTextBoxFound = False
+            For Each oSh In oSl.Shapes
+                If InStr(1, oSh.Name, "ccTextBox") > 0 Then ccTextBoxFound = True
+            Next oSh
+        Loop
+    Next oSl
+    
+    Call closeProgressDigit
+End Sub
+

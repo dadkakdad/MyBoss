@@ -1,0 +1,410 @@
+Private eSurname As String 'Column A
+Private eName As String 'Column B
+
+Private eJobTitle As String 'Column C
+Private eDepartment As String 'Column D
+
+Private eSurnameSolidLineManager As String 'Columns E
+Private eNameSolidLineManager As String 'Columns F
+
+Private eSurnameDottedLineManager As String 'Columns G
+Private eNameDottedLineManager As String 'Columns H
+
+Private eLocation As String 'Column I
+Private eTerminationDate As String 'Column J
+
+Private eOutsourceFlag As Boolean 'Column K
+Private eImportantFlag As Boolean 'Column L
+
+Private eCostCenter As Integer 'Column M
+
+Private eDuplicateId As String
+Private eDuplicates As Integer
+
+Private eHeadcountStats As CSubordinatesStatistics
+
+Private eRowIndexInExcelFile As Double
+
+'----- Personal Info about Employee -----
+Public Property Get Surname() As String
+    Surname = eSurname
+End Property
+
+Public Property Get SurnameModerated() As String
+    Tag = textInSquareBrackets(Me.Surname)
+    If Tag <> "" Then
+        SurnameModerated = Replace(Me.Surname, Tag, "")
+    Else
+        SurnameModerated = Me.Surname
+    End If
+End Property
+
+Public Property Let Surname(Value As String)
+    eSurname = Value
+End Property
+
+Public Property Get Name() As String
+    Name = eName
+End Property
+
+Public Property Get NameModerated() As String
+    Tag = textInSquareBrackets(Me.Name)
+    If Tag <> "" Then
+        NameModerated = Replace(Me.Name, Tag, "")
+    Else
+        NameModerated = Me.Name
+    End If
+End Property
+
+Public Property Let Name(Value As String)
+    eName = Value
+End Property
+
+Public Property Get FullName() As String
+    FullName = Trim(Me.Surname) & " " & Trim(Me.Name)
+End Property
+
+Public Property Get FullNameModerated() As String
+    FullNameModerated = Trim(Me.SurnameModerated) & " " & Trim(Me.NameModerated)
+End Property
+
+Public Property Get FullNameKey() As String
+    FullNameKey = LCase(Replace(Me.FullName, " ", "")) & Me.DuplicateId
+End Property
+'------------------------------------------
+
+'----- Employee's Solid Line Manager -----
+Public Property Get NameSolidLineManager() As String
+    NameSolidLineManager = eNameSolidLineManager
+End Property
+
+Public Property Let NameSolidLineManager(Value As String)
+    eNameSolidLineManager = Value
+End Property
+
+Public Property Get SurnameSolidLineManager() As String
+   SurnameSolidLineManager = eSurnameSolidLineManager
+End Property
+
+Public Property Let SurnameSolidLineManager(Value As String)
+    eSurnameSolidLineManager = Value
+End Property
+
+Public Property Get FullNameSolidLineManager() As String
+   FullNameSolidLineManager = Trim(Me.SurnameSolidLineManager) & " " & Trim(Me.NameSolidLineManager)
+End Property
+
+Public Property Get FullNameSolidLineManagerKey() As String
+   FullNameSolidLineManagerKey = LCase(Replace(Me.FullNameSolidLineManager, " ", ""))
+End Property
+
+
+'----- Employee's Dotted Line Manager -----
+Public Property Get NameDottedLineManager() As String
+    NameDottedLineManager = eNameDottedLineManager
+End Property
+
+Public Property Let NameDottedLineManager(Value As String)
+    eNameDottedLineManager = Value
+End Property
+
+Public Property Get SurnameDottedLineManager() As String
+    SurnameDottedLineManager = eSurnameDottedLineManager
+End Property
+
+Public Property Let SurnameDottedLineManager(Value As String)
+    eSurnameDottedLineManager = Value
+End Property
+
+Public Property Get FullNameDottedLineManager() As String
+   FullNameDottedLineManager = Trim(Me.SurnameDottedLineManager) & " " & Trim(Me.NameDottedLineManager)
+End Property
+
+Public Property Get FullNameDottedLineManagerKey() As String
+   FullNameDottedLineManagerKey = LCase(Replace(Me.FullNameDottedLineManager, " ", ""))
+End Property
+
+'----- Employee's Manager to show on slides -----
+Public Property Get FullNameManager() As String
+    If Not (Me.HasTwoManagers()) Then
+        FullNameManager = Me.FullNameSolidLineManager
+    Else
+        FullNameManager = Me.FullNameDottedLineManager
+    End If
+End Property
+
+Public Property Get FullNameManagerKey() As String
+    If Not (Me.HasTwoManagers()) Then
+        FullNameManagerKey = Me.FullNameSolidLineManagerKey
+    Else
+        FullNameManagerKey = Me.FullNameDottedLineManagerKey
+    End If
+End Property
+
+'----- Job Specific Info about Employee -----
+Public Property Get JobTitle() As String
+    JobTitle = eJobTitle
+End Property
+
+Public Property Let JobTitle(Value As String)
+    eJobTitle = Value
+End Property
+
+Public Property Get Department() As String
+    Department = eDepartment
+End Property
+
+Public Property Get DepartmentKey() As String
+    DepartmentKey = LCase(Replace(Me.Department, " ", ""))
+End Property
+
+Public Property Let Department(Value As String)
+    eDepartment = Value
+End Property
+
+Public Property Get Location() As String
+    Location = eLocation
+End Property
+
+Public Property Let Location(Value As String)
+    eLocation = Value
+End Property
+
+Public Property Get TerminationDate() As String
+    TerminationDate = eTerminationDate
+End Property
+
+Public Property Let TerminationDate(Value As String)
+    eTerminationDate = Value
+End Property
+
+Public Property Get OutsourceFlag() As Boolean
+    OutsourceFlag = eOutsourceFlag
+End Property
+
+Public Property Let OutsourceFlag(Value As Boolean)
+    eOutsourceFlag = Value
+End Property
+
+Public Property Get ImportantFlag() As Boolean
+    ImportantFlag = eImportantFlag
+End Property
+
+Public Property Let ImportantFlag(Value As Boolean)
+    eImportantFlag = Value
+End Property
+
+Public Property Get CostCenter() As Integer
+    CostCenter = eCostCenter
+End Property
+
+Public Property Let CostCenter(Value As Integer)
+    eCostCenter = Value
+End Property
+
+Public Property Let Duplicates(Value As Integer)
+    eDuplicates = Value
+End Property
+
+Public Property Get Duplicates() As Integer
+    Duplicates = eDuplicates
+End Property
+
+Public Property Let DuplicateId(Value As String)
+    eDuplicateId = Value
+End Property
+
+Public Property Get DuplicateId() As String
+    DuplicateId = eDuplicateId
+End Property
+
+Public Property Get HeadcountStats() As Object
+    Set HeadcountStats = eHeadcountStats
+End Property
+
+Public Property Let HeadcountStats(Value As Object)
+    Set eHeadcountStats = Value
+End Property
+
+Public Property Get RowIndexInExcelFile() As String
+    RowIndexInExcelFile = eRowIndexInExcelFile
+End Property
+
+Public Property Let RowIndexInExcelFile(Value As String)
+    eRowIndexInExcelFile = Value
+End Property
+
+'---------- COMPLEX METHODS ---------
+'Manager is a person with at least one direct report
+Public Property Get IsManager() As Boolean
+    If MyDictionaryDirectReports.Item(Me.FullNameKey).Count > 0 Then
+        IsManager = True
+    Else
+        IsManager = False
+    End If
+End Property
+
+'Worker is a person with no direct reports
+Public Property Get IsWorker() As Boolean
+    IsWorker = Not (IsManager)
+End Property
+
+'"To Be Hired" is a person which is not added to headcount when calculating total number of subordinates
+Public Property Get IsToBeHired() As Boolean
+    'To Be Hired people are identified by their names: TBH_SE, TBH_DD, etc.
+    If startsWith(Me.FullName, "TBH_") Then
+        IsToBeHired = True
+    Else
+        IsToBeHired = False
+    End If
+End Property
+
+'Check if person has both solid- and dotted- line managers;
+Public Property Get HasTwoManagers() As Boolean
+    'He should have solid-line manager by default, so it's enough to check whether he has dotted-line one
+    If Me.FullNameDottedLineManagerKey = "" Then
+        HasTwoManagers = False
+    Else
+        HasTwoManagers = True
+    End If
+End Property
+
+'Check who is personFullName - Solid, Dotted or None of these two
+Public Property Get ManagerType(ByVal personFullName As String) As String
+    Select Case personFullName
+        Case Me.FullNameSolidLineManagerKey
+            ManagerType = "Solid"
+        Case Me.FullNameDottedLineManagerKey
+            ManagerType = "Dotted"
+        Case Else
+            ManagerType = ""
+    End Select
+End Property
+
+        
+'Mirrors "getReferenceTickNames' logic
+Public Property Get nOrdinaryBranchesUtil(ByVal considerAllDirectReportsAsWorkers As Boolean) As Integer
+    If considerAllDirectReportsAsWorkers Then
+        nOrdinaryBranchesUtil = 0
+    Else
+        nOrdinaryBranchesUtil = Me.DirectReports("Unsorted").Item("Managers").Count
+    End If
+End Property
+
+Public Property Get nDepartmentBranchesUtil(ByVal considerAllDirectReportsAsWorkers As Boolean) As Integer
+    If considerAllDirectReportsAsWorkers Then
+        nDepartmentBranchesUtil = Me.ListOfDepartments("All").Count
+    Else
+        nDepartmentBranchesUtil = Me.ListOfDepartments("Workers").Count
+    End If
+End Property
+
+Public Property Get nBranchesHorizontallyLimitExceeded(ByVal considerAllDirectReportsAsWorkers As Boolean) As Integer
+    nOrdinaryBranches = Me.nOrdinaryBranchesUtil(considerAllDirectReportsAsWorkers)
+    nDepartmentBranches = Me.nDepartmentBranchesUtil(considerAllDirectReportsAsWorkers)
+    
+    If (nOrdinaryBranches + nDepartmentBranches) > MAX_BRANCHES_HORIZONTALLY Then
+        nBranchesHorizontallyLimitExceeded = True
+    Else
+        nBranchesHorizontallyLimitExceeded = False
+    End If
+End Property
+
+
+
+'Set up by program logic
+Public Property Get DefaultManagerType() As String
+    'Change 30/03/2018 - to show people under solid-line managers
+    'DefaultManagerType = Me.ManagerType(Me.FullNameManagerKey)
+    DefaultManagerType = "Solid"
+End Property
+
+'Return manager name based on type of reporting
+Public Property Get ManagerByType(ByVal ManagerType As String) As String
+    Select Case ManagerType
+        Case "Solid"
+            ManagerByType = Me.FullNameSolidLineManagerKey
+        Case "Dotted"
+            ManagerByType = Me.FullNameDottedLineManagerKey
+        Case Else
+            ManagerByType = ""
+    End Select
+End Property
+
+'Check who is personFullName - Solid, Dotted or None of these two
+Public Property Get ShouldBeShownUnderManager(ByVal personFullName As String) As Boolean
+    'Change 30/03/2018 - to show people under solid-line managers
+    'ShouldBeShownUnderManager = Not (Me.HasTwoManagers() And Me.ManagerType(personFullName) = "Solid")
+    ShouldBeShownUnderManager = CBool(Me.ManagerType(personFullName) = "Solid")
+End Property
+
+'Return direct reports separated by type of reporting
+Public Property Get DirectReports(ByVal sortRegime As String) As Object
+    'Initialize storage for organised direct reports
+    Set MyDictionaryDirectReportsClassified = New Dictionary
+    
+    MyDictionaryDirectReportsClassified.add "All", New Collection
+    MyDictionaryDirectReportsClassified.add "Solid", New Collection
+    MyDictionaryDirectReportsClassified.add "Dotted", New Collection
+    MyDictionaryDirectReportsClassified.add "Workers", New Collection
+    MyDictionaryDirectReportsClassified.add "Managers", New Collection
+    
+    If MyDictionaryDirectReports.Item(Me.FullNameKey).Count > 0 Then
+        With MyDictionaryDirectReportsClassified
+            Set directReportsBuffer = New Collection
+            
+            If LCase(sortRegime) = "sorted" Then
+                Dim directReportsNotClassified() As Variant
+                
+                'Create instance to store direct reports in Variant
+                ReDim directReportsNotClassified(MyDictionaryDirectReports.Item(Me.FullNameKey).Count - 1)
+                        
+                'Copy values from Collection to Variant for easier sorting (you can't swap values in Collection)
+                For i = 0 To UBound(directReportsNotClassified, 1)
+                    directReportsNotClassified(i) = MyDictionaryDirectReports.Item(Me.FullNameKey)(i + 1)
+                Next i
+                
+                'Select whether you want a sorted array or not
+                Call sortUtility(directReportsNotClassified, 0, UBound(directReportsNotClassified), "maturity", False)
+                
+                For i = 0 To UBound(directReportsNotClassified, 1)
+                    directReportsBuffer.add directReportsNotClassified(i)
+                Next i
+            Else
+                Set directReportsBuffer = MyDictionaryDirectReports.Item(Me.FullNameKey)
+            End If
+            
+            'Loop through direct reports, separate them by category
+            For Each directReport In directReportsBuffer
+                'Separate by reporting type
+                .Item("All").add directReport
+                .Item(MyDictionaryPersonalInfo.Item(directReport).ManagerType(Me.FullNameKey)).add directReport
+                            
+                'Separate by status (manager OR worker)
+                If MyDictionaryPersonalInfo.Item(directReport).IsManager Then
+                    .Item("Managers").add directReport
+                Else
+                    .Item("Workers").add directReport
+                End If
+            Next directReport
+        End With
+    End If
+
+    Set DirectReports = MyDictionaryDirectReportsClassified
+End Property
+
+'Returns the list of departments with people inside
+'WE ALWAYS HAVE AT LEAST ONE DEPARTMENT
+Public Property Get ListOfDepartments(ByVal directReportsClass As String) As Dictionary
+    'Initialize storage for organized direct reports
+    Set ListOfDepartments = New Dictionary
+
+    'Distribute non-managerial direct reports from sublist to departments and save distribution to MyDictionaryDepartmentsList
+    For Each directReport In Me.DirectReports("Sorted").Item(directReportsClass)
+        DepartmentName = MyDictionaryPersonalInfo.Item(directReport).DepartmentKey
+        If DepartmentName = "" Then DepartmentName = "<no_department_specified>"
+                    
+        If Not ListOfDepartments.Exists(DepartmentName) Then ListOfDepartments.add DepartmentName, New Collection
+        ListOfDepartments.Item(DepartmentName).add directReport
+    Next directReport
+End Property

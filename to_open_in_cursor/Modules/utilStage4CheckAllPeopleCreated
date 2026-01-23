@@ -1,0 +1,173 @@
+'We check ONLY subordinates connected through solid line
+'TO BE DONE: improve so that is checks all people
+Sub showWhomIForgot(ByVal topLevelManagerFullName As String)
+    '------------------- INITIALIZATION -------------------
+    'fill MyDictionaryCardsChecklist with data
+    Call refreshCardsChecklist("all_slides")
+    
+    'fill MyDictionarySubordinatesChecklist with data
+    Call refreshSubordinatesChecklist(topLevelManagerFullName)
+    
+    Set Duplicates = getTheListOfDuplicateCards()
+    Set missings = getTheListOfMissingPeople()
+    
+    bufferForgottenOutput = ""
+    bufferDuplicateOutput = ""
+    '------------------------------------------------------
+    
+    'Transform into slide 1 -> "A", "B", etc.
+    Set MyDictionaryForgottenPeopleBySlide = New Dictionary
+    MyDictionaryForgottenPeopleBySlide.add "0", New Collection
+    For Each cardName In missings
+        employeeFullName = parseShapeName(cardName).Item("FullNameKey")
+        employeeManagerType = parseShapeName(cardName).Item("ManagerType")
+        If employeeManagerType = "Solid" Then
+            managerCardName = MyDictionaryPersonalInfo.Item(employeeFullName).FullNameSolidLineManagerKey & "Solid"
+        Else
+            managerCardName = MyDictionaryPersonalInfo.Item(employeeFullName).FullNameDottedLineManagerKey & "Solid"
+        End If
+        
+        If MyDictionaryCardsCheckList.Exists(managerCardName) Then
+            If MyDictionaryCardsCheckList.Item(managerCardName).Count = 1 Then
+                slideNumber = MyDictionaryCardsCheckList.Item(managerCardName).Item(1)
+                If Not MyDictionaryForgottenPeopleBySlide.Exists(slideNumber) Then MyDictionaryForgottenPeopleBySlide.add slideNumber, New Collection
+                MyDictionaryForgottenPeopleBySlide.Item(slideNumber).add cardName
+            Else
+                MyDictionaryForgottenPeopleBySlide.Item("0").add cardName
+            End If
+        Else
+            MyDictionaryForgottenPeopleBySlide.Item("0").add cardName
+        End If
+    Next cardName
+        
+    '---------- OUTPUT DUPLICATES -----------
+'    bufferDuplicateOutput = "Number of duplicate cards: " & CStr(Duplicates.Count) & vbCrLf
+'    i = 1
+'    For Each cardName In Duplicates
+'        personFullName = parseShapeName(cardName).Item("FullNameKey")
+'        bufferDuplicateOutput = bufferDuplicateOutput & CStr(i) & ". " & MyDictionaryPersonalInfo.Item(personFullName).FullName & vbCrLf
+'        i = i + 1
+'    Next cardName
+'
+'    MsgBox (bufferDuplicateOutput)
+        
+    '---------- OUTPUT MISSING PEOPLE -----------
+    bufferForgottenOutput = "Number of forgotten " & MyDictionaryPersonalInfo.Item(topLevelManagerFullName).FullName & "'s subordinates: " & CStr(missings.Count) & vbCrLf
+    j = 1
+        
+    'sort the slides
+    Dim slideIndexList() As Variant
+    If MyDictionaryForgottenPeopleBySlide.Count > 0 Then
+        ReDim slideIndexList(MyDictionaryForgottenPeopleBySlide.Count - 1)
+        
+        'first loop: copy values from Collection to Variant for successful sorting
+        i = 0
+        For Each slideIndex In MyDictionaryForgottenPeopleBySlide.keys
+            slideIndexList(i) = slideIndex
+            i = i + 1
+        Next slideIndex
+        Call sortUtility(slideIndexList, 0, UBound(slideIndexList), "number", False)
+            
+        'second loop: fill the buffer with pre-formated output
+        For i = 0 To UBound(slideIndexList, 1)
+            slideNumber = slideIndexList(i)
+            If slideNumber <> 0 Then bufferForgottenOutput = bufferForgottenOutput & " ----- Slide " & CStr(slideNumber) & " ----- " & vbCrLf
+                    
+            For Each cardName In MyDictionaryForgottenPeopleBySlide.Item(slideNumber)
+                employeeFullName = parseShapeName(cardName).Item("FullNameKey")
+                employeeManagerType = parseShapeName(cardName).Item("ManagerType")
+                bufferForgottenOutput = bufferForgottenOutput & CStr(j) & ". " & MyDictionaryPersonalInfo.Item(employeeFullName).FullName & " --> " & _
+                      MyDictionaryPersonalInfo.Item(MyDictionaryPersonalInfo.Item(employeeFullName).ManagerByType(employeeManagerType)).FullName & vbCrLf
+                j = j + 1
+            Next cardName
+        Next i
+            
+        MsgBox (bufferForgottenOutput)
+    End If
+End Sub
+
+'compare MyDictionarySubordinatesChecklist and MyDictionaryCardsChecklist then say, whether these two lists are identical
+'TASK: every person from MyDictionarySubordinatesChecklist should be in MyDictionaryCardsChecklist
+Function getTheListOfMissingPeople() As Object
+    'we store people keys in Scripting Dictionary to simplify the search for person
+    Set getTheListOfMissingPeople = New Collection
+    
+    'iterate through all manager's subordinates
+    For Each personFullName In MyDictionarySubordinatesChecklist.keys 'to check full list -> MyDictionaryPersonalInfo.Keys
+        'if this guy wasn't found on any slide, check where is his manager
+        If Not MyDictionaryCardsCheckList.Exists(personFullName) Then
+            getTheListOfMissingPeople.add personFullName
+        End If
+    Next personFullName
+End Function
+
+'iterate through all cards on slide(s) and check whether there are more than one of each of them
+Function getTheListOfDuplicateCards() As Object
+    'we store people keys in Scripting Dictionary to simplify the search for person
+    Set getTheListOfDuplicateCards = New Collection
+    
+    For Each personFullName In MyDictionaryCardsCheckList.keys
+        If MyDictionaryCardsCheckList.Item(personFullName).Count > 1 Then
+            getTheListOfDuplicateCards.add personFullName
+        End If
+    Next personFullName
+End Function
+
+'Iterate through all shapes on single slide/all slides and get the list of people created
+Sub refreshCardsChecklist(ByVal slideRegime As String, Optional ByVal slideNumber As Integer = -1)
+    'refresh the storage
+    If MyDictionaryCardsCheckList.Count > 0 Then
+        Set MyDictionaryCardsCheckList = New Dictionary
+    End If
+    
+    numberOfPeopleSplitIntoSlides = 0
+    numberOfPeopleDuplicates = 0
+    
+    'loop through every shape
+    For Each oSl In ActivePresentation.Slides
+        If slideRegime = "all_slides" Or (slideRegime = "single_slide" And slideNumber = oSl.slideIndex) Then
+            For Each oSh In oSl.Shapes
+                If oSh.Type = msoGroup Then
+                    Call lookInsideGroup(oSh, oSl.slideIndex)
+                Else
+                    Call lookInsideShape(oSh, oSl.slideIndex)
+                End If
+            Next oSh
+        End If
+    Next oSl
+End Sub
+
+'Recursive function to run through all the subshapes in group
+'Assuming oSh shape type is "Group"
+Sub lookInsideGroup(ByVal oSh As Shape, ByVal slideIndex As Integer)
+    For Each oShItem In oSh.GroupItems
+        If oShItem.Type = msoGroup Then
+            Call lookInsideGroup(oShItem, slideIndex)
+        Else
+            Call lookInsideShape(oShItem, slideIndex)
+        End If
+    Next oShItem
+End Sub
+
+'Extract person name from shape name and add to checklist
+Sub lookInsideShape(ByVal oSh As Shape, ByVal slideIndex As Integer)
+    Set ShapeNameParsed = parseShapeName(oSh.Name)
+    
+    With ShapeNameParsed
+        If .Item("FullNameKey") <> "" And .Item("ManagerType") <> "" And .Item("ElementName") = "InfoBox" Then
+            cardName = .Item("FullNameKey") & .Item("ManagerType")
+            If Not MyDictionaryCardsCheckList.Exists(cardName) Then
+                MyDictionaryCardsCheckList.add cardName, New Collection
+            End If
+            
+            MyDictionaryCardsCheckList.Item(cardName).add slideIndex
+            
+            If MyDictionaryPersonalInfo.Item(.Item("FullNameKey")).IsManager Then
+                If MyDictionaryCardsCheckList.Item(cardName).Count = 2 Then numberOfPeopleSplitIntoSlides = numberOfPeopleSplitIntoSlides + 1
+                If MyDictionaryCardsCheckList.Item(cardName).Count > 2 Then numberOfPeopleDuplicates = numberOfPeopleDuplicates + 1
+            Else
+                If MyDictionaryCardsCheckList.Item(cardName).Count > 1 Then numberOfPeopleDuplicates = numberOfPeopleDuplicates + 1
+            End If
+        End If
+    End With
+End Sub

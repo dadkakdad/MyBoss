@@ -1,0 +1,71 @@
+Sub createLinks(control As IRibbonControl)
+    Call openProgressDigit("Erasing links...")
+    
+    'erase all existing links
+    linksFound = False
+    
+    Call findFullPalette
+    For slideNumber = 1 To ActivePresentation.Slides.Count
+        If slideNumber <> paletteSlideNumber Then
+            If eraseAllShapesLike(slideNumber, "SlideNSolid") Or eraseAllShapesLike(slideNumber, "SlideNDotted") Or eraseAllShapesLike(slideNumber, "NavigationArrow") Then
+                linksFound = True
+            End If
+        End If
+    Next slideNumber
+    
+    'create links from scratch
+    If Not linksFound Then
+        Call updateTaskDigit("Looking for pairs...")
+        
+        'get the list what people are on what slides
+        Call refreshCardsChecklist("all_slides")
+
+        Call updateTaskDigit("Adding links...")
+        Call updateProgressDigit(0)
+        
+        'find people who have their cards on two slides
+        Dim bufferSlideList As Collection
+        Dim numberOfLinksPut As Integer
+        
+        For Each cardName In MyDictionaryCardsCheckList.keys
+            personFullName = parseShapeName(cardName).Item("FullNameKey")
+            ManagerType = parseShapeName(cardName).Item("ManagerType")
+            
+            Set bufferSlideList = MyDictionaryCardsCheckList.Item(cardName)
+            If bufferSlideList.Count > 1 Then
+                If bufferSlideList.Count = 2 Then
+                    If MyDictionaryPersonalInfo.Item(personFullName).IsManager Then
+                        'assuming there is a straightforward logic of slides: manager's extended slide goes ALWAYS AFTER his shrinked slide
+                        If bufferSlideList(1) > bufferSlideList(2) Then
+                            slideNumberToBeLinked = bufferSlideList(2)
+                            slideNumberToBeLinked = bufferSlideList(1)
+                        Else
+                            slideNumberToBeLinked = bufferSlideList(1)
+                            slideNumberToLink = bufferSlideList(2)
+                        End If
+                            
+                        offsetYFlag = False
+                        If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then offsetYFlag = True
+                        
+                        Call addSlideNUtility(slideNumberToBeLinked, personFullName & "MainBackground" & ManagerType, offsetYFlag, slideNumberToLink)
+                        ActivePresentation.Slides(slideNumberToBeLinked).Shapes(ActivePresentation.Slides(slideNumberToBeLinked).Shapes.Count).Name = personFullName & "SlideN" & ManagerType
+                        
+                        Call addNavigationUtility(slideNumberToLink, personFullName, slideNumberToBeLinked, MyDictionaryPersonalInfo.Item(personFullName).FullNameManagerKey)
+                        With ActivePresentation.Slides(slideNumberToLink).Shapes(ActivePresentation.Slides(slideNumberToLink).Shapes.Count)
+                            .Name = personFullName & "NavigationArrow"
+                            .GroupItems("NavigationArrowDecoration").Name = personFullName & "NavigationArrowDecoration"
+                            .GroupItems("NavigationArrowInfoBox").Name = personFullName & "NavigationArrowInfoBox"
+                        End With
+                        
+                        numberOfLinksPut = numberOfLinksPut + 1
+                        Call updateProgressDigit(numberOfLinksPut / numberOfPeopleSplitIntoSlides)
+                    End If
+                Else
+                    MsgBox ("Can't create link for " & MyDictionaryPersonalInfo.Item(personFullName).FullName & " - too many (" & bufferSlideList.Count & ") cards found." & vbCrLf & _
+                    "Please leave maximum two for correct links.")
+                End If
+            End If
+        Next cardName
+    End If
+    Call closeProgressDigit
+End Sub

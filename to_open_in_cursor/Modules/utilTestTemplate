@@ -1,0 +1,83 @@
+Public templatesNamesCollection As Dictionary
+
+Sub populateTemplateForEverySize(ByRef shapeNamesCollection As Dictionary, ByVal shapeName As String, ByVal shapeSizesCollection As Collection)
+    For Each Size In shapeSizesCollection
+        shapeNamesCollection.add shapeName & Size, New Collection
+    Next Size
+End Sub
+
+Function initPalette() As Boolean
+    Set templatesNamesCollection = New Dictionary
+    templatesNamesCollection.RemoveAll
+
+    '---------- DECLARE SIZES ----------
+    Set templatesSizesCollection = New Collection
+    templatesSizesCollection.add ("Large")
+    templatesSizesCollection.add ("Medium")
+    templatesSizesCollection.add ("Small")
+    templatesSizesCollection.add ("ExtraSmall")
+    
+    '---------- ADD UNIQUE SHAPES -----------
+    templatesNamesCollection.add "DepartmentGroup", New Collection
+    templatesNamesCollection.add "AttentionFrame", New Collection
+    templatesNamesCollection.add "NavigationArrow", New Collection
+    
+    templatesNamesCollection.add "Shade1Department", New Collection
+    templatesNamesCollection.add "Shade2Department", New Collection
+    templatesNamesCollection.add "Shade3Department", New Collection
+    
+    '---------- ADD NON-UNIQUE SHAPES -----------
+    Set templatesNonUniqueShapesCollection = New Collection
+    templatesNonUniqueShapesCollection.add ("BubbleOutsource")
+    templatesNonUniqueShapesCollection.add ("BubbleImportant")
+    templatesNonUniqueShapesCollection.add ("BubbleOrdinary")
+    templatesNonUniqueShapesCollection.add ("SlideN")
+    templatesNonUniqueShapesCollection.add ("CommentBox")
+    templatesNonUniqueShapesCollection.add ("CardTbh")
+    templatesNonUniqueShapesCollection.add ("CardOutsource")
+    templatesNonUniqueShapesCollection.add ("CardImportant")
+    templatesNonUniqueShapesCollection.add ("CardOrdinary")
+    
+    For Each templateName In templatesNonUniqueShapesCollection
+        Call populateTemplateForEverySize(templatesNamesCollection, templateName, templatesSizesCollection)
+    Next templateName
+End Function
+
+'Check every necessary piece is in the deck
+Function verifyPaletteOnSlide(ByVal slideNumber As Integer) As Boolean
+    For Each templateName In templatesNamesCollection.keys
+        If fastCheckShapeExists(slideNumber, templateName) = False Then
+            'MsgBox (Chr(34) & templateName & Chr(34) & " is not in palette on slide " & CStr(slideNumber) & ".")
+            verifyPaletteOnSlide = False
+            Exit Function
+        End If
+    Next templateName
+    
+    verifyPaletteOnSlide = True
+End Function
+
+Sub findFullPalette()
+    For Each oSl In ActivePresentation.Slides
+        If verifyPaletteOnSlide(oSl.slideNumber) Then
+            paletteSlideNumber = oSl.slideNumber
+            
+            For Each templateName In templatesNamesCollection.keys
+                templatesNamesCollection.Item(templateName).add oSl.Shapes(templateName).Width
+                templatesNamesCollection.Item(templateName).add oSl.Shapes(templateName).Height
+            Next templateName
+            Exit Sub
+        End If
+    Next oSl
+End Sub
+
+
+'Iterate through all shapes on single slide/all slides and get the list of people created
+Function findPaletteCandidateForTemplate(ByVal shapeName As String) As Integer
+    For Each oSl In ActivePresentation.Slides
+        If fastCheckShapeExists(oSl.slideNumber, shapeName) Then
+            findPaletteCandidateForTemplate = oSl.slideNumber
+            Exit For
+        End If
+    Next oSl
+End Function
+

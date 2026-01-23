@@ -1,0 +1,104 @@
+Function textInBraces(ByVal str As String) As String
+    If InStr(1, str, "{") > 0 And InStr(1, str, "}") > 0 Then
+        textInBraces = Mid(str, InStr(1, str, "{") + 1, InStr(1, str, "}") - InStr(1, str, "{") - 1)
+    Else
+        textInBraces = ""
+    End If
+End Function
+
+Function textInSquareBrackets(ByVal str As String) As String
+    If InStr(1, str, "[") > 0 And InStr(1, str, "]") > 0 Then
+        textInSquareBrackets = Mid(str, InStr(1, str, "[") + 1, InStr(1, str, "]") - InStr(1, str, "[") - 1)
+    Else
+        textInSquareBrackets = ""
+    End If
+End Function
+
+Function capitalLetters(ByVal str As String) As Collection
+    Set capitalLetters = New Collection
+    
+     For Counter = 1 To Len(str)
+        l = Mid(str, Counter, 1)
+        If Asc(l) >= Asc("A") And Asc(l) <= Asc("Z") Then
+            capitalLetters.add l
+        End If
+    Next Counter
+End Function
+
+Function isNumeric(ByVal str As String) As Boolean
+    If Len(str) > 0 Then
+        For Counter = 1 To Len(str)
+            l = Mid(str, Counter, 1)
+            If Asc(l) >= Asc("0") And Asc(l) <= Asc("9") Then
+                'nothing
+            Else
+                isNumeric = False
+                Exit Function
+            End If
+        Next Counter
+        
+        isNumeric = True
+    Else
+        isNumeric = False
+    End If
+End Function
+
+Function startsWith(ByVal str As String, ByVal prefix As String) As Boolean
+   startsWith = CBool(Left(str, Len(prefix)) = prefix)
+End Function
+
+Function endsWith(ByVal str As String, ByVal suffix As String) As Boolean
+    endsWith = CBool(Right(str, Len(suffix)) = suffix)
+End Function
+
+Function multReplace(ByVal str As String, ByVal keys As Collection) As String
+    multReplace = str
+    For Counter = 1 To keys.Count
+        multReplace = Replace(multReplace, keys.Item(Counter), "")
+    Next Counter
+End Function
+
+Function parseShapeName(ByVal shapeName As String) As Object
+    Set parseShapeName = New Dictionary
+    parseShapeName.add "FullNameKey", ""
+    parseShapeName.add "ElementName", ""
+    parseShapeName.add "ManagerType", ""
+    
+    Set allmatches = capitalLetters(shapeName)
+       
+    If allmatches.Count > 0 Then
+        For i = 0 To allmatches.Count
+            'Extract the element
+            If i < allmatches.Count Then
+                block = Left(shapeName, InStr(1, shapeName, allmatches.Item(i + 1)) - 1)
+                shapeName = Replace(shapeName, block, "")
+            Else
+                block = shapeName
+            End If
+            
+            'Map the element position to
+            If i = 0 And CBool(MyDictionaryPersonalInfo.Exists(block)) = True Then
+                parseShapeName.Item("FullNameKey") = block
+            Else
+                If block = "Solid" Or block = "Dotted" Then
+                    parseShapeName.Item("ManagerType") = block
+                Else
+                    parseShapeName.Item("ElementName") = parseShapeName.Item("ElementName") & block
+                End If
+            End If
+        Next i
+    End If
+End Function
+
+Function extractEmployeeName(ByVal shapeName As String) As String
+    extractEmployeeName = parseShapeName(shapeName).Item("FullNameKey")
+End Function
+
+Function extractManagerType(ByVal shapeName As String) As String
+    extractManagerType = parseShapeName(shapeName).Item("ManagerType")
+End Function
+
+Function extractElementName(ByVal shapeName As String) As String
+    extractElementName = parseShapeName(shapeName).Item("ElementName")
+End Function
+

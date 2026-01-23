@@ -1,0 +1,189 @@
+Public fullNameTopLevelManagerKey As String
+
+'Callback for "Check Connections" button
+Function checkConnectionsToCEO() As Boolean
+    
+    fullNameTopLevelManagerKey = checkPersonExists(CStr(inputCEOFullName))
+    
+    If fullNameTopLevelManagerKey <> "" Then
+        'CHECK #1 - For each person check all his/her managers whether each of them is the PersonalInfo list
+        For Each employee In MyDictionaryPersonalInfo.keys
+            With MyDictionaryPersonalInfo.Item(employee)
+                If .FullNameKey <> fullNameTopLevelManagerKey Then
+                    'Check Solid-Line Manager
+                    If Not MyDictionaryPersonalInfo.Exists(.FullNameSolidLineManagerKey) Then
+                        If .FullNameSolidLineManagerKey = "" Then
+                            MsgBox ("You didn't specify manager for - " & .FullName & _
+                            " (line " & .RowIndexInExcelFile & "). Please fix it.")
+                        Else
+                            MsgBox ("There is no such manager - " & .FullNameSolidLineManager & _
+                            " (line " & .RowIndexInExcelFile & ") - in the list of employees. Check spelling or add a corresponding line.")
+                        End If
+                        checkConnectionsToCEO = False
+                        Exit Function
+                    End If
+                    
+                    'Check Dotted-Line Manager
+                    If .HasTwoManagers() Then
+                        If .FullNameDottedLineManagerKey = .FullNameSolidLineManagerKey Then
+                            MsgBox (.FullName & " (line " & .RowIndexInExcelFile & ") has the same Solid-Line and Dotted-Line Manager." & vbCrLf & _
+                                    "Please correct his/her reporting info.")
+                            checkConnectionsToCEO = False
+                            Exit Function
+                        End If
+                        
+                        If Not MyDictionaryPersonalInfo.Exists(.FullNameDottedLineManagerKey) Then
+                            MsgBox ("There is no such manager - " & .FullNameDottedLineManager & _
+                                    " (line " & .RowIndexInExcelFile & ") - in the list of employees. Check spelling or add a corresponding line.")
+                            checkConnectionsToCEO = False
+                            Exit Function
+                        End If
+                    End If
+                End If
+            End With
+        Next employee
+        
+        'CHECK #2 - For each person who has duplicates (same name and surname) there is no duplicates among managers
+        For Each employee In MyDictionaryPersonalInfo.keys
+            With MyDictionaryPersonalInfo.Item(employee)
+                'Check his solid-line manager
+                If MyDictionaryPersonalInfo.Exists(.FullNameSolidLineManagerKey) Then
+                    If MyDictionaryPersonalInfo.Item(.FullNameSolidLineManagerKey).Duplicates > 0 Then
+                        bufferString = "Check line " & .RowIndexInExcelFile & ": " & .FullNameSolidLineManager & " is " & .FullName & "'s solid-line manager, but " & _
+                                       "there are " & CStr(MyDictionaryPersonalInfo.Item(.FullNameSolidLineManagerKey).Duplicates + 1) & " people with such name:" & vbCrLf & vbCrLf
+                        For i = 1 To MyDictionaryPersonalInfo.Item(.FullNameSolidLineManagerKey).Duplicates + 1
+                            duplicateKey = .FullNameSolidLineManagerKey
+                            If i > 1 Then duplicateKey = duplicateKey & CStr(i)
+                            bufferString = bufferString & CStr(i) & ". " & MyDictionaryPersonalInfo.Item(duplicateKey).FullName & " | " & MyDictionaryPersonalInfo.Item(duplicateKey).JobTitle & " | line " & MyDictionaryPersonalInfo.Item(duplicateKey).RowIndexInExcelFile & " " & vbCrLf
+                        Next i
+                        
+                        bufferString = bufferString & vbCrLf & "Please alter the names to get rid of this ambivalence."
+                        
+                        MsgBox (bufferString)
+                                       
+                        checkConnectionsToCEO = False
+                        Exit Function
+                    End If
+                End If
+                
+                'Check his dotted-line manager
+                If .HasTwoManagers() Then
+                    If MyDictionaryPersonalInfo.Exists(.FullNameDottedLineManagerKey) Then
+                        If MyDictionaryPersonalInfo.Item(.FullNameDottedLineManagerKey).Duplicates > 0 Then
+                            bufferString = "Check line " & .RowIndexInExcelFile & ": " & .FullNameDottedLineManagerKey & " is " & .FullName & "'s solid-line manager, but " & _
+                                           "there are " & CStr(MyDictionaryPersonalInfo.Item(.FullNameDottedLineManagerKey).Duplicates + 1) & " people with such name:" & vbCrLf & vbCrLf
+                            For i = 1 To MyDictionaryPersonalInfo.Item(.FullNameDottedLineManagerKey).Duplicates + 1
+                                duplicateKey = .FullNameDottedLineManagerKey
+                                If i > 1 Then duplicateKey = duplicateKey & CStr(i)
+                                bufferString = bufferString & CStr(i) & ". " & MyDictionaryPersonalInfo.Item(duplicateKey).FullName & " | " & MyDictionaryPersonalInfo.Item(duplicateKey).JobTitle & " | line " & MyDictionaryPersonalInfo.Item(duplicateKey).RowIndexInExcelFile & " " & vbCrLf
+                            Next i
+                            
+                            bufferString = bufferString & vbCrLf & "Please alter the names to get rid of this ambivalence."
+                            
+                            MsgBox (bufferString)
+                                           
+                            checkConnectionsToCEO = False
+                            Exit Function
+                        End If
+                    End If
+                End If
+            End With
+        Next employee
+        
+        'CHECK #3 - For each employee trace the sequence of reporting lines
+        For Each employee In MyDictionaryPersonalInfo.keys
+            employeeFullNameKey = MyDictionaryPersonalInfo.Item(employee).FullNameKey
+            
+            If (verifyReportingSequence(employeeFullNameKey, "solid") And verifyReportingSequence(employeeFullNameKey, "dotted")) = False Then
+                checkConnectionsToCEO = False
+                Exit Function
+            End If
+        Next employee
+        checkConnectionsToCEO = True
+    Else
+        MsgBox ("Failed to find a top-level manager with similar full name in your Excel file. Please check top-level manager's full name.")
+        checkConnectionsToCEO = False
+    End If
+End Function
+
+Function extractReportingSequence(ByVal personFullName As String, ByVal regime As String) As Object
+    Dim bufferManagersSequence As Dictionary
+    Set bufferManagersSequence = New Dictionary
+    bufferManagersSequence.RemoveAll
+    
+    'make first manual step
+    employeeFullName = personFullName
+    bufferManagersSequence.add employeeFullName, ""
+    
+    'select the branch based on regime and employee's manager(s), get next level manager name
+    If MyDictionaryPersonalInfo.Item(employeeFullName).HasTwoManagers() = True Then
+        Select Case LCase(regime)
+            Case "solid"
+                nextLevelManager = MyDictionaryPersonalInfo.Item(employeeFullName).FullNameSolidLineManagerKey
+            Case "dotted"
+                nextLevelManager = MyDictionaryPersonalInfo.Item(employeeFullName).FullNameDottedLineManagerKey
+        End Select
+    Else
+        nextLevelManager = MyDictionaryPersonalInfo.Item(employeeFullName).FullNameManagerKey
+    End If
+    
+    'trace the reporting sequence
+    Do While (Not bufferManagersSequence.Exists(nextLevelManager)) And (nextLevelManager <> MyDictionaryPersonalInfo.Item(fullNameTopLevelManagerKey).FullNameSolidLineManagerKey)
+        If MyDictionaryPersonalInfo.Exists(nextLevelManager) Then
+            'add him to reporting sequence
+            bufferManagersSequence.add nextLevelManager, employeeFullName
+            
+            'move to next step
+            employeeFullName = nextLevelManager
+            nextLevelManager = MyDictionaryPersonalInfo.Item(employeeFullName).FullNameManagerKey
+        Else
+            MsgBox ("There is no such manager - " & MyDictionaryPersonalInfo(employeeFullNameKey).FullNameManager & _
+                    " (line " & MyDictionaryPersonalInfo(employeeFullNameKey).RowIndexInExcelFile & ") - in the list of employees. Check spelling or add a corresponding line.")
+            Set extractReportingSequence = Nothing
+            Exit Function
+        End If
+    Loop
+    
+    Set extractReportingSequence = bufferManagersSequence
+End Function
+
+Function verifyReportingSequence(ByVal personFullName As String, ByVal regime As String) As Boolean
+    Dim MyDictionaryManagersSequence As Dictionary
+    Set MyDictionaryManagersSequence = New Dictionary
+    MyDictionaryManagersSequence.RemoveAll
+    
+    Set MyDictionaryManagersSequence = extractReportingSequence(personFullName, regime)
+    
+    'Check the last manager in sequence is top-level manager
+    If Not MyDictionaryManagersSequence.keys(MyDictionaryManagersSequence.Count - 1) = fullNameTopLevelManagerKey Then
+        'Create custom message to show to user
+        With MyDictionaryPersonalInfo
+            bufferString = "The following reporting sequence doesn't seem to CEO (" & .Item(fullNameTopLevelManagerKey).FullName & "):" & vbCrLf & vbCrLf
+            
+            levelIterator = 1
+            'process all people inside MyDictionaryManagersSequence except the last one
+            For Each personInSequence In MyDictionaryManagersSequence
+                previousPersonInSequence = MyDictionaryManagersSequence.Item(personInSequence)
+                
+                bufferString = bufferString & CStr(levelIterator) & ". " & .Item(personInSequence).FullName
+                If previousPersonInSequence <> "" Then
+                    bufferString = bufferString & " - " & .Item(previousPersonInSequence).Surname & "'s " & LCase(.Item(previousPersonInSequence).ManagerType(personInSequence)) & "-line manager"
+                End If
+                bufferString = bufferString & vbCrLf
+                
+                levelIterator = levelIterator + 1
+            Next personInSequence
+                    
+            'process the last person in the reporting sequence
+             'bufferString = bufferString & CStr(levelIterator) & ". " & .Item(previousPersonInSequence).FullName & " - " & .Item(personInSequence).Surname & "'s " & LCase(.Item(employeeFullName).ManagerType(nextLevelManager)) & "-line manager"
+        End With
+        
+        bufferString = bufferString & vbCrLf & vbCrLf & "Please check for loops or self-reporting artefacts in reporting sequence."
+        
+        'show error to the user
+        MsgBox bufferString
+        verifyReportingSequence = False
+    Else
+        verifyReportingSequence = True
+    End If
+End Function

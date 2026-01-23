@@ -1,0 +1,40 @@
+Sub drawLineHorizontal(slideNumber, shapeName, x1, y1, length, Optional ByVal style As String = "Solid")
+    Call drawLine(slideNumber, shapeName, x1, y1, x1 + length, y1, style)
+End Sub
+
+Sub drawLineVertical(slideNumber, shapeName, x1, y1, length, Optional ByVal style As String = "Solid")
+    Call drawLine(slideNumber, shapeName, x1, y1, x1, y1 + length, style)
+End Sub
+
+Sub drawLine(ByVal slideNumber As Integer, ByVal shapeName As String, ByVal x1 As Double, ByVal y1 As Double, ByVal x2 As Double, ByVal y2 As Double, Optional ByVal style As String = "Solid")
+    Set newLine = ActivePresentation.Slides(slideNumber).Shapes.addLine(BeginX:=x1, BeginY:=y1, EndX:=x2, EndY:=y2)
+    newLine.Name = shapeName
+    Call applyLineStyle(newLine, style, 1)
+End Sub
+
+Sub applyLineStyle(shapeObject, style, widthCorrection)
+    With shapeObject
+        Select Case LCase(style)
+            Case "solid"
+                .Line.DashStyle = msoLineRoundDot
+                .Line.DashStyle = msoLineSolid
+                .Line.ForeColor.RGB = RGB(91, 155, 213)
+            Case "dotted"
+                'lifehack for dense round dots
+                .Line.DashStyle = msoLineRoundDot
+                .Line.DashStyle = msoLineSysDot
+                .Line.ForeColor.RGB = RGB(0, 32, 96)
+        End Select
+        
+        .Line.Weight = getLineWeight() / widthCorrection
+    End With
+End Sub
+
+Function inverseType(ByVal style As String) As String
+    Select Case LCase(style)
+        Case "solid"
+            inverseType = "Dotted"
+        Case "dotted"
+            inverseType = "Solid"
+    End Select
+End Function

@@ -1,0 +1,41 @@
+Function wfRandomIntegerInRange(lowerbound, upperbound) As Integer
+    wfRandomIntegerInRange = Int((upperbound - lowerbound + 1) * Rnd + lowerbound)
+End Function
+
+Function wfFactorial(ByVal n As Integer) As Integer
+    wfFactorial = 1
+    For i = 1 To n
+        wfFactorial = wfFactorial * i
+    Next i
+End Function
+
+'https://bettersolutions.com/vba/arrays/transposing.htm
+Public Function wfTransposeArray(myarray As Variant) As Variant
+Dim X As Long
+Dim Y As Long
+Dim Xupper As Long
+Dim Yupper As Long
+Dim tempArray As Variant
+    Xupper = UBound(myarray, 2)
+    Yupper = UBound(myarray, 1)
+    ReDim tempArray(Xupper, Yupper)
+    For X = 0 To Xupper
+        For Y = 0 To Yupper
+            tempArray(X, Y) = myarray(Y, X)
+        Next Y
+    Next X
+    wfTransposeArray = tempArray
+End Function
+
+Public Sub checkClassToCodeCommunication()
+    MsgBox (inputPersonFullName)
+    getRibbon().InvalidateControl ("personFullName")
+End Sub
+
+'cce = wrapping function for Collection object to count elements
+Function cce(ByVal col As Collection) As Integer
+    cce = 0
+    For Each el In col
+        cce = cce + 1
+    Next el
+End Function
