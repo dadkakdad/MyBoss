@@ -931,17 +931,6 @@ function applyScale() {
   $("zoom-label").textContent = `${Math.round(scale * 100)}%`;
 }
 
-async function openSample() {
-  const response = await fetch("../MyBoss-Sample%20data.xlsx");
-  if (!response.ok) {
-    toast("Could not load the sample workbook.");
-    return;
-  }
-  const buffer = await response.arrayBuffer();
-  readWorkbook(buffer, "MyBoss-Sample data.xlsx");
-  toast("Sample loaded. Check the sheet, then Import data.");
-}
-
 function downloadBlob(blob, name) {
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
@@ -1021,7 +1010,6 @@ function bind() {
     readWorkbook(await file.arrayBuffer(), file.name);
     toast(`${file.name}: choose a sheet and import.`);
   });
-  $("open-sample").addEventListener("click", () => openSample().catch(() => toast("Could not load the sample workbook.")));
   $("import").addEventListener("click", importSheet);
   $("refresh").addEventListener("click", importSheet);
   $("pick-sheet").addEventListener("click", () => {

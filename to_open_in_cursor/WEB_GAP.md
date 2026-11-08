@@ -76,4 +76,4 @@ These are in the source and called out in `HOW_THE_VBA_WORKS.md`. The web takes 
 
 ## Only in the web app
 
-Undo, drag, marquee select, zoom, PNG, and a JSON project file. The sample workbook can be opened without a file dialog. Import errors stay on the page instead of a `MsgBox`. A chart that is wider than the slide is shifted so the cards stay on the page (`containOnSlide`); the VBA centers the group and can leave a 1D tick correction on top of that.
+Undo, drag, marquee select, zoom, PNG, and a JSON project file. Import errors stay on the page instead of a `MsgBox`. A chart that is wider than the slide is shifted so the cards stay on the page (`containOnSlide`); the VBA centers the group and can leave a 1D tick correction on top of that.
