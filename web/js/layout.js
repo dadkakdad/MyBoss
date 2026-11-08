@@ -195,11 +195,15 @@ function rowsLayout(org, people, parentKey, metrics, perRow) {
     }
     y += rowH;
   }
+  const tickXs = items
+    .filter((item) => item.type === "wire" && Math.abs(item.x1 - item.x2) < 0.8 && Math.min(item.y1, item.y2) <= 0.5)
+    .map((item) => (item.x1 + item.x2) / 2);
   const shift = Number.isFinite(minLeft) ? -minLeft : 0;
+  const anchorX = tickXs.length ? (Math.min(...tickXs) + Math.max(...tickXs)) / 2 + shift : shift;
   return {
     w: Number.isFinite(minLeft) ? maxRight - minLeft : 0,
     h: y,
-    anchorX: shift,
+    anchorX,
     items: translate(items, shift, 0),
   };
 }
@@ -229,6 +233,17 @@ function markCollapsed(box) {
   return box;
 }
 
+function hangPoints(box) {
+  const verticals = box.items.filter(
+    (item) => item.type === "wire" && Math.abs(item.x1 - item.x2) < 0.8 && Math.min(item.y1, item.y2) <= 0.5,
+  );
+  if (!verticals.length) return [{ x: box.anchorX, dotted: box.line === "dotted" }];
+  const longest = Math.max(...verticals.map((item) => Math.abs(item.y2 - item.y1)));
+  return verticals
+    .filter((item) => Math.abs(item.y2 - item.y1) >= longest - 1)
+    .map((item) => ({ x: (item.x1 + item.x2) / 2, dotted: Boolean(item.dotted) }));
+}
+
 function placeBranches(branches, metrics) {
   if (branches.length === 0) return { w: 0, h: 0, anchorX: 0, items: [] };
   let x = 0;
@@ -240,23 +255,22 @@ function placeBranches(branches, metrics) {
   const totalW = Math.max(0, x - metrics.gapExt);
   const stem = branches.length >= 2 ? metrics.gapY : 0;
   const items = [];
-  const solidAnchors = [];
-  const dottedAnchors = [];
+  const hangs = [];
   let maxH = 0;
   for (const entry of placed) {
-    const anchor = entry.x + entry.branch.box.anchorX;
-    if (entry.branch.line !== "dotted") solidAnchors.push(anchor);
-    if (entry.branch.line !== "solid") dottedAnchors.push(anchor);
+    for (const hang of hangPoints(entry.branch.box)) {
+      hangs.push({ x: entry.x + hang.x, dotted: hang.dotted });
+    }
     items.push(...translate(entry.branch.box.items, entry.x, stem));
     maxH = Math.max(maxH, stem + entry.branch.box.h);
   }
-  const anchors = solidAnchors.length ? solidAnchors : dottedAnchors;
-  const anchorX = anchors.length ? (Math.min(...anchors) + Math.max(...anchors)) / 2 : totalW / 2;
-  const bar = (lineAnchors, dotted) => {
-    if (!lineAnchors.length || stem <= 0 && lineAnchors.length < 2) return;
-    const xs = lineAnchors.length === 1 ? [lineAnchors[0], anchorX] : lineAnchors;
-    const left = Math.min(...xs);
-    const right = Math.max(...xs);
+  const xs = hangs.map((hang) => hang.x);
+  const anchorX = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : totalW / 2;
+  const drawBar = (dotted) => {
+    const line = hangs.filter((hang) => hang.dotted === dotted).map((hang) => hang.x);
+    if (!line.length || (stem <= 0 && line.length < 2)) return;
+    const left = Math.min(...line);
+    const right = Math.max(...line);
     if (right - left < 0.5) return;
     items.push({
       type: "wire",
@@ -268,8 +282,8 @@ function placeBranches(branches, metrics) {
       weight: metrics.line,
     });
   };
-  bar(solidAnchors, false);
-  bar(dottedAnchors, true);
+  drawBar(false);
+  drawBar(true);
   if (stem > 0) {
     items.push({
       type: "wire",
@@ -277,20 +291,9 @@ function placeBranches(branches, metrics) {
       y1: 0,
       x2: anchorX,
       y2: stem,
-      dotted: false,
+      dotted: hangs.every((hang) => hang.dotted),
       weight: metrics.line,
     });
-    if (dottedAnchors.length && solidAnchors.length) {
-      items.push({
-        type: "wire",
-        x1: anchorX + 3,
-        y1: 0,
-        x2: anchorX + 3,
-        y2: stem,
-        dotted: true,
-        weight: metrics.line,
-      });
-    }
   }
   return { w: totalW, h: maxH, anchorX, items };
 }
