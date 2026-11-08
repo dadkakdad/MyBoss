@@ -18,7 +18,7 @@ import {
 } from "./org.js";
 
 export const SLIDE = { width: 960, height: 540 };
-export const GUIDE = { width: 920, height: 400 };
+export const GUIDE = { width: 920, height: 360 };
 export const MAX_PEOPLE_FOR_2D = 6;
 export const MAX_PEOPLE_FOR_4D = 14;
 export const MAX_BRANCHES = 7;
@@ -33,7 +33,7 @@ export const CARDS = {
   Large: { w: 108.5, h: 54.5, name: 11, title: 6, bubbleW: 81.1, bubbleH: 11.6, commentH: 8.8, line: 4 },
 };
 
-export const SHADE_COLORS = ["#DEEBF7", "#BDD7EE", "#D6DCE8"];
+export const SHADE_COLORS = ["#DEEBF7C4", "#BDD7EEC4", "#E7EEF6C4"];
 
 export function makeMetrics(size = "Medium", gap = 10, gapExt = gap) {
   const card = CARDS[size] || CARDS.Medium;
@@ -90,7 +90,7 @@ function leafLayout(org, key, metrics, shownUnder) {
       x1: anchorX + 5,
       y1: 0,
       x2: anchorX + 5,
-      y2: metrics.gapY / 2 + metrics.bubbleH / 2,
+      y2: metrics.gapY,
       dotted: other === "Dotted",
       weight: metrics.line,
     });
@@ -122,7 +122,7 @@ function leafLayout(org, key, metrics, shownUnder) {
 
 /** A vertical stack, one card wide, centered on the connector. Matches the columns in the demo. */
 function columnLayout(org, people, parentKey, metrics) {
-  const stackGap = Math.max(10, metrics.gapY);
+  const stackGap = Math.max(12, metrics.gapY);
   const anchorX = metrics.w / 2;
   const items = [];
   let y = 0;
@@ -685,7 +685,7 @@ function shadeShapes(org, cards) {
     if (bucket.b - bucket.y < 8) continue;
     const pad = 8;
     const top = bucket.y;
-    const bottom = Math.min(SLIDE.height - 6, Math.max(bucket.b, lowest) + 22);
+    const bottom = Math.min(SLIDE.height - 4, Math.max(bucket.b, lowest) + 32);
     shades.push({
       id: sid("shade"),
       type: "shade",

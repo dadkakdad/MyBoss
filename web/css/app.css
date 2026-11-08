@@ -332,6 +332,8 @@ button.tool small, button.tool-wide small {
   background: transparent;
   text-align: left;
   cursor: grab;
+  min-height: 0;
+  line-height: 1.1;
 }
 
 .shape.selected { outline: 1.5px solid #c45500; outline-offset: 1px; }
@@ -384,7 +386,14 @@ button.tool small, button.tool-wide small {
   white-space: nowrap;
   box-shadow: inset 0 0 0 1px #8d867c;
 }
-.link { padding: 0 2px; text-align: center; }
+.link {
+  padding: 0 2px;
+  text-align: center;
+  background: rgba(0, 18, 63, 0.88);
+  color: #fff;
+  box-shadow: none;
+  line-height: 11px;
+}
 .bubble.dotted, .link { box-shadow: inset 0 0 0 1px #001b58; }
 .bubble.dotted { background: repeating-linear-gradient(90deg, white, white 3px, #eef2f8 3px, #eef2f8 4px); }
 .nav {

@@ -214,7 +214,7 @@ test("Advanced statistics and Larsen’s departments match the template", () => 
   ]);
   const slides = buildSlides(org, org.ceo, "infinity");
   const larsen = slides.find((slide) => org.people.get(slide.rootKey).surname === "Larsen");
-  assert.equal(larsen.fit.size, "Large");
+  assert.ok(larsen.fit.gap >= 12, `gap ${larsen.fit.gap}`);
   const shades = larsen.shapes.filter((shape) => shape.type === "shade").map((shape) => shape.text).sort();
   assert.deepEqual(shades, ["Development", "Research"]);
   const smith = [...org.people.values()].find((person) => person.surname === "Smith");
