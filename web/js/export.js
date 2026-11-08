@@ -4,7 +4,7 @@
  */
 
 import { cardStyle, displayName, headcountLabel, moderated } from "./org.js";
-import { SLIDE } from "./layout.js";
+import { LINE, SLIDE } from "./layout.js";
 
 const STYLE = {
   ordinary: { fill: "001B58", color: "FFFFFF", bar: "00123F" },
@@ -47,9 +47,10 @@ function drawShape(ctx, org, shape) {
     ctx.beginPath();
     ctx.moveTo(shape.x1, shape.y1);
     ctx.lineTo(shape.x2, shape.y2);
-    ctx.strokeStyle = "#00123F";
+    ctx.strokeStyle = shape.dotted ? LINE.dotted : LINE.solid;
     ctx.lineWidth = shape.weight || 2;
-    ctx.setLineDash(shape.dotted ? [4, 3] : []);
+    ctx.lineCap = shape.dotted ? "round" : "square";
+    ctx.setLineDash(shape.dotted ? [0.8, 2.8] : []);
     ctx.stroke();
     ctx.setLineDash([]);
     return;
@@ -185,9 +186,9 @@ function addLine(slide, shape) {
     flipH: x1 > x2,
     flipV: y1 > y2,
     line: {
-      color: "00123F",
+      color: (shape.dotted ? LINE.dotted : LINE.solid).replace("#", ""),
       width: shape.weight || 1.5,
-      dashType: shape.dotted ? "dash" : "solid",
+      dashType: shape.dotted ? "sysDot" : "solid",
     },
   });
 }

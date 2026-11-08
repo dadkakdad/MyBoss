@@ -35,6 +35,9 @@ export const CARDS = {
 
 export const SHADE_COLORS = ["#DEEBF7C4", "#BDD7EEC4", "#E7EEF6C4"];
 
+/** Solid and dotted connector colours from applyLineStyle. */
+export const LINE = { solid: "#5B9BD5", dotted: "#002060" };
+
 export function makeMetrics(size = "Medium", gap = 10, gapExt = gap) {
   const card = CARDS[size] || CARDS.Medium;
   return { ...card, size, gapX: gap, gapY: gap, gapExt };
@@ -67,143 +70,205 @@ function otherManagerSurname(org, person, shownUnder) {
   return other ? other.surname : "";
 }
 
-function leafLayout(org, key, metrics, shownUnder) {
-  const person = org.people.get(key);
-  const bubble = hasTwoManagers(person) ? metrics.bubbleH : 0;
-  const tick = metrics.gapY + bubble;
-  const anchorX = metrics.w / 2;
-  const items = [
-    {
-      type: "wire",
-      x1: anchorX,
-      y1: 0,
-      x2: anchorX,
-      y2: tick,
-      dotted: shownUnder === "Dotted",
-      weight: metrics.line,
-    },
-  ];
-  if (hasTwoManagers(person)) {
-    const other = shownUnder === "Dotted" ? "Solid" : "Dotted";
-    items.push({
-      type: "wire",
-      x1: anchorX + 5,
-      y1: 0,
-      x2: anchorX + 5,
-      y2: metrics.gapY,
-      dotted: other === "Dotted",
-      weight: metrics.line,
-    });
-    items.push({
-      type: "bubble",
-      key,
-      x: anchorX - metrics.bubbleW / 2,
-      y: tick - metrics.bubbleH,
-      w: metrics.bubbleW,
-      h: metrics.bubbleH,
-      dotted: other === "Dotted",
-      text: otherManagerSurname(org, person, shownUnder),
-    });
-  }
-  items.push({
+function wire(x1, y1, x2, y2, dotted, metrics) {
+  return {
+    type: "wire",
+    x1,
+    y1,
+    x2,
+    y2,
+    dotted: Boolean(dotted),
+    weight: metrics.line,
+  };
+}
+
+function cardItem(key, x, y, metrics, shownUnder) {
+  return {
     type: "card",
     key,
-    x: 0,
-    y: tick,
+    x,
+    y,
     w: metrics.w,
     h: metrics.h,
     size: metrics.size,
     managerType: shownUnder,
     collapsed: false,
     head: false,
-  });
+  };
+}
+
+/**
+ * One card with the tick pointing up. The tick apex is the local origin,
+ * which is where this card meets its parent connector.
+ */
+function leafLayout(org, key, metrics, shownUnder) {
+  const person = org.people.get(key);
+  const two = hasTwoManagers(person);
+  const tick = metrics.gapY + (two ? metrics.bubbleH : 0);
+  const anchorX = metrics.w / 2;
+  const items = [wire(anchorX, 0, anchorX, tick, shownUnder === "Dotted", metrics)];
+  if (two) {
+    const otherDotted = shownUnder !== "Dotted";
+    items.push(
+      wire(anchorX + 5, tick - metrics.gapY / 2 - metrics.bubbleH / 2, anchorX + 5, tick, otherDotted, metrics),
+    );
+    items.push({
+      type: "bubble",
+      key,
+      x: anchorX - metrics.bubbleW / 2,
+      y: tick - metrics.gapY / 2 - metrics.bubbleH,
+      w: metrics.bubbleW,
+      h: metrics.bubbleH,
+      dotted: otherDotted,
+      text: otherManagerSurname(org, person, shownUnder),
+    });
+  }
+  items.push(cardItem(key, 0, tick, metrics, shownUnder));
   return { w: metrics.w, h: tick + metrics.h, anchorX, items };
 }
 
-/** A vertical stack, one card wide, centered on the connector. Matches the columns in the demo. */
+/**
+ * Vertical team. Matches make1DSubordinates: a trunk on the left, a tick into
+ * the middle of each card's left edge, and an elbow back to the parent.
+ */
 function columnLayout(org, people, parentKey, metrics) {
-  const stackGap = Math.max(12, metrics.gapY);
-  const anchorX = metrics.w / 2;
+  const gapX = metrics.gapX;
+  const gapY = metrics.gapY;
+  const anchorX = gapX + metrics.w / 2;
   const items = [];
-  let y = 0;
-  let previousBottom = 0;
+  let y = gapY;
+  let lowestSolid = null;
+  let lowestDotted = null;
+  let bottom = gapY;
+
   for (const key of people) {
     const person = org.people.get(key);
     const shownUnder = managerType(person, parentKey) || "Solid";
-    const bubble = hasTwoManagers(person) ? metrics.bubbleH + 1 : 0;
-    if (y > 0) y += stackGap;
-    y += bubble;
-    const cardY = y;
-    if (bubble) {
+    const two = hasTwoManagers(person);
+    y += gapY + metrics.h / 2;
+    if (two) y += gapY / 2 + metrics.bubbleH;
+    const tickY = y;
+    const cardY = tickY - metrics.h / 2;
+    const cardX = gapX;
+    items.push(wire(0, tickY, cardX, tickY, shownUnder === "Dotted", metrics));
+    if (two) {
+      const otherDotted = shownUnder !== "Dotted";
+      items.push(
+        wire(
+          cardX + metrics.w / 2,
+          cardY - gapY / 2 - metrics.bubbleH / 2,
+          cardX + metrics.w / 2,
+          cardY,
+          otherDotted,
+          metrics,
+        ),
+      );
       items.push({
         type: "bubble",
         key,
-        x: anchorX - metrics.bubbleW / 2,
-        y: cardY - metrics.bubbleH - 1,
+        x: cardX + metrics.w / 2 - metrics.bubbleW / 2,
+        y: cardY - gapY / 2 - metrics.bubbleH,
         w: metrics.bubbleW,
         h: metrics.bubbleH,
-        dotted: shownUnder !== "Dotted",
+        dotted: otherDotted,
         text: otherManagerSurname(org, person, shownUnder),
       });
     }
-    items.push({
-      type: "wire",
-      x1: anchorX,
-      y1: previousBottom,
-      x2: anchorX,
-      y2: cardY,
-      dotted: shownUnder === "Dotted",
-      weight: metrics.line,
-    });
-    items.push({
-      type: "card",
-      key,
-      x: 0,
-      y: cardY,
-      w: metrics.w,
-      h: metrics.h,
-      size: metrics.size,
-      managerType: shownUnder,
-      collapsed: false,
-      head: false,
-    });
-    y += metrics.h;
-    previousBottom = y;
+    items.push(cardItem(key, cardX, cardY, metrics, shownUnder));
+    if (shownUnder === "Dotted") lowestDotted = tickY;
+    else lowestSolid = tickY;
+    y += metrics.h / 2;
+    bottom = Math.max(bottom, cardY + metrics.h);
   }
-  return { w: metrics.w, h: y, anchorX, items };
+
+  const spine = (dotted, lowest) => {
+    if (lowest == null) return;
+    items.push(wire(anchorX, 0, anchorX, gapY, dotted, metrics));
+    items.push(wire(anchorX, gapY, 0, gapY, dotted, metrics));
+    if (lowest - gapY > 0.4) items.push(wire(0, gapY, 0, lowest, dotted, metrics));
+  };
+  spine(false, lowestSolid);
+  spine(true, lowestDotted);
+  return { w: gapX + metrics.w, h: bottom, anchorX, items };
 }
 
+/**
+ * Several cards on each row. Matches makeNDSubordinates: every row has a
+ * horizontal bar, each card hangs from that bar by a top tick, and one trunk
+ * joins the rows under the parent.
+ */
 function rowsLayout(org, people, parentKey, metrics, perRow) {
   const pitch = metrics.gapX + metrics.w;
   const shifts = shiftMap(perRow);
+  const gapY = metrics.gapY;
   const items = [];
-  let y = 0;
-  let minLeft = Infinity;
-  let maxRight = -Infinity;
+  let y = gapY;
+  let lowestSolid = null;
+  let lowestDotted = null;
+  let bottom = gapY;
+
   for (let start = 0; start < people.length; start += perRow) {
     const row = people.slice(start, start + perRow);
-    let rowH = 0;
+    const bubbleRow = row.some((key) => hasTwoManagers(org.people.get(key)));
     for (let i = 0; i < row.length; i += 1) {
-      const shownUnder = managerType(org.people.get(row[i]), parentKey) || "Solid";
-      const leaf = leafLayout(org, row[i], metrics, shownUnder);
+      const person = org.people.get(row[i]);
+      const shownUnder = managerType(person, parentKey) || "Solid";
+      const two = hasTwoManagers(person);
+      const tick = gapY + (bubbleRow ? metrics.bubbleH : 0);
       const center = shifts[i] * pitch;
-      const ox = center - metrics.w / 2;
-      items.push(...translate(leaf.items, ox, y));
-      minLeft = Math.min(minLeft, ox);
-      maxRight = Math.max(maxRight, ox + leaf.w);
-      rowH = Math.max(rowH, leaf.h);
+      const cardY = y + tick;
+      const cardX = center - metrics.w / 2;
+      items.push(wire(center, y, center, cardY, shownUnder === "Dotted", metrics));
+      if (Math.abs(center) > 0.4) items.push(wire(0, y, center, y, shownUnder === "Dotted", metrics));
+      if (two) {
+        const otherDotted = shownUnder !== "Dotted";
+        items.push(
+          wire(center + 5, cardY - gapY / 2 - metrics.bubbleH / 2, center + 5, cardY, otherDotted, metrics),
+        );
+        items.push({
+          type: "bubble",
+          key: row[i],
+          x: center - metrics.bubbleW / 2,
+          y: cardY - gapY / 2 - metrics.bubbleH,
+          w: metrics.bubbleW,
+          h: metrics.bubbleH,
+          dotted: otherDotted,
+          text: otherManagerSurname(org, person, shownUnder),
+        });
+      }
+      items.push(cardItem(row[i], cardX, cardY, metrics, shownUnder));
+      if (shownUnder === "Dotted") lowestDotted = y;
+      else lowestSolid = y;
+      bottom = Math.max(bottom, cardY + metrics.h);
     }
-    y += rowH;
+    const aligned = metrics.h + gapY + (bubbleRow ? metrics.bubbleH : 0);
+    y += gapY + aligned;
   }
-  const tickXs = items
-    .filter((item) => item.type === "wire" && Math.abs(item.x1 - item.x2) < 0.8 && Math.min(item.y1, item.y2) <= 0.5)
-    .map((item) => (item.x1 + item.x2) / 2);
+
+  const spine = (dotted, lowest) => {
+    if (lowest == null) return;
+    items.push(wire(0, 0, 0, gapY, dotted, metrics));
+    if (lowest - gapY > 0.4) items.push(wire(0, gapY, 0, lowest, dotted, metrics));
+  };
+  spine(false, lowestSolid);
+  spine(true, lowestDotted);
+
+  let minLeft = Infinity;
+  let maxRight = -Infinity;
+  for (const item of items) {
+    if (item.type === "wire") {
+      minLeft = Math.min(minLeft, item.x1, item.x2);
+      maxRight = Math.max(maxRight, item.x1, item.x2);
+    } else {
+      minLeft = Math.min(minLeft, item.x);
+      maxRight = Math.max(maxRight, item.x + (item.w || 0));
+    }
+  }
   const shift = Number.isFinite(minLeft) ? -minLeft : 0;
-  const anchorX = tickXs.length ? (Math.min(...tickXs) + Math.max(...tickXs)) / 2 + shift : shift;
   return {
     w: Number.isFinite(minLeft) ? maxRight - minLeft : 0,
-    h: y,
-    anchorX,
+    h: bottom,
+    anchorX: shift,
     items: translate(items, shift, 0),
   };
 }
@@ -211,18 +276,19 @@ function rowsLayout(org, people, parentKey, metrics, perRow) {
 export function layoutLeaves(org, people, parentKey, metrics, mode = "auto") {
   const count = people.length;
   if (count === 0) return { w: 0, h: 0, anchorX: 0, items: [] };
-  if (mode === "1" || (mode === "auto" && count <= MAX_PEOPLE_FOR_2D && count !== 1)) {
+  // branch_auto draws one person as a card with the tick pointing up.
+  if (mode === "auto" && count === 1) {
+    const shownUnder = managerType(org.people.get(people[0]), parentKey) || "Solid";
+    return leafLayout(org, people[0], metrics, shownUnder);
+  }
+  if (mode === "1" || (mode === "auto" && count <= MAX_PEOPLE_FOR_2D)) {
     return columnLayout(org, people, parentKey, metrics);
   }
   if (mode === "2" || (mode === "auto" && count <= MAX_PEOPLE_FOR_4D)) {
     return rowsLayout(org, people, parentKey, metrics, 2);
   }
   if (mode === "4" || mode === "auto") {
-    if (count === 1 && mode === "auto") {
-      const shownUnder = managerType(org.people.get(people[0]), parentKey) || "Solid";
-      return leafLayout(org, people[0], metrics, shownUnder);
-    }
-    return rowsLayout(org, people, parentKey, metrics, mode === "2" ? 2 : 4);
+    return rowsLayout(org, people, parentKey, metrics, 4);
   }
   const shownUnder = managerType(org.people.get(people[0]), parentKey) || "Solid";
   return leafLayout(org, people[0], metrics, shownUnder);
@@ -686,8 +752,8 @@ function shadeShapes(org, cards) {
   const lowest = Math.max(...[...groups.values()].map((bucket) => bucket.b));
   for (const bucket of groups.values()) {
     if (bucket.b - bucket.y < 8) continue;
-    const pad = 8;
-    const top = bucket.y;
+    const pad = 18;
+    const top = Math.max(0, bucket.y - 6);
     const bottom = Math.min(SLIDE.height - 4, Math.max(bucket.b, lowest) + 32);
     shades.push({
       id: sid("shade"),
@@ -705,36 +771,29 @@ function shadeShapes(org, cards) {
   return shades;
 }
 
-function headCard(org, rootKey, tree, bodySize) {
+function headCard(org, rootKey, _tree, bodySize) {
+  // The tree's own tick begins at the bottom edge of this card.
   const metrics = CARDS[bodySize] || CARDS.Large;
   const x = SLIDE.width / 2 - metrics.w / 2;
-  const y = TREE_TOP - metrics.h - 16;
-  const items = [
-    {
-      type: "card",
-      key: rootKey,
-      x,
-      y,
-      w: metrics.w,
-      h: metrics.h,
-      managerType: "Solid",
-      collapsed: false,
-      head: true,
-      size: bodySize || "Large",
-    },
-  ];
-  if (tree.items.length) {
-    items.push({
-      type: "wire",
-      x1: SLIDE.width / 2,
-      y1: y + metrics.h,
-      x2: SLIDE.width / 2,
-      y2: TREE_TOP,
-      dotted: false,
-      weight: 4,
-    });
-  }
-  return paint(items, 0, 0);
+  const y = TREE_TOP - metrics.h;
+  return paint(
+    [
+      {
+        type: "card",
+        key: rootKey,
+        x,
+        y,
+        w: metrics.w,
+        h: metrics.h,
+        managerType: "Solid",
+        collapsed: false,
+        head: true,
+        size: bodySize || "Large",
+      },
+    ],
+    0,
+    0,
+  );
 }
 
 /**

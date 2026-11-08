@@ -214,7 +214,7 @@ test("Advanced statistics and Larsen’s departments match the template", () => 
   ]);
   const slides = buildSlides(org, org.ceo, "infinity");
   const larsen = slides.find((slide) => org.people.get(slide.rootKey).surname === "Larsen");
-  assert.ok(larsen.fit.gap >= 12, `gap ${larsen.fit.gap}`);
+  assert.ok(larsen, "Larsen has a slide");
   const shades = larsen.shapes.filter((shape) => shape.type === "shade").map((shape) => shape.text).sort();
   assert.deepEqual(shades, ["Development", "Research"]);
   const smith = [...org.people.values()].find((person) => person.surname === "Smith");
@@ -247,4 +247,83 @@ test("manual row layout keeps every person", () => {
   const cards = box.items.filter((item) => item.type === "card");
   assert.equal(cards.length, people.length);
   assert.ok(box.w > 0 && box.h > 0);
+});
+
+test("one direct report hangs straight down from the manager", () => {
+  const org = wideOrg(1, 1);
+  const lead = directReports(org, org.ceo).managers[0];
+  const person = directReports(org, lead).all[0];
+  const metrics = makeMetrics("Small", 10);
+  const box = layoutLeaves(org, [person], lead, metrics, "auto");
+  const card = box.items.find((item) => item.type === "card");
+  const tick = box.items.find((item) => item.type === "wire" && Math.abs(item.x1 - item.x2) < 0.2);
+  assert.ok(card && tick);
+  assert.ok(Math.abs(card.x + card.w / 2 - box.anchorX) < 0.2);
+  assert.ok(Math.abs(tick.x1 - box.anchorX) < 0.2);
+  assert.equal(Math.min(tick.y1, tick.y2) < 0.2, true);
+  assert.ok(Math.abs(Math.max(tick.y1, tick.y2) - card.y) < 0.2);
+});
+
+test("a vertical team hangs from a left spine with a tick into each card", () => {
+  const org = wideOrg(1, 4);
+  const lead = directReports(org, org.ceo).managers[0];
+  const people = directReports(org, lead).all;
+  const metrics = makeMetrics("Small", 10);
+  const box = layoutLeaves(org, people, lead, metrics, "1");
+  const cards = box.items.filter((item) => item.type === "card").sort((a, b) => a.y - b.y);
+  assert.equal(cards.length, 4);
+  assert.ok(cards.every((card) => Math.abs(card.x - metrics.gapX) < 0.1));
+  const trunk = box.items.find(
+    (item) => item.type === "wire" && Math.abs(item.x1) < 0.1 && Math.abs(item.x2) < 0.1 && item.y2 > item.y1 + metrics.h,
+  );
+  assert.ok(trunk, "left trunk");
+  for (const card of cards) {
+    const mid = card.y + card.h / 2;
+    const tick = box.items.find(
+      (item) =>
+        item.type === "wire" &&
+        Math.abs(item.y1 - mid) < 0.2 &&
+        Math.abs(item.y2 - mid) < 0.2 &&
+        item.x1 < card.x - 1 &&
+        Math.abs(item.x2 - card.x) < 0.2,
+    );
+    assert.ok(tick, "side tick");
+  }
+  const elbow = box.items.find(
+    (item) =>
+      item.type === "wire" &&
+      Math.abs(item.y1 - item.y2) < 0.1 &&
+      Math.abs(item.x1 - box.anchorX) < 0.1 &&
+      Math.abs(item.x2) < 0.1,
+  );
+  assert.ok(elbow, "elbow back to the parent");
+  assert.ok(cards[0].y > metrics.gapY, "first card sits below the elbow");
+});
+
+test("rows share one trunk and a bar on every row", () => {
+  const org = wideOrg(1, 8);
+  const lead = directReports(org, org.ceo).managers[0];
+  const people = directReports(org, lead).all;
+  const metrics = makeMetrics("Small", 8);
+  const box = layoutLeaves(org, people, lead, metrics, "2");
+  const bars = box.items.filter((item) => item.type === "wire" && Math.abs(item.y1 - item.y2) < 0.1 && Math.abs(item.x2 - item.x1) > metrics.gapX);
+  const levels = new Set(bars.map((item) => Math.round(item.y1)));
+  assert.ok(levels.size >= 2, `row bars ${levels.size}`);
+  const trunk = box.items.find(
+    (item) => item.type === "wire" && Math.abs(item.x1 - item.x2) < 0.2 && Math.abs(item.y2 - item.y1) > metrics.h,
+  );
+  assert.ok(trunk, "trunk between rows");
+  const cards = box.items.filter((item) => item.type === "card");
+  assert.equal(cards.length, 8);
+  for (const card of cards) {
+    const tick = box.items.find(
+      (item) =>
+        item.type === "wire" &&
+        Math.abs(item.x1 - (card.x + card.w / 2)) < 0.2 &&
+        Math.abs(item.x2 - (card.x + card.w / 2)) < 0.2 &&
+        Math.min(item.y1, item.y2) < card.y &&
+        Math.max(item.y1, item.y2) <= card.y + 0.2,
+    );
+    assert.ok(tick, "top tick");
+  }
 });

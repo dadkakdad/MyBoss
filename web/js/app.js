@@ -13,6 +13,7 @@ import {
 } from "./org.js";
 import {
   CARDS,
+  LINE,
   SHADE_COLORS,
   SLIDE,
   buildSlides,
@@ -632,9 +633,10 @@ function renderSlide() {
       line.setAttribute("y1", shape.y1);
       line.setAttribute("x2", shape.x2);
       line.setAttribute("y2", shape.y2);
-      line.setAttribute("stroke", "#00123F");
+      line.setAttribute("stroke", shape.dotted ? LINE.dotted : LINE.solid);
       line.setAttribute("stroke-width", shape.weight || 2);
-      if (shape.dotted) line.setAttribute("stroke-dasharray", "4 3");
+      line.setAttribute("stroke-linecap", shape.dotted ? "round" : "square");
+      if (shape.dotted) line.setAttribute("stroke-dasharray", "0.8 2.8");
       line.dataset.id = shape.id;
       line.style.cursor = "pointer";
       if (state.selection.has(shape.id)) line.setAttribute("stroke", "#c45500");
