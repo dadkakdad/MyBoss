@@ -9,11 +9,11 @@ Function makeFullTree(ByVal slideNumber As Integer, ByVal personFullName As Stri
     'Accounts for corner cases when you need to create only one branch with only one orgelement -
     'there will just be a card with tick up
     If getNumberOfBranches(personFullName, "all") = 1 And getNumberOfBranches(personFullName, "ordinary") = 1 And MyInfo.Item(personFullName).TerminationDate <> "" Then
-        OffsetCornerCaseY = OffsetCornerCaseY + getCommentBoxHeight()
+        OffsetCornerCaseY = OffsetCornerCaseY + getCommentBoxHeight() + commentClearance()
     End If
     
     If getNumberOfBranches(personFullName, "all") = 1 And getNumberOfBranches(personFullName, "department") = 1 And MyInfo.Item(personFullName).DirectReports("Unsorted").Item("Workers").Count = 1 And MyInfo.Item(personFullName).TerminationDate <> "" Then
-        OffsetCornerCaseY = OffsetCornerCaseY + getCommentBoxHeight()
+        OffsetCornerCaseY = OffsetCornerCaseY + getCommentBoxHeight() + commentClearance()
     End If
     
     '-------------------- CREATE SUBTREES --------------------
@@ -33,7 +33,7 @@ Function makeFullTree(ByVal slideNumber As Integer, ByVal personFullName As Stri
         If getNumberOfBranches(personFullName) >= 2 Then
             OffsetY = inputWhiteSpaceY
             If MyInfo.Item(personFullName).TerminationDate <> "" Then
-                OffsetY = OffsetY + getCommentBoxHeight()
+                OffsetY = OffsetY + getCommentBoxHeight() + commentClearance()
             End If
         Else
             OffsetY = 0
@@ -68,7 +68,7 @@ Function makeFullTree(ByVal slideNumber As Integer, ByVal personFullName As Stri
             OffsetDueToAlignment = Abs(CInt(subtreeNeedsShift _
                                             And (directReportsSortedCount = 1) _
                                             And (Not MyInfo.Item(firstDirectSorted).HasTwoManagers))) _
-                                    * getBubbleHeight()
+                                    * (getBubbleHeight() + bubbleClearance())
                 
             'Create branch; ManagerType, actually, plays no role in case we create subordinates
             '[AM] JUST NOTE about shitty VBA: The underscore must be immediately preceded by a space and immediately followed by a line terminator (carriage return)
@@ -118,7 +118,7 @@ Function makeFullTree(ByVal slideNumber As Integer, ByVal personFullName As Stri
         'All ordinary trees have head card on top which looks like department branches of single card; that's why OffsetDueToAlignment is constant for every tree
         OffsetDueToAlignment = 0
         If subtreeNeedsShift Then
-            OffsetDueToAlignment = getBubbleHeight() 'due to alignment
+            OffsetDueToAlignment = getBubbleHeight() + bubbleClearance() 'due to alignment
         End If
         
         'Now pick only managers from subordinates; Remember, each time we change direct reports list we influence calculations of departments and direct reports (pretty obvious but still)
@@ -319,7 +319,7 @@ Function makeFullTree(ByVal slideNumber As Integer, ByVal personFullName As Stri
     If regime = "Full" Then
         'Origin (in terms of trees) is a place right under the card, but in terms of elements it is tick's apex
         OffsetDueToDifferentOriginY = -sizeOfOrgChartElement(personFullName, 1).tHeight
-        If MyInfo.Item(personFullName).TerminationDate <> "" Then OffsetDueToDifferentOriginY = OffsetDueToDifferentOriginY + getCommentBoxHeight()
+        If MyInfo.Item(personFullName).TerminationDate <> "" Then OffsetDueToDifferentOriginY = OffsetDueToDifferentOriginY + getCommentBoxHeight() + commentClearance()
         
         Call createOrgChartElement(slideNumber, personFullName, MyInfo.Item(personFullName).DefaultManagerType(), horizontalConnectorCenterX, originY + OffsetDueToDifferentOriginY, 1)
         
@@ -363,11 +363,11 @@ Function sizeOfFullTree(ByVal personFullName As String, ByVal directReportsVisib
         't1 = Timer1.TimeElapsed
         'Accounts for corner cases when you need to create only one branch, but with orgelement tick up
         If getNumberOfBranches(personFullName, "all") = 1 And getNumberOfBranches(personFullName, "ordinary") = 1 And .Item(personFullName).TerminationDate <> "" Then
-            OffsetCornerCaseY = OffsetCornerCaseY + getCommentBoxHeight()
+            OffsetCornerCaseY = OffsetCornerCaseY + getCommentBoxHeight() + commentClearance()
         End If
         
         If getNumberOfBranches(personFullName, "all") = 1 And getNumberOfBranches(personFullName, "department") = 1 And .Item(personFullName).DirectReports("Unsorted").Item("Workers").Count = 1 And .Item(personFullName).TerminationDate <> "" Then
-            OffsetCornerCaseY = OffsetCornerCaseY + getCommentBoxHeight()
+            OffsetCornerCaseY = OffsetCornerCaseY + getCommentBoxHeight() + commentClearance()
         End If
         't2 = Timer1.TimeElapsed
         '-------------------- SUBORDINATES --------------------
@@ -377,7 +377,7 @@ Function sizeOfFullTree(ByVal personFullName As String, ByVal directReportsVisib
             'OffsetY account for main tick length = distance from manager to horizontal connector; you need main tick if you have more than one subtrees
             If getNumberOfBranches(personFullName) >= 2 Then
                 OffsetY = inputWhiteSpaceY
-                If .Item(personFullName).TerminationDate <> "" Then OffsetY = OffsetY + getCommentBoxHeight()
+                If .Item(personFullName).TerminationDate <> "" Then OffsetY = OffsetY + getCommentBoxHeight() + commentClearance()
             Else
                 OffsetY = 0
             End If
@@ -399,7 +399,7 @@ Function sizeOfFullTree(ByVal personFullName As String, ByVal directReportsVisib
                 
                 'Shift lonely departments a bit below in case there are any people in the first row that are mixed-reporting
                 'Abs(CInt(Boolean)) gives -1 for True and 0 for False
-                OffsetDueToAlignment = Abs(CInt((subtreeNeedsShift) And (.Item(personFullName).DirectReports("Sorted").Item("All").Count = 1) And (Not .Item(.Item(personFullName).DirectReports("Sorted").Item("All").Item(1)).HasTwoManagers))) * getBubbleHeight()
+                OffsetDueToAlignment = Abs(CInt((subtreeNeedsShift) And (.Item(personFullName).DirectReports("Sorted").Item("All").Count = 1) And (Not .Item(.Item(personFullName).DirectReports("Sorted").Item("All").Item(1)).HasTwoManagers))) * (getBubbleHeight() + bubbleClearance())
                 
                 'Create branch; ManagerType, actually, plays no role in case we create subordinates
                 Set treeSizeNDFullTemp = sizeOfTree(personFullName, synthesizeInputAllDirectReportsVisible(personFullName), "Subordinates", "branch_auto")
@@ -428,7 +428,7 @@ Function sizeOfFullTree(ByVal personFullName As String, ByVal directReportsVisib
             
             'All ordinary trees have head card on top which looks like department branches of single card; that's why OffsetDueToAlignment is constant for every tree
             OffsetDueToAlignment = 0
-            If subtreeNeedsShift Then OffsetDueToAlignment = getBubbleHeight() 'due to alignment
+            If subtreeNeedsShift Then OffsetDueToAlignment = getBubbleHeight() + bubbleClearance() 'due to alignment
             
             'Now pick only managers from subordinates; Remember, each time we change direct reports list we influence calculations of departments and direct reports (pretty obvious but still)
             Set MyDictionaryDirectReports.Item(personFullName) = directReportsListSaved.Item("Managers")
@@ -476,7 +476,7 @@ Function sizeOfFullTree(ByVal personFullName As String, ByVal directReportsVisib
                 If sizeOfOrgChartElement(personFullName, 1).tWidth > .tWidth Then .tWidth = sizeOfOrgChartElement(personFullName, 1).tWidth
                 'CALCULATE TOTAL HEIGHT
                 .tHeight = .tHeight + sizeOfOrgChartElement(personFullName, 1).tHeight
-                If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate() <> "" Then .tHeight = .tHeight - getCommentBoxHeight()
+                If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate() <> "" Then .tHeight = .tHeight - getCommentBoxHeight() - commentClearance()
                 
                 If OffsetCornerCaseY > 0 Then .tHeight = .tHeight + OffsetCornerCaseY
             End With

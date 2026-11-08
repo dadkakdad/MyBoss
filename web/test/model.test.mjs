@@ -314,6 +314,34 @@ test("Advanced statistics and Larsen’s departments match the template", () => 
   assert.match(smith.termination, /July/);
 });
 
+test("dates and dotted-line surnames stay clear of the cards", () => {
+  const org = buildOrg(matrixFrom("Advanced"));
+  const slides = buildSlides(org, org.ceo, "infinity");
+  for (const slide of slides) {
+    const cards = new Map();
+    for (const shape of slide.shapes) {
+      if (shape.type === "card") cards.set(shape.key, shape);
+    }
+    for (const shape of slide.shapes) {
+      const card = cards.get(shape.key);
+      if (!card || shape === card) continue;
+      if (shape.type === "comment") {
+        assert.ok(shape.h >= 16, `comment height ${shape.h}`);
+        assert.ok(shape.y >= card.y + card.h + 2, `${shape.text} overlaps its card`);
+        assert.match(shape.text, /Works until \d/);
+      }
+      if (shape.type === "bubble") {
+        assert.ok(shape.y + shape.h <= card.y - 3, `${shape.text} overlaps ${card.key}`);
+      }
+    }
+  }
+  const kim = [...org.people.values()].find((person) => person.surname === "Kim" && person.name === "Jim");
+  const kimSlide = slides.find((slide) => slide.shapes.some((shape) => shape.type === "comment" && shape.key === kim.key));
+  assert.ok(kimSlide, "Kim's end date is on a slide");
+  const note = kimSlide.shapes.find((shape) => shape.type === "comment" && shape.key === kim.key);
+  assert.match(note.text, /November/);
+});
+
 test("sample charts stay inside the slide", () => {
   for (const name of ["Simplest", "Real-life", "Advanced"]) {
     const org = buildOrg(matrixFrom(name));

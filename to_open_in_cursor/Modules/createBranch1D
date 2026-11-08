@@ -2,7 +2,7 @@ Sub make1DSubordinates(ByVal slideNumber As Integer, ByVal personFullName As Str
     'Calculate offsets from origin (origin is always just under the employee's card
     OffsetX = -getCardWidth() / 2 - inputWhiteSpaceX
     OffsetY = inputWhiteSpaceY
-    If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then OffsetY = OffsetY + getCommentBoxHeight()
+    If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then OffsetY = OffsetY + getCommentBoxHeight() + commentClearance()
         
     'Use these variables to propagate top to bottom of branch
     xIterator = originX + OffsetX 'offset of vertical trunk
@@ -20,7 +20,7 @@ Sub make1DSubordinates(ByVal slideNumber As Integer, ByVal personFullName As Str
         With MyDictionaryPersonalInfo.Item(directReport)
             'Shift lower to point of joint
             yIterator = yIterator + inputWhiteSpaceY + getCardHeight / 2
-            If .HasTwoManagers() Then yIterator = yIterator + inputWhiteSpaceY / 2 + getBubbleHeight()
+            If .HasTwoManagers() Then yIterator = yIterator + bubbleClearance() + getBubbleHeight()
             
             'Create card
             Call createOrgChartElement(slideNumber, directReport, .ManagerType(personFullName), xIterator, yIterator, 4)
@@ -35,7 +35,7 @@ Sub make1DSubordinates(ByVal slideNumber As Integer, ByVal personFullName As Str
             
             'Shift lower to the end on card
             yIterator = yIterator + getCardHeight / 2
-            If .TerminationDate <> "" Then yIterator = yIterator + getCommentBoxHeight()
+            If .TerminationDate <> "" Then yIterator = yIterator + getCommentBoxHeight() + commentClearance()
         End With
     Next directReport
         

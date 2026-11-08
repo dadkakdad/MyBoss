@@ -76,7 +76,7 @@ Function makeTree(ByVal slideNumber As Integer, ByVal personFullName As String, 
         'Shift subordinates under the head
         With ActivePresentation.Slides(slideNumber).Shapes(personFullName & "Subordinates")
             .Top = .Top - sizeOfOrgChartElement(personFullName, 1).tHeight
-            If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then .Top = .Top - getCommentBoxHeight()
+            If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then .Top = .Top - getCommentBoxHeight() - commentClearance()
         End With
         
         Call groupAllShapesInIndexList(slideNumber, ticShapesCounter, tocShapesCounter, personFullName & "Full")
@@ -155,7 +155,7 @@ Function sizeOfTree(ByVal personFullName As String, ByVal directReportsVisibilit
                 'Case 2: many direct reports (not managers) in single department
                 If Not ((treeType = "branch_clever" Or treeType = "full_tree") Or (treeType = "branch_auto" And MyDictionaryPersonalInfo.Item(personFullName).DirectReports("Sorted").Item("All").Count = 1)) Then
                     .tHeight = .tHeight + inputWhiteSpaceY
-                    If regime = "Subordinates" And MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then .tHeight = .tHeight + getCommentBoxHeight()
+                    If regime = "Subordinates" And MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then .tHeight = .tHeight + getCommentBoxHeight() + commentClearance()
                 End If
                     
                 'Accounts for card on top

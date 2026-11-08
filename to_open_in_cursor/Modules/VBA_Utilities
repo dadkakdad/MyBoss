@@ -32,6 +32,54 @@ Public Sub checkClassToCodeCommunication()
     getRibbon().InvalidateControl ("personFullName")
 End Sub
 
+'Keep a grouped org chart on the slide. anchorX stays put while the shape is scaled
+'(the head card is drawn on that x). Text that used to fall off the left edge stays visible.
+Sub fitShapeToSlide(ByRef shapeObject As Shape, Optional ByVal anchorX As Double = -1)
+    Dim slideW As Double
+    Dim slideH As Double
+    Dim margin As Double
+    Dim availW As Double
+    Dim scale As Double
+    Dim oldLeft As Double
+    Dim oldWidth As Double
+    
+    slideW = ActivePresentation.PageSetup.SlideWidth
+    slideH = ActivePresentation.PageSetup.SlideHeight
+    margin = 14
+    
+    If anchorX < 0 Then anchorX = shapeObject.Left + shapeObject.Width / 2
+    
+    oldLeft = shapeObject.Left
+    oldWidth = shapeObject.Width
+    availW = slideW - 2 * margin
+    
+    If oldWidth > availW And oldWidth > 0 Then
+        scale = availW / oldWidth
+        shapeObject.Width = oldWidth * scale
+        shapeObject.Height = shapeObject.Height * scale
+        shapeObject.Left = anchorX - (anchorX - oldLeft) * scale
+    End If
+    
+    If shapeObject.Left < margin Then shapeObject.Left = margin
+    If shapeObject.Left + shapeObject.Width > slideW - margin Then
+        shapeObject.Left = slideW - margin - shapeObject.Width
+        If shapeObject.Left < margin Then shapeObject.Left = margin
+    End If
+    
+    If shapeObject.Top < margin Then shapeObject.Top = margin
+    If shapeObject.Height > 0 And shapeObject.Top + shapeObject.Height > slideH - margin Then
+        scale = (slideH - margin - shapeObject.Top) / shapeObject.Height
+        If scale > 0 And scale < 1 Then
+            oldLeft = shapeObject.Left
+            oldWidth = shapeObject.Width
+            anchorX = oldLeft + oldWidth / 2
+            shapeObject.Width = oldWidth * scale
+            shapeObject.Height = shapeObject.Height * scale
+            shapeObject.Left = anchorX - oldWidth * scale / 2
+        End If
+    End If
+End Sub
+
 'cce = wrapping function for Collection object to count elements
 Function cce(ByVal col As Collection) As Integer
     cce = 0
