@@ -43,13 +43,64 @@ export function makeMetrics(size = "Medium", gapX = 10, gapExt = gapX, gapY = ga
   return { ...card, size, gapX, gapY, gapExt };
 }
 
-function parentDrop(org, parentKey, metrics) {
-  const parent = org.people.get(parentKey);
-  return metrics.gapY + (parent?.termination ? metrics.commentH : 0);
+const COMMENT_GAP = 3;
+
+/** Two lines, so "Works until 9 November 2018" is not cut off mid-word. */
+function commentHeight(metrics) {
+  if (metrics.size === "Large") return 20;
+  if (metrics.size === "Medium") return 18;
+  return 16;
 }
 
-function commentItem(key, x, y, metrics, text) {
-  return { type: "comment", key, x, y, w: metrics.w, h: metrics.commentH, text: `Works until ${text}` };
+function commentSpace(metrics) {
+  return COMMENT_GAP + commentHeight(metrics);
+}
+
+/** Clearance that keeps a surname pill off the card and off the connector. */
+function bubbleGap(metrics) {
+  return (metrics.line || 2) + 4;
+}
+
+function bubbleStack(metrics) {
+  return metrics.bubbleH + bubbleGap(metrics);
+}
+
+function parentDrop(org, parentKey, metrics) {
+  const parent = org.people.get(parentKey);
+  return metrics.gapY + (parent?.termination ? commentSpace(metrics) : 0);
+}
+
+function commentItem(key, x, cardBottom, metrics, text) {
+  return {
+    type: "comment",
+    key,
+    x,
+    y: cardBottom + COMMENT_GAP,
+    w: metrics.w,
+    h: commentHeight(metrics),
+    z: 4,
+    text: `Works until ${text}`,
+  };
+}
+
+function addBubble(items, org, person, key, centerX, cardY, metrics, shownUnder) {
+  const gap = bubbleGap(metrics);
+  const otherDotted = shownUnder !== "Dotted";
+  const nudge = shownUnder === "Solid" ? 5 : 0;
+  const bottom = cardY - gap;
+  // Stop at the pill's lower edge. A line into the middle strikes through the surname.
+  items.push(wire(centerX + nudge, bottom, centerX + nudge, cardY, otherDotted, metrics));
+  items.push({
+    type: "bubble",
+    key,
+    x: centerX - metrics.bubbleW / 2,
+    y: bottom - metrics.bubbleH,
+    w: metrics.bubbleW,
+    h: metrics.bubbleH,
+    z: 4,
+    dotted: otherDotted,
+    text: otherManagerSurname(org, person, shownUnder),
+  });
 }
 
 function translate(items, dx, dy) {
@@ -113,30 +164,15 @@ function cardItem(key, x, y, metrics, shownUnder) {
 function leafLayout(org, key, metrics, shownUnder) {
   const person = org.people.get(key);
   const two = hasTwoManagers(person);
-  const tick = metrics.gapY + (two ? metrics.bubbleH : 0);
+  const tick = metrics.gapY + (two ? bubbleStack(metrics) : 0);
   const anchorX = metrics.w / 2;
   const items = [wire(anchorX, 0, anchorX, tick, shownUnder === "Dotted", metrics)];
-  if (two) {
-    const otherDotted = shownUnder !== "Dotted";
-    items.push(
-      wire(anchorX + 5, tick - metrics.gapY / 2 - metrics.bubbleH / 2, anchorX + 5, tick, otherDotted, metrics),
-    );
-    items.push({
-      type: "bubble",
-      key,
-      x: anchorX - metrics.bubbleW / 2,
-      y: tick - metrics.gapY / 2 - metrics.bubbleH,
-      w: metrics.bubbleW,
-      h: metrics.bubbleH,
-      dotted: otherDotted,
-      text: otherManagerSurname(org, person, shownUnder),
-    });
-  }
+  if (two) addBubble(items, org, person, key, anchorX, tick, metrics, shownUnder);
   items.push(cardItem(key, 0, tick, metrics, shownUnder));
   let height = tick + metrics.h;
   if (person.termination) {
     items.push(commentItem(key, 0, tick + metrics.h, metrics, person.termination));
-    height += metrics.commentH;
+    height += commentSpace(metrics);
   }
   return { w: metrics.w, h: height, anchorX, items };
 }
@@ -161,34 +197,12 @@ function columnLayout(org, people, parentKey, metrics) {
     const shownUnder = managerType(person, parentKey) || "Solid";
     const two = hasTwoManagers(person);
     y += gapY + metrics.h / 2;
-    if (two) y += gapY / 2 + metrics.bubbleH;
+    if (two) y += bubbleStack(metrics);
     const tickY = y;
     const cardY = tickY - metrics.h / 2;
     const cardX = gapX;
     items.push(wire(0, tickY, cardX, tickY, shownUnder === "Dotted", metrics));
-    if (two) {
-      const otherDotted = shownUnder !== "Dotted";
-      items.push(
-        wire(
-          cardX + metrics.w / 2,
-          cardY - gapY / 2 - metrics.bubbleH / 2,
-          cardX + metrics.w / 2,
-          cardY,
-          otherDotted,
-          metrics,
-        ),
-      );
-      items.push({
-        type: "bubble",
-        key,
-        x: cardX + metrics.w / 2 - metrics.bubbleW / 2,
-        y: cardY - gapY / 2 - metrics.bubbleH,
-        w: metrics.bubbleW,
-        h: metrics.bubbleH,
-        dotted: otherDotted,
-        text: otherManagerSurname(org, person, shownUnder),
-      });
-    }
+    if (two) addBubble(items, org, person, key, cardX + metrics.w / 2, cardY, metrics, shownUnder);
     items.push(cardItem(key, cardX, cardY, metrics, shownUnder));
     if (person.termination) {
       items.push(commentItem(key, cardX, cardY + metrics.h, metrics, person.termination));
@@ -196,7 +210,7 @@ function columnLayout(org, people, parentKey, metrics) {
     if (shownUnder === "Dotted") lowestDotted = tickY;
     else lowestSolid = tickY;
     y += metrics.h / 2;
-    if (person.termination) y += metrics.commentH;
+    if (person.termination) y += commentSpace(metrics);
     bottom = Math.max(bottom, y);
   }
 
@@ -234,38 +248,23 @@ function rowsLayout(org, people, parentKey, metrics, perRow) {
       const person = org.people.get(row[i]);
       const shownUnder = managerType(person, parentKey) || "Solid";
       const two = hasTwoManagers(person);
-      const tick = gapY + (bubbleRow ? metrics.bubbleH : 0);
+      const tick = gapY + (bubbleRow ? bubbleStack(metrics) : 0);
       const center = shifts[i] * pitch;
       const cardY = y + tick;
       const cardX = center - metrics.w / 2;
       items.push(wire(center, y, center, cardY, shownUnder === "Dotted", metrics));
       if (Math.abs(center) > 0.4) items.push(wire(0, y, center, y, shownUnder === "Dotted", metrics));
-      if (two) {
-        const otherDotted = shownUnder !== "Dotted";
-        items.push(
-          wire(center + 5, cardY - gapY / 2 - metrics.bubbleH / 2, center + 5, cardY, otherDotted, metrics),
-        );
-        items.push({
-          type: "bubble",
-          key: row[i],
-          x: center - metrics.bubbleW / 2,
-          y: cardY - gapY / 2 - metrics.bubbleH,
-          w: metrics.bubbleW,
-          h: metrics.bubbleH,
-          dotted: otherDotted,
-          text: otherManagerSurname(org, person, shownUnder),
-        });
-      }
+      if (two) addBubble(items, org, person, row[i], center, cardY, metrics, shownUnder);
       items.push(cardItem(row[i], cardX, cardY, metrics, shownUnder));
       if (person.termination) {
         items.push(commentItem(row[i], cardX, cardY + metrics.h, metrics, person.termination));
       }
       if (shownUnder === "Dotted") lowestDotted = y;
       else lowestSolid = y;
-      bottom = Math.max(bottom, cardY + metrics.h + (person.termination ? metrics.commentH : 0));
+      bottom = Math.max(bottom, cardY + metrics.h + (person.termination ? commentSpace(metrics) : 0));
     }
     const commentRow = row.some((key) => org.people.get(key)?.termination);
-    const aligned = metrics.h + gapY + (bubbleRow ? metrics.bubbleH : 0) + (commentRow ? metrics.commentH : 0);
+    const aligned = metrics.h + gapY + (bubbleRow ? bubbleStack(metrics) : 0) + (commentRow ? commentSpace(metrics) : 0);
     y += gapY + aligned;
   }
 
@@ -478,7 +477,7 @@ export function layoutSubordinates(org, key, metrics, visibility, options = {}) 
     for (const department of departmentsOf(org, reports.all)) {
       let box = layoutLeaves(org, department.people, key, metrics, "auto");
       const alone = department.people.length === 1 && !hasTwoManagers(org.people.get(department.people[0]));
-      if (shiftDown && alone) box = dropBranch(box, metrics.bubbleH);
+      if (shiftDown && alone) box = dropBranch(box, bubbleStack(metrics));
       branches.push({
         deptKey: department.key,
         line: branchLine(org, key, department.people),
@@ -489,7 +488,7 @@ export function layoutSubordinates(org, key, metrics, visibility, options = {}) 
     for (const department of departmentsOf(org, reports.workers)) {
       let box = layoutLeaves(org, department.people, key, metrics, "auto");
       const alone = department.people.length === 1 && !hasTwoManagers(org.people.get(department.people[0]));
-      if (shiftDown && alone) box = dropBranch(box, metrics.bubbleH);
+      if (shiftDown && alone) box = dropBranch(box, bubbleStack(metrics));
       branches.push({
         deptKey: department.key,
         line: branchLine(org, key, department.people),
@@ -512,7 +511,7 @@ export function layoutSubordinates(org, key, metrics, visibility, options = {}) 
         box = leafLayout(org, managerKey, metrics, shownUnder);
         if (isManager(org, managerKey)) markCollapsed(box);
       }
-      if (shiftDown && !hasTwoManagers(person)) box = dropBranch(box, metrics.bubbleH);
+      if (shiftDown && !hasTwoManagers(person)) box = dropBranch(box, bubbleStack(metrics));
       branches.push({ deptKey: person.departmentKey, line: shownUnder === "Dotted" ? "dotted" : "solid", box });
     }
   }
@@ -523,7 +522,7 @@ function layoutExpandedManager(org, key, metrics, visibility, options) {
   const shownUnder = options.shownUnder || "Solid";
   const subs = layoutSubordinates(org, key, metrics, visibility, { stack: options.stack });
   const person = org.people.get(key);
-  const bubble = hasTwoManagers(person) ? metrics.bubbleH : 0;
+  const bubble = hasTwoManagers(person) ? bubbleStack(metrics) : 0;
   const tick = metrics.gapY + bubble;
   if (!subs.items.length) {
     const leaf = leafLayout(org, key, metrics, shownUnder);
@@ -534,7 +533,7 @@ function layoutExpandedManager(org, key, metrics, visibility, options) {
   const right = Math.max(subs.w, cardX + metrics.w);
   const shift = -left;
   const cardY = tick;
-  const subsY = cardY + metrics.h + (person.termination ? metrics.commentH : 0);
+  const subsY = cardY + metrics.h + (person.termination ? commentSpace(metrics) : 0);
   const items = [
     {
       type: "wire",
@@ -559,27 +558,7 @@ function layoutExpandedManager(org, key, metrics, visibility, options) {
     },
   ];
   if (hasTwoManagers(person)) {
-    const otherDotted = shownUnder !== "Dotted";
-    items.push(
-      wire(
-        subs.anchorX + shift + 5,
-        cardY - metrics.gapY / 2 - metrics.bubbleH / 2,
-        subs.anchorX + shift + 5,
-        cardY,
-        otherDotted,
-        metrics,
-      ),
-    );
-    items.push({
-      type: "bubble",
-      key,
-      x: subs.anchorX + shift - metrics.bubbleW / 2,
-      y: cardY - metrics.gapY / 2 - metrics.bubbleH,
-      w: metrics.bubbleW,
-      h: metrics.bubbleH,
-      dotted: otherDotted,
-      text: otherManagerSurname(org, person, shownUnder),
-    });
+    addBubble(items, org, person, key, subs.anchorX + shift, cardY, metrics, shownUnder);
   }
   if (person.termination) {
     items.push(commentItem(key, cardX + shift, cardY + metrics.h, metrics, person.termination));
@@ -926,15 +905,16 @@ function headCard(org, rootKey, peeled) {
     },
   ];
   const person = org.people.get(rootKey);
-  const comment = person?.termination ? metrics.commentH : 0;
+  const comment = person?.termination ? commentSpace({ size: "Large" }) : 0;
   if (comment) {
     items.push({
       type: "comment",
       key: rootKey,
       x,
-      y: y + metrics.h,
+      y: y + metrics.h + COMMENT_GAP,
       w: metrics.w,
-      h: metrics.commentH,
+      h: commentHeight({ size: "Large" }),
+      z: 4,
       text: `Works until ${person.termination}`,
     });
   }
@@ -964,7 +944,7 @@ export function buildSlides(org, rootKey, mode = "clever") {
     const peeled = peelOuterTick(grown);
     const tree = peeled.box;
     const dx = SLIDE.width / 2 - tree.anchorX;
-    const headComment = org.people.get(key)?.termination ? CARDS.Large.commentH : 0;
+    const headComment = org.people.get(key)?.termination ? commentSpace({ size: "Large" }) : 0;
     const body = paint(tree.items, dx, TREE_TOP + headComment + 15);
     const shapes = [
       titleShape(org, key),
@@ -1093,15 +1073,16 @@ export function layoutSingleCard(org, key, metrics, { head = false, x = 80, y = 
     },
   ];
   if (hasTwoManagers(person)) {
+    const gap = bubbleGap(metrics);
     items.push({
       id: sid("bubble"),
       type: "bubble",
       key,
       x: x + metrics.w / 2 - metrics.bubbleW / 2,
-      y: y - metrics.bubbleH - 2,
+      y: y - gap - metrics.bubbleH,
       w: metrics.bubbleW,
       h: metrics.bubbleH,
-      z: 3,
+      z: 4,
       dotted: true,
       text: org.people.get(person.dottedKey)?.surname || "",
     });

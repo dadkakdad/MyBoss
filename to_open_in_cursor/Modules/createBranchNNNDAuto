@@ -203,6 +203,9 @@ Sub makeFullTreeAuto(ByVal slideNumber As Integer, ByVal personFullName As Strin
         With ActivePresentation.Slides(slideNumber).Shapes(createdTreeName)
             .Top = .Top - checkShapeExists(slideNumber, getReferenceTickNames(personFullName, False, fullTreeDirectReportsVisibilityFlags).Item(1)).Height
         End With
+        
+        'Centering a tree that is wider than the slide used to push names off the left edge
+        Call fitShapeToSlide(ActivePresentation.Slides(slideNumber).Shapes(createdTreeName), Application.ActivePresentation.PageSetup.SlideWidth / 2)
     End If
     
     Call makeHeadOfTree(slideNumber, personFullName)

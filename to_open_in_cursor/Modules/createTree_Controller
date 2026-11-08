@@ -116,7 +116,7 @@ Sub mainSwitch(ByVal regime As String)
         'calculate offset in case card is selected; offset is to keep the center of the card on it's place
         OffsetY = ActivePresentation.Slides(slideNumber).Shapes(selectedPersonName & selectedShapeType & selectedPersonManagerType).Height
         If MyDictionaryPersonalInfo.Item(selectedPersonName).TerminationDate <> "" Then
-            OffsetY = OffsetY - getCommentBoxHeight()
+            OffsetY = OffsetY - getCommentBoxHeight() - commentClearance()
         End If
         If selectedShapeType = "Card" Then
             OffsetY = OffsetY + inputWhiteSpaceY

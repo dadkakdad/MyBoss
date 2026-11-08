@@ -112,8 +112,8 @@ Function getAlignedRowHeight(ByVal listOfPeopleOnRow As Collection) As Double
                         
     'Calculate total height
     maximumElementHeight = getCardHeight() + inputWhiteSpaceY
-    If bubbleFlag Then maximumElementHeight = maximumElementHeight + getBubbleHeight()
-    If commentboxFlag Then maximumElementHeight = maximumElementHeight + getCommentBoxHeight()
+    If bubbleFlag Then maximumElementHeight = maximumElementHeight + getBubbleHeight() + bubbleClearance()
+    If commentboxFlag Then maximumElementHeight = maximumElementHeight + getCommentBoxHeight() + commentClearance()
     
     getAlignedRowHeight = maximumElementHeight
 End Function

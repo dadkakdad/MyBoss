@@ -8,7 +8,7 @@ Sub createOrgChartElement(ByVal slideNumber As Integer, ByVal personFullName As 
         Select Case tickDirection
             Case 1 'pointing UP
                 tickLength = inputWhiteSpaceY
-                If MyDictionaryPersonalInfo.Item(personFullName).HasTwoManagers Then tickLength = tickLength + getBubbleHeight()
+                If MyDictionaryPersonalInfo.Item(personFullName).HasTwoManagers Then tickLength = tickLength + getBubbleHeight() + bubbleClearance()
                 
                 Call drawLineVertical(slideNumber, shapeToCreateName, getCardWidth() / 2, 0, -tickLength, ManagerType)
             Case 2 'pointing RIGHT
@@ -21,20 +21,23 @@ Sub createOrgChartElement(ByVal slideNumber As Integer, ByVal personFullName As 
             
         'add link to additional manager (additional tick)
         If MyDictionaryPersonalInfo.Item(personFullName).HasTwoManagers Then
-            'a little shift along X when two ticks point up
+            'Pill sits fully above the card. The stub stops at the pill's lower edge
+            'so the connector does not strike through the manager surname.
+            bubbleTop = -(getBubbleHeight() + bubbleClearance())
+            
             shapeToCreateName = personFullName & "Manager" & "Tick" & inverseType(ManagerType)
             If tickDirection = 1 Then
-                Call drawLineVertical(slideNumber, shapeToCreateName, getCardWidth() / 2 + 5, 0, -inputWhiteSpaceY / 2 - getBubbleHeight() / 2, inverseType(ManagerType))
+                Call drawLineVertical(slideNumber, shapeToCreateName, getCardWidth() / 2 + 5, 0, bubbleTop + getBubbleHeight(), inverseType(ManagerType))
             Else
-                Call drawLineVertical(slideNumber, shapeToCreateName, getCardWidth() / 2, 0, -inputWhiteSpaceY / 2 - getBubbleHeight() / 2, inverseType(ManagerType))
+                Call drawLineVertical(slideNumber, shapeToCreateName, getCardWidth() / 2, 0, bubbleTop + getBubbleHeight(), inverseType(ManagerType))
             End If
             
             additionalManagerFullNameKey = MyDictionaryPersonalInfo.Item(personFullName).ManagerByType(inverseType(ManagerType))
             
             'create bubble
             baldShapeName = copyShape(slideNumber, "Bubble", additionalManagerFullNameKey)
-            'move bubble over the card
-            Call moveShape(.Shapes(baldShapeName), getCardWidth() / 2 - getBubbleWidth() / 2, -inputWhiteSpaceY / 2 - getBubbleHeight())
+            'move bubble over the card, clear of both the card and the trunk
+            Call moveShape(.Shapes(baldShapeName), getCardWidth() / 2 - getBubbleWidth() / 2, bubbleTop)
             'fill it with proper info
             Call fillBubble(.Shapes(baldShapeName), additionalManagerFullNameKey, inverseType(ManagerType))
             'give it a proper name
@@ -45,8 +48,8 @@ Sub createOrgChartElement(ByVal slideNumber As Integer, ByVal personFullName As 
         If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then
             'create comment box
             baldShapeName = copyShape(slideNumber, "commentBox")
-            'move comment box below the card
-            Call moveShape(.Shapes(baldShapeName), 0, getCardHeight())
+            'leave a gap under the location line so the date does not cover it
+            Call moveShape(.Shapes(baldShapeName), 0, getCardHeight() + commentClearance())
             'fill it with proper info
             Call fillCommentBox(.Shapes(baldShapeName), personFullName)
             'give it a proper name
@@ -125,21 +128,21 @@ Function sizeOfOrgChartElement(ByVal personFullName As String, ByVal tickDirecti
                 .tWidth = .tWidth + 0
                 .tHeight = .tHeight + inputWhiteSpaceY
                 
-                'account for bubble
-                 If MyDictionaryPersonalInfo.Item(personFullName).HasTwoManagers() Then .tHeight = .tHeight + getBubbleHeight()
+                'account for bubble, including the gap that keeps it off the card
+                 If MyDictionaryPersonalInfo.Item(personFullName).HasTwoManagers() Then .tHeight = .tHeight + getBubbleHeight() + bubbleClearance()
                  
-                 'account for comment box
-                 If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then .tHeight = .tHeight + getCommentBoxHeight()
+                 'account for comment box and the gap under the location line
+                 If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then .tHeight = .tHeight + getCommentBoxHeight() + commentClearance()
             Case 4 'LEFT
                 'account for tick
                 .tWidth = .tWidth + inputWhiteSpaceX
                 .tHeight = .tHeight + 0
                 
                 'account for bubble
-                 If MyDictionaryPersonalInfo.Item(personFullName).HasTwoManagers() Then .tHeight = .tHeight + inputWhiteSpaceY / 2 + getBubbleHeight()
+                 If MyDictionaryPersonalInfo.Item(personFullName).HasTwoManagers() Then .tHeight = .tHeight + getBubbleHeight() + bubbleClearance()
                  
                  'account for comment box
-                 If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then .tHeight = .tHeight + getCommentBoxHeight()
+                 If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then .tHeight = .tHeight + getCommentBoxHeight() + commentClearance()
         End Select
     End With
     Set sizeOfOrgChartElement = orgChartElementSize
@@ -231,10 +234,12 @@ Sub fillCard(ByRef shapeObject As Shape, ByVal personFullName As String)
                 .GroupItems("Location").TextFrame.TextRange.Text = tempLocation
             End If
             
+        'Pin headcount and location into the footer so they cannot cover the name
+        Call arrangeCardFooter(shapeObject)
+            
             .GroupItems("Location").Name = personFullName & "Location"
             .GroupItems("BottomBackground").Name = personFullName & "BottomBackground"
         
-    
         .GroupItems("InfoBox").Name = personFullName & "InfoBox"
         .GroupItems("HeadCount").Name = personFullName & "HeadCount"
         .GroupItems("MainBackground").Name = personFullName & "MainBackground"
@@ -242,26 +247,177 @@ Sub fillCard(ByRef shapeObject As Shape, ByVal personFullName As String)
 End Sub
 
 Sub fillBubble(ByRef shapeObject As Shape, ByVal additionalManagerFullNameKey As String, ByVal ManagerType As String)
-    shapeObject.TextFrame.TextRange.Text = MyDictionaryPersonalInfo.Item(additionalManagerFullNameKey).Surname
+    'Navy pill with white type. Shrink the surname if it is wider than the pill.
+    With shapeObject.TextFrame.TextRange
+        .Text = MyDictionaryPersonalInfo.Item(additionalManagerFullNameKey).Surname
+        .Font.Bold = True
+        .Font.Color.RGB = RGB(255, 255, 255)
+    End With
+    
+    shapeObject.Fill.Visible = msoTrue
+    shapeObject.Fill.Solid
+    shapeObject.Fill.ForeColor.RGB = RGB(0, 27, 87)
+    shapeObject.Fill.Transparency = 0
+    
+    On Error Resume Next
+    shapeObject.TextFrame.WordWrap = msoFalse
+    shapeObject.TextFrame2.WordWrap = msoFalse
+    shapeObject.TextFrame2.AutoSize = 2 'msoAutoSizeTextToFitShape
+    On Error GoTo 0
+    
     Call applyLineStyle(shapeObject, ManagerType, 3)
 End Sub
 
 Sub fillCommentBox(ByRef shapeObject As Shape, ByVal personFullName As String)
+    Dim commentText As String
+    Dim commentFontSize As Double
+    
     terminationDateText = MyDictionaryPersonalInfo.Item(personFullName).TerminationDate
     If InStr(1, terminationDateText, "at") > 0 Then
         terminationDateText = Trim(Left(terminationDateText, InStr(1, terminationDateText, "at") - 1))
         terminationDateText = Trim(Right(terminationDateText, Len(terminationDateText) - InStr(1, terminationDateText, ",") - 1))
     End If
     
+    commentText = "Works until"
     If Len(terminationDateText) > 0 Then
         If IsDate(terminationDateText) Then
-            shapeObject.TextFrame.TextRange.Text = shapeObject.TextFrame.TextRange.Text & " " & Format(CDate(terminationDateText), "d mmmm yyyy")
+            commentText = "Works until " & Format(CDate(terminationDateText), "d mmmm yyyy")
         Else
-            shapeObject.TextFrame.TextRange.Text = terminationDateText
+            commentText = terminationDateText
         End If
-    Else
-        shapeObject.TextFrame.TextRange.Text = ""
     End If
+    
+    Select Case inputBoxSize
+        Case "ExtraSmall", "Small"
+            commentFontSize = 7
+        Case "Medium"
+            commentFontSize = 8
+        Case "Large"
+            commentFontSize = 9
+        Case Else
+            commentFontSize = 8
+    End Select
+    
+    'Opaque light pill. A transparent one lets the card underneath show through the date.
+    With shapeObject
+        .Fill.Visible = msoTrue
+        .Fill.Solid
+        .Fill.ForeColor.RGB = RGB(255, 255, 255)
+        .Fill.Transparency = 0
+        .Line.Visible = msoTrue
+        .Line.ForeColor.RGB = RGB(0, 32, 96)
+        .Line.Weight = 0.75
+    End With
+    
+    With shapeObject.TextFrame
+        .WordWrap = msoTrue
+        .AutoSize = ppAutoSizeNone
+        .MarginLeft = 2
+        .MarginRight = 2
+        .MarginTop = 0
+        .MarginBottom = 0
+        With .TextRange
+            .Text = commentText
+            .Font.Bold = True
+            .Font.Color.RGB = RGB(0, 32, 96)
+            .Font.Size = commentFontSize
+            .ParagraphFormat.Alignment = ppAlignCenter
+        End With
+    End With
+    
+    On Error Resume Next
+    shapeObject.TextFrame2.WordWrap = msoTrue
+    shapeObject.TextFrame2.AutoSize = 2 'shrink onto the pill if the date is long
+    On Error GoTo 0
+End Sub
+
+'Gap between a dotted-line surname pill and the card under it
+Function bubbleClearance() As Double
+    bubbleClearance = getLineWeight() + 4
+End Function
+
+'Gap between a card's location line and its "works until" note
+Function commentClearance() As Double
+    commentClearance = 4
+End Function
+
+'Keep the name block, the location and the headcount in their own bands
+Sub arrangeCardFooter(ByRef shapeObject As Shape)
+    Dim cardLeft As Double
+    Dim cardTop As Double
+    Dim cardWidth As Double
+    Dim cardHeight As Double
+    Dim barHeight As Double
+    Dim footerTop As Double
+    Dim hcWidth As Double
+    Dim barRGB As Long
+    Dim luminance As Double
+    Dim textRGB As Long
+    
+    cardLeft = shapeObject.Left
+    cardTop = shapeObject.Top
+    cardWidth = shapeObject.Width
+    cardHeight = shapeObject.Height
+    barHeight = shapeObject.GroupItems("BottomBackground").Height
+    If barHeight < 1 Then Exit Sub
+    footerTop = cardTop + cardHeight - barHeight
+    
+    With shapeObject.GroupItems("BottomBackground")
+        .Left = cardLeft
+        .Top = footerTop
+        .Width = cardWidth
+    End With
+    
+    hcWidth = cardWidth * 0.4
+    If hcWidth < 26 Then hcWidth = 26
+    If hcWidth > cardWidth * 0.48 Then hcWidth = cardWidth * 0.48
+    
+    With shapeObject.GroupItems("Location")
+        .Left = cardLeft
+        .Top = footerTop
+        .Width = cardWidth - hcWidth
+        .Height = barHeight
+    End With
+    
+    With shapeObject.GroupItems("HeadCount")
+        .Left = cardLeft + cardWidth - hcWidth
+        .Top = footerTop
+        .Width = hcWidth
+        .Height = barHeight
+    End With
+    
+    With shapeObject.GroupItems("InfoBox")
+        If .Top < cardTop Then .Top = cardTop
+        If .Top + .Height > footerTop - 1 Then
+            .Height = footerTop - .Top - 1
+        End If
+        If .Height < 8 Then .Height = 8
+        If .Width > cardWidth - 2 Then .Width = cardWidth - 2
+    End With
+    
+    On Error Resume Next
+    'Recolor only while the footer bar is showing. With no location the bar is hidden
+    'and the headcount already sits in white on the card body.
+    If shapeObject.GroupItems("BottomBackground").Visible Then
+        barRGB = shapeObject.GroupItems("BottomBackground").Fill.ForeColor.RGB
+        luminance = (barRGB Mod 256) * 0.299 + ((barRGB \ 256) Mod 256) * 0.587 + ((barRGB \ 65536) Mod 256) * 0.114
+        If luminance < 140 Then
+            textRGB = RGB(255, 255, 255)
+        Else
+            textRGB = RGB(0, 32, 96)
+        End If
+        shapeObject.GroupItems("Location").TextFrame.TextRange.Font.Color.RGB = textRGB
+        shapeObject.GroupItems("HeadCount").TextFrame.TextRange.Font.Color.RGB = textRGB
+    End If
+    
+    shapeObject.GroupItems("Location").TextFrame.WordWrap = msoFalse
+    shapeObject.GroupItems("HeadCount").TextFrame.WordWrap = msoFalse
+    shapeObject.GroupItems("Location").TextFrame2.AutoSize = 2
+    shapeObject.GroupItems("HeadCount").TextFrame2.AutoSize = 2
+    shapeObject.GroupItems("InfoBox").TextFrame.WordWrap = msoTrue
+    shapeObject.GroupItems("InfoBox").TextFrame2.WordWrap = msoTrue
+    shapeObject.GroupItems("InfoBox").TextFrame2.AutoSize = 2
+    On Error GoTo 0
 End Sub
 
 '-----------------------------------------------------------

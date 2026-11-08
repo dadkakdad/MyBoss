@@ -168,15 +168,20 @@ function drawShape(ctx, org, shape) {
       ctx.font = `${Math.max(6, nameSize - 3)}px Arial`;
       ctx.fillText(lines[2] || "", shape.x + 4, shape.y + shape.h - (footer ? 12 : 4));
     }
+    const badge = person ? headcountLabel(person) : "";
     if (footer) {
       ctx.fillStyle = `#${palette.bar}`;
       ctx.fillRect(shape.x, shape.y + shape.h - 11, shape.w, 11);
       ctx.fillStyle = kind === "ordinary" || kind === "important" ? "#ffffff" : "#1c2430";
       ctx.font = "7px Arial";
       ctx.fillText(footer, shape.x + 4, shape.y + shape.h - 3);
-    }
-    const badge = person ? headcountLabel(person) : "";
-    if (badge) {
+      if (badge) {
+        ctx.font = "bold 7px Arial";
+        ctx.textAlign = "right";
+        ctx.fillText(badge, shape.x + shape.w - 4, shape.y + shape.h - 3);
+        ctx.textAlign = "left";
+      }
+    } else if (badge) {
       ctx.font = "bold 8px Arial";
       ctx.fillStyle = kind === "split" ? "#ffffff" : `#${palette.color}`;
       ctx.textAlign = "right";
@@ -349,7 +354,39 @@ export async function deckToPptx(org, slides, fileName) {
             margin: 0,
           },
         );
-        if (badge) {
+        if (footer) {
+          slide.addShape("rect", {
+            x: inches(shape.x),
+            y: inches(shape.y + shape.h - 11),
+            w: inches(shape.w),
+            h: inches(11),
+            fill: { color: palette.bar },
+          });
+          slide.addText(footer, {
+            x: inches(shape.x + 3),
+            y: inches(shape.y + shape.h - 11),
+            w: inches(Math.max(8, shape.w - (badge ? 32 : 6))),
+            h: inches(11),
+            fontFace: "Arial",
+            fontSize: 7,
+            color: kind === "ordinary" || kind === "important" ? "FFFFFF" : "1C2430",
+            margin: 0,
+          });
+          if (badge) {
+            slide.addText(badge, {
+              x: inches(shape.x + shape.w - 30),
+              y: inches(shape.y + shape.h - 11),
+              w: inches(26),
+              h: inches(11),
+              align: "right",
+              fontFace: "Arial",
+              fontSize: 7,
+              bold: true,
+              color: kind === "ordinary" || kind === "important" ? "FFFFFF" : "1C2430",
+              margin: 0,
+            });
+          }
+        } else if (badge) {
           slide.addText(badge, {
             x: inches(shape.x),
             y: inches(shape.y),
@@ -362,25 +399,6 @@ export async function deckToPptx(org, slides, fileName) {
             color: kind === "split" ? "FFFFFF" : palette.color,
           });
         }
-        if (footer) {
-          slide.addShape("rect", {
-            x: inches(shape.x),
-            y: inches(shape.y + shape.h - 11),
-            w: inches(shape.w),
-            h: inches(11),
-            fill: { color: palette.bar },
-          });
-          slide.addText(footer, {
-            x: inches(shape.x + 3),
-            y: inches(shape.y + shape.h - 11),
-            w: inches(shape.w - 6),
-            h: inches(11),
-            fontFace: "Arial",
-            fontSize: 7,
-            color: kind === "ordinary" || kind === "important" ? "FFFFFF" : "1C2430",
-            margin: 0,
-          });
-        }
         continue;
       }
       if (shape.type === "link" || shape.type === "nav" || shape.type === "bubble" || shape.type === "comment") {
@@ -390,10 +408,12 @@ export async function deckToPptx(org, slides, fileName) {
           w: inches(Math.max(shape.w, 8)),
           h: inches(Math.max(shape.h, 8)),
           fontFace: "Arial",
-          fontSize: 8,
-          color: shape.type === "nav" ? "FFFFFF" : "1C2430",
+          fontSize: shape.type === "comment" ? 7 : 8,
+          color: shape.type === "nav" ? "FFFFFF" : "001B58",
           fill: { color: shape.type === "nav" ? "173C5D" : "FFFFFF" },
           align: "center",
+          valign: "middle",
+          wrap: shape.type === "comment",
           hyperlink: shape.target ? { slide: shape.target } : undefined,
         });
       }

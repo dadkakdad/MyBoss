@@ -669,12 +669,11 @@ function renderShape(shape) {
     node.style.fontSize = `${spec.name}px`;
     const badge = person ? headcountLabel(person) : "";
     const footer = person?.location || "";
-    const badgeColor = !footer && kind !== "outsource" ? "#ffffff" : "";
-    node.innerHTML = `${badge ? `<span class="hc"${badgeColor ? ` style="color:${badgeColor}"` : ""}>${escapeHtml(badge)}</span>` : ""}
-      <span class="who">${escapeHtml(lines[0] || "")}</span>
+    const badgeHtml = badge ? `<span class="hc">${escapeHtml(badge)}</span>` : "";
+    node.innerHTML = `<span class="who">${escapeHtml(lines[0] || "")}</span>
       <span class="who">${escapeHtml(lines[1] || "")}</span>
       ${shape.h >= 32 && lines[2] ? `<span class="job" style="font-size:${spec.title}px">${escapeHtml(lines[2])}</span>` : ""}
-      ${footer ? `<span class="loc">${escapeHtml(footer)}</span>` : ""}`;
+      ${footer ? `<span class="loc"><span class="loc-text">${escapeHtml(footer)}</span>${badgeHtml}</span>` : badgeHtml}`;
     node.setAttribute("aria-label", person ? personFullName(person) : "Empty card");
     node.addEventListener("dblclick", (event) => {
       event.stopPropagation();

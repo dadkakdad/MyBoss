@@ -23,7 +23,7 @@ Sub makeNDSubordinates(ByVal slideNumber As Integer, ByVal personFullName As Str
     'Calculate offsets from origin (origin is always just under the employee's card
     OffsetX = 0
     OffsetY = inputWhiteSpaceY
-    If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then OffsetY = OffsetY + getCommentBoxHeight()
+    If MyDictionaryPersonalInfo.Item(personFullName).TerminationDate <> "" Then OffsetY = OffsetY + getCommentBoxHeight() + commentClearance()
         
     'Use these variables to propagate top to bottom of branch
     xIterator = originX + OffsetX 'offset of vertical trunk
@@ -71,9 +71,9 @@ Sub makeNDSubordinates(ByVal slideNumber As Integer, ByVal personFullName As Str
             
             'Create cards with beautiful ticks and connectors
             With MyDictionaryPersonalInfo.Item(directReport)
-                If Not .HasTwoManagers() And mixedlinePeopleOnCurrentRow Then inputWhiteSpaceY = inputWhiteSpaceY + getBubbleHeight()
+                If Not .HasTwoManagers() And mixedlinePeopleOnCurrentRow Then inputWhiteSpaceY = inputWhiteSpaceY + getBubbleHeight() + bubbleClearance()
                 Call createOrgChartElement(slideNumber, directReport, .ManagerType(personFullName), originX + hLineLength, yIterator, 1)
-                If Not .HasTwoManagers() And mixedlinePeopleOnCurrentRow Then inputWhiteSpaceY = inputWhiteSpaceY - getBubbleHeight()
+                If Not .HasTwoManagers() And mixedlinePeopleOnCurrentRow Then inputWhiteSpaceY = inputWhiteSpaceY - getBubbleHeight() - bubbleClearance()
                 
                 Call drawLineHorizontal(slideNumber, directReport & "HorizontalConnector" & .ManagerType(personFullName), originX, yIterator, hLineLength, .ManagerType(personFullName))
             End With
