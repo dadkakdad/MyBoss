@@ -47,6 +47,15 @@ test("CEO, managers, and letter filters follow the ribbon", () => {
   assert.ok(peopleInCategory(org, letter).includes(org.ceo));
 });
 
+test("a sheet with fewer than 13 columns is rejected", () => {
+  const org = buildOrg([
+    ["Employee surname", "Employee name"],
+    ["Ada", "Lovelace"],
+  ]);
+  assert.equal(org.fatal, true);
+  assert.match(org.issues[0].message, /enough columns/);
+});
+
 test("missing manager, two CEOs, and a loop are rejected", () => {
   const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
   const missing = buildOrg([

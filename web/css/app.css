@@ -30,10 +30,131 @@ body {
 button, select, input { font: inherit; color: inherit; }
 
 .ribbon {
-  background: var(--ribbon);
-  border-bottom: 1px solid #cfc6b8;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+  background: linear-gradient(#ffffff, #f3f2f1 42%, #e6e6e6);
+  border-bottom: 1px solid #b4b4b4;
+  color: #444;
 }
+
+.tabstrip { padding: 4px 10px 0; background: #f3f2f1; }
+.tab {
+  display: inline-block;
+  background: linear-gradient(#fff, #f3f2f1);
+  border: 1px solid #b4b4b4;
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  padding: 3px 14px 4px;
+  font-size: 12px;
+  color: #c45500;
+}
+
+.ribbon-tab {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  min-height: 96px;
+  padding: 4px 8px 6px;
+  overflow: visible;
+}
+
+.ribbon-tab .sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 8px 6px 4px;
+  background: linear-gradient(#e6e6e6, #bdbdbd, #e6e6e6);
+}
+
+.ribbon-tab .large {
+  width: 68px;
+  min-height: 78px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  padding: 4px 4px 2px;
+  cursor: pointer;
+  color: #444;
+}
+.ribbon-tab .large img { width: 32px; height: 32px; object-fit: contain; }
+.ribbon-tab .large span { font-size: 11px; line-height: 1.15; text-align: center; max-width: 66px; }
+.ribbon-tab .large:hover, .ribbon-tab .chev:hover, .menu button:hover { background: #fde7d0; border-color: #f4c28a; }
+.ribbon-tab .large:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.split { position: relative; display: flex; align-items: stretch; }
+.split .large { width: 62px; border-radius: 3px 0 0 3px; }
+.split .chev {
+  width: 15px;
+  border: 1px solid transparent;
+  border-left: 0;
+  border-radius: 0 3px 3px 0;
+  background: transparent;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+}
+.split:hover .chev { border-left: 1px solid #f4c28a; }
+
+.menu {
+  display: none;
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 0;
+  z-index: 30;
+  min-width: 230px;
+  background: #fff;
+  border: 1px solid #c8c8c8;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  padding: 4px;
+}
+.menu.open { display: block; }
+.menu button {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #222;
+}
+.menu button img { width: 24px; height: 24px; }
+.menu button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.upload, .ribbon-tab .stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 6px 4px;
+  font-size: 11px;
+  color: #666;
+}
+.upload input, .upload select, .ribbon-tab .stack select {
+  height: 22px;
+  border: 1px solid #b4b4b4;
+  background: #fff;
+  border-radius: 2px;
+  min-width: 160px;
+  max-width: 210px;
+  font-size: 12px;
+  color: #222;
+}
+.upload input { color: #888; }
+.ribbon-tab .check { display: flex; gap: 6px; align-items: center; color: #444; }
+
+body[data-stage="empty"] .needs-upload,
+body[data-stage="empty"] .needs-import,
+body[data-stage="file"] .needs-pick,
+body[data-stage="file"] .needs-import,
+body[data-stage="ready"] .needs-pick,
+body[data-stage="ready"] .needs-upload { display: none !important; }
 
 .brand {
   display: flex;

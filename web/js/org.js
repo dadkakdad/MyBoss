@@ -109,6 +109,24 @@ export function buildOrg(matrix, options = {}) {
   const reports = new Map();
   const firstRow = hasTitles ? 1 : 0;
   const rows = Array.isArray(matrix) ? matrix : [];
+  const widest = rows.reduce((max, row) => Math.max(max, Array.isArray(row) ? row.length : 0), 0);
+  if (widest < COLUMN_COUNT) {
+    return {
+      people,
+      reports,
+      order: [],
+      ceo: null,
+      companySize: 0,
+      issues: [
+        {
+          level: "error",
+          message: `This sheet doesn't have enough columns for the template. It needs columns A–M (${COLUMN_COUNT}).`,
+        },
+      ],
+      fatal: true,
+      hasTitles,
+    };
+  }
 
   const ensureReports = (key) => {
     if (!reports.has(key)) reports.set(key, []);

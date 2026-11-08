@@ -5,6 +5,7 @@ import {
   displayName,
   headcountLabel,
   isManager,
+  managerType,
   moderated,
   peopleInCategory,
   personFullName,
@@ -94,8 +95,14 @@ function selectedPersonKey() {
 }
 
 function readWorkbook(buffer, fileName) {
+  if (!/\.(xlsx|xls|xlsm)$/i.test(fileName)) {
+    toast("File extension should be .xls, .xlsx, or .xlsm.");
+    return;
+  }
   const workbook = window.XLSX.read(buffer, { type: "array", cellDates: true });
   state.fileName = fileName;
+  state.imported = false;
+  state.org = null;
   state.workbookSheets = workbook.SheetNames.map((name) => ({
     name,
     matrix: window.XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: "", raw: true }),
@@ -115,6 +122,9 @@ function fillSheets(index) {
   }
   select.selectedIndex = index;
   state.sheetName = select.value;
+  const name = $("file-name");
+  if (name) name.value = state.fileName || "";
+  document.body.dataset.stage = "file";
 }
 
 function importSheet() {
@@ -129,13 +139,18 @@ function importSheet() {
   state.category = "CEO";
   state.personKey = state.org.ceo || state.org.order[0] || "";
   fillPeople();
-  renderInspector();
-  renderStatus();
   if (state.org.fatal) {
+    state.imported = false;
+    document.body.dataset.stage = "file";
+    render();
     toast("Import found problems. The chart stays blocked until they are fixed.");
     return;
   }
-  toast(`${state.org.companySize} people · CEO ${personFullName(state.org.people.get(state.org.ceo))}`);
+  state.imported = true;
+  document.body.dataset.stage = "ready";
+  render();
+  const size = state.org.companySize === 1 ? "1 person" : `${state.org.companySize} people`;
+  toast(`Imported ${state.sheetName}. CEO ${personFullName(state.org.people.get(state.org.ceo))}, ${size}.`);
 }
 
 function fillPeople() {
@@ -284,8 +299,24 @@ function cardAnchor(slide, key) {
   return { x: SLIDE.width / 2, y: 168 };
 }
 
+function lightenShade(fill) {
+  const hex = String(fill || "#DEEBF7").replace("#", "");
+  const channel = (start) => parseInt(hex.slice(start, start + 2), 16);
+  const mix = (value) => Math.min(255, Math.round(value + (255 - value) / 2));
+  const next = [mix(channel(0)), mix(channel(2)), mix(channel(4))];
+  if (next.some((value) => value >= 250)) return "#8fa4c4";
+  return `#${next.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
 function shadeDepartments() {
   if (!requireOrg()) return;
+  const selectedShade = selectedShapes().find((shape) => shape.type === "shade");
+  if (selectedShade) {
+    remember();
+    selectedShade.fill = lightenShade(selectedShade.fill);
+    render();
+    return;
+  }
   remember();
   const slide = current();
   slide.shapes = slide.shapes.filter((shape) => shape.type !== "shade");
@@ -322,6 +353,16 @@ function shadeDepartments() {
 
 function linkSlides() {
   if (!requireOrg()) return;
+  const already = state.slides.some((slide) => slide.shapes.some((shape) => shape.type === "link" || shape.type === "nav"));
+  if (already) {
+    remember();
+    for (const slide of state.slides) {
+      slide.shapes = slide.shapes.filter((shape) => shape.type !== "link" && shape.type !== "nav");
+    }
+    render();
+    toast("Links removed.");
+    return;
+  }
   remember();
   const found = new Map();
   state.slides.forEach((slide, index) => {
@@ -545,6 +586,24 @@ function render() {
   renderInspector();
   renderStatus();
   applyScale();
+  syncChrome();
+}
+
+function syncChrome() {
+  const imported = Boolean(state.imported && state.org && !state.org.fatal);
+  if (!document.body.dataset.stage) document.body.dataset.stage = "empty";
+  if (imported) document.body.dataset.stage = "ready";
+  const refresh = $("refresh");
+  if (refresh && imported) {
+    const ceo = state.org.people.get(state.org.ceo);
+    const size = state.org.companySize === 1 ? "1 person" : `${state.org.companySize} people`;
+    refresh.title = `Input File: ${state.fileName}\nSheet: ${state.sheetName}\nCEO Name: ${ceo ? personFullName(ceo) : ""}\nCompany Size: ${size}`;
+  }
+  const grouped = selectedShapes().some((shape) => shape.groupId);
+  if ($("group")) $("group").disabled = !imported || boxShapes().length < 2;
+  if ($("ungroup")) $("ungroup").disabled = !imported || !grouped;
+  const card = current()?.shapes.find((shape) => state.selection.has(shape.id) && shape.type === "card" && shape.key);
+  if ($("add-link")) $("add-link").disabled = !card;
 }
 
 function renderSlide() {
@@ -559,7 +618,9 @@ function renderSlide() {
   if (!slide.shapes.length) {
     const empty = document.createElement("div");
     empty.className = "empty-slide";
-    empty.innerHTML = "<div><strong>Empty slide</strong>Import the Excel template, pick a person, then create the chart.</div>";
+    empty.innerHTML = state.imported
+      ? "<div><strong>Empty slide</strong>Choose a person, then Create org chart.</div>"
+      : "<div><strong>Empty slide</strong>Select an Excel file, import the sheet, then create the chart.</div>";
     root.appendChild(empty);
   }
 
@@ -801,7 +862,32 @@ function renderInspector() {
   }
   const ceo = state.org.ceo ? state.org.people.get(state.org.ceo) : null;
   summary.innerHTML = `<p><b>${escapeHtml(state.sheetName)}</b> · ${state.org.companySize} people${ceo ? ` · CEO ${escapeHtml(personFullName(ceo))}` : ""}.</p>`;
-  if (state.org.issues.length === 0) issues.innerHTML = "<p class='ok'>Reporting lines reach the CEO.</p>";
+  const drawn = new Set();
+  for (const slide of state.slides) {
+    for (const shape of slide.shapes) if (shape.type === "card" && shape.key) drawn.add(shape.key);
+  }
+  const expected = new Set();
+  if (state.org.ceo && drawn.size) {
+    const walk = (key) => {
+      if (!state.org.people.has(key) || expected.has(key)) return;
+      expected.add(key);
+      for (const child of state.org.reports.get(key) || []) {
+        const person = state.org.people.get(child);
+        if (person && managerType(person, key) === "Solid") walk(child);
+      }
+    };
+    walk(state.org.ceo);
+    for (const key of [...expected]) {
+      for (const child of state.org.reports.get(key) || []) expected.add(child);
+    }
+  }
+  const missing = [...expected].filter((key) => !drawn.has(key));
+  const coverage = drawn.size
+    ? missing.length
+      ? `<p class="issue">${missing.length} people from the solid-line tree are not on a slide yet.</p>`
+      : `<p class="ok">Every person in the tree is on a slide.</p>`
+    : "";
+  if (state.org.issues.length === 0) issues.innerHTML = `<p class='ok'>Reporting lines reach the CEO.</p>${coverage}`;
   else {
     issues.innerHTML = `<ul>${state.org.issues
       .map((issue) => `<li class="${issue.level === "error" ? "issue" : ""}">${escapeHtml(issue.message)}</li>`)
@@ -866,8 +952,7 @@ async function openSample() {
   }
   const buffer = await response.arrayBuffer();
   readWorkbook(buffer, "MyBoss-Sample data.xlsx");
-  importSheet();
-  if (!state.org?.fatal) createDeck("clever");
+  toast("Sample loaded. Check the sheet, then Import data.");
 }
 
 function downloadBlob(blob, name) {
@@ -932,8 +1017,17 @@ function onKey(event) {
   }
 }
 
+function toggleMenu(menuId, event) {
+  event.stopPropagation();
+  const menu = $(menuId);
+  const willOpen = !menu.classList.contains("open");
+  document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open"));
+  if (willOpen) menu.classList.add("open");
+}
+
 function bind() {
   $("open-file").addEventListener("click", () => $("file").click());
+  $("pick-again").addEventListener("click", () => $("file").click());
   $("file").addEventListener("change", async () => {
     const file = $("file").files[0];
     if (!file) return;
@@ -942,6 +1036,19 @@ function bind() {
   });
   $("open-sample").addEventListener("click", () => openSample().catch(() => toast("Could not load the sample workbook.")));
   $("import").addEventListener("click", importSheet);
+  $("refresh").addEventListener("click", importSheet);
+  $("pick-sheet").addEventListener("click", () => {
+    state.imported = false;
+    document.body.dataset.stage = "file";
+    toast("Choose a sheet, then Import data.");
+  });
+  $("refresh-more").addEventListener("click", (event) => toggleMenu("menu-refresh", event));
+  $("create-main").addEventListener("click", (event) => toggleMenu("menu-create", event));
+  $("manager-more").addEventListener("click", (event) => toggleMenu("menu-manager", event));
+  $("reports-more").addEventListener("click", (event) => toggleMenu("menu-reports", event));
+  $("elements-main").addEventListener("click", (event) => toggleMenu("menu-elements", event));
+  $("arrange-main").addEventListener("click", (event) => toggleMenu("menu-arrange", event));
+  document.addEventListener("click", () => document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open")));
   $("sheet").addEventListener("change", () => {
     state.sheetName = $("sheet").value;
   });
@@ -970,6 +1077,23 @@ function bind() {
   $("add-frame").addEventListener("click", () => addDecoration("frame"));
   $("add-card").addEventListener("click", () => addDecoration("card"));
   $("add-line").addEventListener("click", () => addDecoration("line"));
+  $("add-link").addEventListener("click", () => {
+    const card = current().shapes.find((shape) => state.selection.has(shape.id) && shape.type === "card");
+    if (!card) return;
+    remember();
+    current().shapes.push({
+      id: nid("link"),
+      type: "link",
+      x: card.x,
+      y: card.y + card.h - 11,
+      w: card.w,
+      h: 11,
+      z: 4,
+      text: "See slide",
+      key: card.key,
+    });
+    render();
+  });
   $("group").addEventListener("click", () => arrange("group"));
   $("ungroup").addEventListener("click", () => arrange("ungroup"));
   $("align-left").addEventListener("click", () => arrange("align-left"));
