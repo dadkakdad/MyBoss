@@ -38,9 +38,18 @@ export const SHADE_COLORS = ["#DEEBF7C4", "#BDD7EEC4", "#E7EEF6C4"];
 /** Solid and dotted connector colours from applyLineStyle. */
 export const LINE = { solid: "#5B9BD5", dotted: "#002060" };
 
-export function makeMetrics(size = "Medium", gap = 10, gapExt = gap) {
+export function makeMetrics(size = "Medium", gapX = 10, gapExt = gapX, gapY = gapX) {
   const card = CARDS[size] || CARDS.Medium;
-  return { ...card, size, gapX: gap, gapY: gap, gapExt };
+  return { ...card, size, gapX, gapY, gapExt };
+}
+
+function parentDrop(org, parentKey, metrics) {
+  const parent = org.people.get(parentKey);
+  return metrics.gapY + (parent?.termination ? metrics.commentH : 0);
+}
+
+function commentItem(key, x, y, metrics, text) {
+  return { type: "comment", key, x, y, w: metrics.w, h: metrics.commentH, text: `Works until ${text}` };
 }
 
 function translate(items, dx, dy) {
@@ -124,7 +133,12 @@ function leafLayout(org, key, metrics, shownUnder) {
     });
   }
   items.push(cardItem(key, 0, tick, metrics, shownUnder));
-  return { w: metrics.w, h: tick + metrics.h, anchorX, items };
+  let height = tick + metrics.h;
+  if (person.termination) {
+    items.push(commentItem(key, 0, tick + metrics.h, metrics, person.termination));
+    height += metrics.commentH;
+  }
+  return { w: metrics.w, h: height, anchorX, items };
 }
 
 /**
@@ -135,11 +149,12 @@ function columnLayout(org, people, parentKey, metrics) {
   const gapX = metrics.gapX;
   const gapY = metrics.gapY;
   const anchorX = gapX + metrics.w / 2;
+  const drop = parentDrop(org, parentKey, metrics);
   const items = [];
-  let y = gapY;
+  let y = drop;
   let lowestSolid = null;
   let lowestDotted = null;
-  let bottom = gapY;
+  let bottom = drop;
 
   for (const key of people) {
     const person = org.people.get(key);
@@ -175,17 +190,21 @@ function columnLayout(org, people, parentKey, metrics) {
       });
     }
     items.push(cardItem(key, cardX, cardY, metrics, shownUnder));
+    if (person.termination) {
+      items.push(commentItem(key, cardX, cardY + metrics.h, metrics, person.termination));
+    }
     if (shownUnder === "Dotted") lowestDotted = tickY;
     else lowestSolid = tickY;
     y += metrics.h / 2;
-    bottom = Math.max(bottom, cardY + metrics.h);
+    if (person.termination) y += metrics.commentH;
+    bottom = Math.max(bottom, y);
   }
 
   const spine = (dotted, lowest) => {
     if (lowest == null) return;
-    items.push(wire(anchorX, 0, anchorX, gapY, dotted, metrics));
-    items.push(wire(anchorX, gapY, 0, gapY, dotted, metrics));
-    if (lowest - gapY > 0.4) items.push(wire(0, gapY, 0, lowest, dotted, metrics));
+    items.push(wire(anchorX, 0, anchorX, drop, dotted, metrics));
+    items.push(wire(anchorX, drop, 0, drop, dotted, metrics));
+    if (lowest - drop > 0.4) items.push(wire(0, drop, 0, lowest, dotted, metrics));
   };
   spine(false, lowestSolid);
   spine(true, lowestDotted);
@@ -201,11 +220,12 @@ function rowsLayout(org, people, parentKey, metrics, perRow) {
   const pitch = metrics.gapX + metrics.w;
   const shifts = shiftMap(perRow);
   const gapY = metrics.gapY;
+  const drop = parentDrop(org, parentKey, metrics);
   const items = [];
-  let y = gapY;
+  let y = drop;
   let lowestSolid = null;
   let lowestDotted = null;
-  let bottom = gapY;
+  let bottom = drop;
 
   for (let start = 0; start < people.length; start += perRow) {
     const row = people.slice(start, start + perRow);
@@ -237,18 +257,22 @@ function rowsLayout(org, people, parentKey, metrics, perRow) {
         });
       }
       items.push(cardItem(row[i], cardX, cardY, metrics, shownUnder));
+      if (person.termination) {
+        items.push(commentItem(row[i], cardX, cardY + metrics.h, metrics, person.termination));
+      }
       if (shownUnder === "Dotted") lowestDotted = y;
       else lowestSolid = y;
-      bottom = Math.max(bottom, cardY + metrics.h);
+      bottom = Math.max(bottom, cardY + metrics.h + (person.termination ? metrics.commentH : 0));
     }
-    const aligned = metrics.h + gapY + (bubbleRow ? metrics.bubbleH : 0);
+    const commentRow = row.some((key) => org.people.get(key)?.termination);
+    const aligned = metrics.h + gapY + (bubbleRow ? metrics.bubbleH : 0) + (commentRow ? metrics.commentH : 0);
     y += gapY + aligned;
   }
 
   const spine = (dotted, lowest) => {
     if (lowest == null) return;
-    items.push(wire(0, 0, 0, gapY, dotted, metrics));
-    if (lowest - gapY > 0.4) items.push(wire(0, gapY, 0, lowest, dotted, metrics));
+    items.push(wire(0, 0, 0, drop, dotted, metrics));
+    if (lowest - drop > 0.4) items.push(wire(0, drop, 0, lowest, dotted, metrics));
   };
   spine(false, lowestSolid);
   spine(true, lowestDotted);
@@ -382,6 +406,46 @@ function clusterBranches(branches) {
   return ordered;
 }
 
+function bubbleRowShift(org, key) {
+  const reports = directReports(org, key);
+  for (const department of departmentsOf(org, reports.workers)) {
+    if (department.people.length === 1 && hasTwoManagers(org.people.get(department.people[0]))) return true;
+  }
+  return reports.managers.some((id) => hasTwoManagers(org.people.get(id)));
+}
+
+/** Move a branch down and stretch the tick that started at the top, so its apex stays put. */
+function dropBranch(box, dy) {
+  if (!(dy > 0)) return box;
+  const items = translate(box.items, 0, dy).map((item) => {
+    if (item.type !== "wire" || Math.abs(item.x1 - item.x2) > 0.8) return item;
+    const top = Math.min(item.y1, item.y2);
+    if (Math.abs(top - dy) > 0.6) return item;
+    if (item.y1 <= item.y2) return { ...item, y1: 0 };
+    return { ...item, y2: 0 };
+  });
+  return { ...box, h: box.h + dy, items };
+}
+
+function peelOuterTick(box) {
+  const starters = box.items.filter(
+    (item) => item.type === "wire" && Math.abs(item.x1 - item.x2) < 0.8 && Math.min(item.y1, item.y2) <= 0.5,
+  );
+  if (!starters.length) return { box, drop: 0, solid: false, dotted: false };
+  const drop = Math.max(...starters.map((item) => Math.abs(item.y2 - item.y1)));
+  const remove = new Set(starters);
+  return {
+    box: {
+      ...box,
+      h: Math.max(0, box.h - drop),
+      items: translate(box.items.filter((item) => !remove.has(item)), 0, -drop),
+    },
+    drop,
+    solid: starters.some((item) => !item.dotted),
+    dotted: starters.some((item) => item.dotted),
+  };
+}
+
 function branchLine(org, parentKey, keys) {
   let solid = false;
   let dotted = false;
@@ -408,21 +472,28 @@ export function layoutSubordinates(org, key, metrics, visibility, options = {}) 
   if (reports.all.length === 0) return { w: 0, h: 0, anchorX: 0, items: [] };
   if (shrunk) return layoutLeaves(org, reports.all, key, metrics, "4");
 
+  const shiftDown = bubbleRowShift(org, key);
   const branches = [];
   if (asWorkers) {
     for (const department of departmentsOf(org, reports.all)) {
+      let box = layoutLeaves(org, department.people, key, metrics, "auto");
+      const alone = department.people.length === 1 && !hasTwoManagers(org.people.get(department.people[0]));
+      if (shiftDown && alone) box = dropBranch(box, metrics.bubbleH);
       branches.push({
         deptKey: department.key,
         line: branchLine(org, key, department.people),
-        box: layoutLeaves(org, department.people, key, metrics, "auto"),
+        box,
       });
     }
   } else {
     for (const department of departmentsOf(org, reports.workers)) {
+      let box = layoutLeaves(org, department.people, key, metrics, "auto");
+      const alone = department.people.length === 1 && !hasTwoManagers(org.people.get(department.people[0]));
+      if (shiftDown && alone) box = dropBranch(box, metrics.bubbleH);
       branches.push({
         deptKey: department.key,
         line: branchLine(org, key, department.people),
-        box: layoutLeaves(org, department.people, key, metrics, "auto"),
+        box,
       });
     }
     for (const managerKey of reports.managers) {
@@ -441,6 +512,7 @@ export function layoutSubordinates(org, key, metrics, visibility, options = {}) 
         box = leafLayout(org, managerKey, metrics, shownUnder);
         if (isManager(org, managerKey)) markCollapsed(box);
       }
+      if (shiftDown && !hasTwoManagers(person)) box = dropBranch(box, metrics.bubbleH);
       branches.push({ deptKey: person.departmentKey, line: shownUnder === "Dotted" ? "dotted" : "solid", box });
     }
   }
@@ -462,7 +534,7 @@ function layoutExpandedManager(org, key, metrics, visibility, options) {
   const right = Math.max(subs.w, cardX + metrics.w);
   const shift = -left;
   const cardY = tick;
-  const subsY = cardY + metrics.h;
+  const subsY = cardY + metrics.h + (person.termination ? metrics.commentH : 0);
   const items = [
     {
       type: "wire",
@@ -487,16 +559,30 @@ function layoutExpandedManager(org, key, metrics, visibility, options) {
     },
   ];
   if (hasTwoManagers(person)) {
+    const otherDotted = shownUnder !== "Dotted";
+    items.push(
+      wire(
+        subs.anchorX + shift + 5,
+        cardY - metrics.gapY / 2 - metrics.bubbleH / 2,
+        subs.anchorX + shift + 5,
+        cardY,
+        otherDotted,
+        metrics,
+      ),
+    );
     items.push({
       type: "bubble",
       key,
       x: subs.anchorX + shift - metrics.bubbleW / 2,
-      y: cardY - metrics.bubbleH,
+      y: cardY - metrics.gapY / 2 - metrics.bubbleH,
       w: metrics.bubbleW,
       h: metrics.bubbleH,
-      dotted: shownUnder !== "Dotted",
+      dotted: otherDotted,
       text: otherManagerSurname(org, person, shownUnder),
     });
+  }
+  if (person.termination) {
+    items.push(commentItem(key, cardX + shift, cardY + metrics.h, metrics, person.termination));
   }
   items.push(...translate(subs.items, shift, subsY));
   return {
@@ -522,6 +608,17 @@ export function allHidden(org, key) {
 function horizontalBranchCount(org, key) {
   const reports = directReports(org, key);
   return reports.managers.length + departmentsOf(org, reports.workers).length;
+}
+
+function recursiveBranchCount(org, key, visibility) {
+  const reports = directReports(org, key);
+  let count = departmentsOf(org, reports.workers).length;
+  for (const id of reports.managers) {
+    const solid = managerType(org.people.get(id), key) === "Solid";
+    if (solid && visibility?.get(id) === 1) count += recursiveBranchCount(org, id, allVisible(org, id));
+    else count += 1;
+  }
+  return count;
 }
 
 function visibleManagers(org, visibility) {
@@ -551,13 +648,14 @@ export function chooseFit(org, rootKey) {
   const managers = reports.managers.filter((id) => managerType(org.people.get(id), rootKey) === "Solid");
   let visibility = heavy ? allHidden(org, rootKey) : allVisible(org, rootKey);
   let size = "Small";
-  let gap = 5;
+  let gapX = 5;
+  let gapY = 5;
   let gapExt = 5;
 
-  const layoutAt = (nextSize, nextGap, nextExt, flags, shrunk) =>
-    measure(org, rootKey, makeMetrics(nextSize, nextGap, nextExt), flags, shrunk);
+  const layoutAt = (nextSize, nextX, nextY, nextExt, flags, shrunk) =>
+    measure(org, rootKey, makeMetrics(nextSize, nextX, nextExt, nextY), flags, shrunk);
 
-  let box = layoutAt(size, gap, gapExt, visibility, false);
+  let box = layoutAt(size, gapX, gapY, gapExt, visibility, false);
 
   if (!heavy) {
     let guard = 0;
@@ -575,7 +673,7 @@ export function chooseFit(org, rootKey) {
       }
       if (!largest) break;
       visibility.set(largest, 0);
-      box = layoutAt(size, gap, gapExt, visibility, false);
+      box = layoutAt(size, gapX, gapY, gapExt, visibility, false);
     }
   } else {
     let guard = 0;
@@ -593,7 +691,7 @@ export function chooseFit(org, rootKey) {
       }
       if (!smallest) break;
       visibility.set(smallest, 1);
-      const next = layoutAt(size, gap, gapExt, visibility, false);
+      const next = layoutAt(size, gapX, gapY, gapExt, visibility, false);
       if (!fits(next)) {
         visibility.set(smallest, 0);
         break;
@@ -606,44 +704,31 @@ export function chooseFit(org, rootKey) {
     visibleManagers(org, visibility) === 0 &&
     reports.managers.length > 0 &&
     horizontalBranchCount(org, rootKey) > MAX_BRANCHES;
-  if (shrunk) box = layoutAt(size, gap, gapExt, visibility, true);
+  if (shrunk) box = layoutAt(size, gapX, gapY, gapExt, visibility, true);
 
   for (const candidate of ["Medium", "Large"]) {
-    const next = layoutAt(candidate, gap, gapExt, visibility, shrunk);
+    const next = layoutAt(candidate, gapX, gapY, gapExt, visibility, shrunk);
     if (!fits(next)) break;
     size = candidate;
     box = next;
   }
-  if (!fits(box)) {
-    const tiny = layoutAt("ExtraSmall", gap, gapExt, visibility, shrunk);
-    if (tiny.w < box.w || tiny.h < box.h) {
-      size = "ExtraSmall";
-      box = tiny;
-    }
-  }
 
   const card = CARDS[size];
-  const gapLimit = Math.max(5, Math.min(card.w / 2, card.h / 3));
-  for (let nextGap = gap + 1; nextGap <= gapLimit; nextGap += 1) {
-    const next = layoutAt(size, nextGap, gapExt, visibility, shrunk);
-    if (!fits(next)) break;
-    gap = nextGap;
-    box = next;
+  const probed = layoutAt(size, gapX + 1 / 3, gapY + 1, gapExt, visibility, shrunk);
+  const nDx = probed.w === box.w ? 0 : Math.abs(box.w - GUIDE.width) / (probed.w - box.w);
+  const nDy = probed.h === box.h ? nDx : Math.abs(box.h - GUIDE.height) / (probed.h - box.h);
+  const steps = Number.isFinite(nDx) && Number.isFinite(nDy) ? Math.round(Math.min(nDx, nDy)) - 1 : 0;
+  gapX = Math.max(0, Math.min(card.w / 2, 5 + steps / 3));
+  gapY = Math.max(0, Math.min(card.h / 3, 5 + steps));
+  box = layoutAt(size, gapX, gapY, gapExt, visibility, shrunk);
+
+  const branchCount = recursiveBranchCount(org, rootKey, visibility);
+  if (branchCount > 1) {
+    gapExt = Math.min(card.w, gapExt + Math.abs(box.w - GUIDE.width) / (branchCount - 1));
+    box = layoutAt(size, gapX, gapY, gapExt, visibility, shrunk);
   }
 
-  const extLimit = card.w;
-  const branchCount = Math.max(1, horizontalBranchCount(org, rootKey));
-  if (branchCount > 1 && box.w < GUIDE.width) {
-    const room = (GUIDE.width - box.w) / (branchCount - 1);
-    const grown = Math.min(extLimit, gapExt + room);
-    const next = layoutAt(size, gap, grown, visibility, shrunk);
-    if (fits(next)) {
-      gapExt = grown;
-      box = next;
-    }
-  }
-
-  return { size, gap, gapExt, visibility, shrunk, box };
+  return { size, gap: gapY, gapX, gapY, gapExt, visibility, shrunk, box };
 }
 
 let shapeSerial = 1;
@@ -728,72 +813,139 @@ function statsShape(org, rootKey) {
   };
 }
 
-function shadeShapes(org, cards) {
-  const groups = new Map();
-  for (const card of cards) {
-    if (card.head) continue;
-    const person = org.people.get(card.key);
-    if (!person?.department) continue;
-    const bucket = groups.get(person.departmentKey) || {
-      name: person.department,
-      x: Infinity,
-      y: Infinity,
-      r: -Infinity,
-      b: -Infinity,
-    };
-    bucket.x = Math.min(bucket.x, card.x);
-    bucket.y = Math.min(bucket.y, card.y);
-    bucket.r = Math.max(bucket.r, card.x + card.w);
-    bucket.b = Math.max(bucket.b, card.y + card.h);
-    groups.set(person.departmentKey, bucket);
-  }
-  const shades = [];
-  let index = 0;
-  const lowest = Math.max(...[...groups.values()].map((bucket) => bucket.b));
-  for (const bucket of groups.values()) {
-    if (bucket.b - bucket.y < 8) continue;
-    const pad = 18;
-    const top = Math.max(0, bucket.y - 6);
-    const bottom = Math.min(SLIDE.height - 4, Math.max(bucket.b, lowest) + 32);
-    shades.push({
-      id: sid("shade"),
-      type: "shade",
-      x: bucket.x - pad,
-      y: top,
-      w: bucket.r - bucket.x + pad * 2,
-      h: Math.max(24, bottom - top),
-      z: 0,
-      text: bucket.name,
-      fill: SHADE_COLORS[index % SHADE_COLORS.length],
-    });
-    index += 1;
-  }
-  return shades;
+const SHADE_GUIDE = { top: 140, right: 945, bottom: 505, left: 15 };
+
+function boxOf(card) {
+  return { top: card.y, left: card.x, right: card.x + card.w, bottom: card.y + card.h };
 }
 
-function headCard(org, rootKey, _tree, bodySize) {
-  // The tree's own tick begins at the bottom edge of this card.
-  const metrics = CARDS[bodySize] || CARDS.Large;
+function pointInside(rect, x, y) {
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+function cornersOf(rect) {
+  return [
+    [rect.left, rect.top],
+    [rect.right, rect.top],
+    [rect.right, rect.bottom],
+    [rect.left, rect.bottom],
+  ];
+}
+
+function rectsMeet(a, b) {
+  return cornersOf(a).some(([x, y]) => pointInside(b, x, y)) || cornersOf(b).some(([x, y]) => pointInside(a, x, y));
+}
+
+function sideOf(shape, reference) {
+  if (rectsMeet(shape, reference)) return "intersecting";
+  let side = "safe";
+  const bands = {
+    top: { top: -1000, right: reference.right, bottom: reference.top, left: reference.left },
+    right: { top: reference.top, right: 1000, bottom: reference.bottom, left: reference.right },
+    bottom: { top: reference.bottom, right: reference.right, bottom: 1000, left: reference.left },
+    left: { top: reference.top, right: reference.left, bottom: reference.bottom, left: -1000 },
+  };
+  for (const name of ["top", "right", "bottom", "left"]) {
+    if (rectsMeet(shape, bands[name])) side = name;
+  }
+  return side;
+}
+
+/** Department rectangles from makeDepartments: grow from the cards, then pull each side in from the slide guide. */
+export function layoutDepartmentShades(org, cards) {
+  const members = [];
+  for (const card of cards) {
+    if (card.head || card.managerType === "Dotted" || card.y <= SHADE_GUIDE.top) continue;
+    const person = org.people.get(card.key);
+    if (!person?.department) continue;
+    members.push({ card, person, box: boxOf(card) });
+  }
+  const groups = new Map();
+  for (const member of members) {
+    const bucket = groups.get(member.person.departmentKey) || { name: member.person.department, boxes: [] };
+    bucket.boxes.push(member.box);
+    groups.set(member.person.departmentKey, bucket);
+  }
+  const shades = [];
+  for (const bucket of groups.values()) {
+    const shade = {
+      top: Math.min(...bucket.boxes.map((box) => box.top)),
+      left: Math.min(...bucket.boxes.map((box) => box.left)),
+      right: Math.max(...bucket.boxes.map((box) => box.right)),
+      bottom: Math.max(...bucket.boxes.map((box) => box.bottom)),
+    };
+    const stretched = { ...SHADE_GUIDE };
+    for (const other of members) {
+      if (other.person.department === bucket.name) continue;
+      const side = sideOf(other.box, shade);
+      if (side === "top" && other.box.bottom > stretched.top) stretched.top = other.box.bottom;
+      if (side === "bottom" && other.box.top < stretched.bottom) stretched.bottom = other.box.top;
+      if (side === "right" && other.box.left < stretched.right) stretched.right = other.box.left;
+      if (side === "left" && other.box.right > stretched.left) stretched.left = other.box.right;
+    }
+    const top = stretched.top !== SHADE_GUIDE.top ? (shade.top + stretched.top) / 2 - 1 : stretched.top - 1;
+    const bottom = stretched.bottom !== SHADE_GUIDE.bottom ? (shade.bottom + stretched.bottom) / 2 + 1 : stretched.bottom + 1;
+    const right = stretched.right !== SHADE_GUIDE.right ? (shade.right + stretched.right) / 2 + 1 : stretched.right + 1;
+    const left = stretched.left !== SHADE_GUIDE.left ? (shade.left + stretched.left) / 2 - 1 : stretched.left - 1;
+    shades.push({ name: bucket.name, top, left, right, bottom });
+  }
+  shades.sort((a, b) => (b.right - b.left) * (b.bottom - b.top) - (a.right - a.left) * (a.bottom - a.top));
+  return shades.map((shade, index) => ({
+    id: sid("shade"),
+    type: "shade",
+    x: shade.left,
+    y: shade.top,
+    w: Math.max(8, shade.right - shade.left),
+    h: Math.max(24, shade.bottom - shade.top),
+    z: 0,
+    text: shade.name,
+    fill: SHADE_COLORS[index % SHADE_COLORS.length],
+  }));
+}
+
+function shadeShapes(org, cards) {
+  return layoutDepartmentShades(org, cards);
+}
+
+function headCard(org, rootKey, peeled) {
+  const metrics = CARDS.Large;
   const x = SLIDE.width / 2 - metrics.w / 2;
   const y = TREE_TOP - metrics.h;
-  return paint(
-    [
-      {
-        type: "card",
-        key: rootKey,
-        x,
-        y,
-        w: metrics.w,
-        h: metrics.h,
-        managerType: "Solid",
-        collapsed: false,
-        head: true,
-        size: bodySize || "Large",
-      },
-    ],
-    0,
-    0,
-  );
+  const items = [
+    {
+      type: "card",
+      key: rootKey,
+      x,
+      y,
+      w: metrics.w,
+      h: metrics.h,
+      managerType: "Solid",
+      collapsed: false,
+      head: true,
+      size: "Large",
+    },
+  ];
+  const person = org.people.get(rootKey);
+  const comment = person?.termination ? metrics.commentH : 0;
+  if (comment) {
+    items.push({
+      type: "comment",
+      key: rootKey,
+      x,
+      y: y + metrics.h,
+      w: metrics.w,
+      h: metrics.commentH,
+      text: `Works until ${person.termination}`,
+    });
+  }
+  const tickTop = y + metrics.h + comment;
+  if (peeled?.solid) {
+    items.push({ type: "wire", x1: SLIDE.width / 2, y1: tickTop, x2: SLIDE.width / 2, y2: tickTop + 15, dotted: false, weight: metrics.line });
+  }
+  if (peeled?.dotted) {
+    items.push({ type: "wire", x1: SLIDE.width / 2, y1: tickTop, x2: SLIDE.width / 2, y2: tickTop + 15, dotted: true, weight: metrics.line });
+  }
+  return paint(items, 0, 0);
 }
 
 /**
@@ -807,16 +959,19 @@ export function buildSlides(org, rootKey, mode = "clever") {
 
   function build(key, parentKey) {
     const fit = chooseFit(org, key);
-    const metrics = makeMetrics(fit.size, fit.gap, fit.gapExt);
-    const tree = layoutSubordinates(org, key, metrics, fit.visibility, { shrunk: fit.shrunk });
+    const metrics = makeMetrics(fit.size, fit.gapX ?? fit.gap, fit.gapExt, fit.gapY ?? fit.gap);
+    const grown = layoutSubordinates(org, key, metrics, fit.visibility, { shrunk: fit.shrunk });
+    const peeled = peelOuterTick(grown);
+    const tree = peeled.box;
     const dx = SLIDE.width / 2 - tree.anchorX;
-    const body = paint(tree.items, dx, TREE_TOP);
+    const headComment = org.people.get(key)?.termination ? CARDS.Large.commentH : 0;
+    const body = paint(tree.items, dx, TREE_TOP + headComment + 15);
     const shapes = [
       titleShape(org, key),
       legendShape(),
       statsShape(org, key),
       ...shadeShapes(org, body.filter((item) => item.type === "card")),
-      ...headCard(org, key, tree, fit.size),
+      ...headCard(org, key, peeled),
       ...body,
     ];
     const slide = {

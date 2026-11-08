@@ -131,7 +131,7 @@ function drawShape(ctx, org, shape) {
     if (kind === "tbh") ctx.stroke();
     const lines = personLines(org, shape);
     const person = shape.key ? org.people.get(shape.key) : null;
-    const footer = person?.termination ? `Works until ${person.termination}` : person?.location || "";
+    const footer = person?.location || "";
     const nameSize = shape.h < 30 ? 7 : shape.h < 40 ? 8 : shape.h < 48 ? 10 : 12;
     ctx.fillStyle = `#${palette.color}`;
     ctx.font = `bold ${nameSize}px Arial`;
@@ -274,7 +274,8 @@ export async function deckToPptx(org, slides, fileName) {
         const palette = STYLE[kind];
         const lines = personLines(org, shape);
         const person = shape.key ? org.people.get(shape.key) : null;
-        const footer = person?.termination ? `Works until ${person.termination}` : person?.location || "";
+        const footer = person?.location || "";
+        const nameSize = shape.size && { ExtraSmall: 7, Small: 7, Medium: 9, Large: 11 }[shape.size];
         slide.addShape("rect", {
           x: inches(shape.x),
           y: inches(shape.y),
@@ -292,7 +293,7 @@ export async function deckToPptx(org, slides, fileName) {
             w: inches(shape.w - 6),
             h: inches(shape.h - (footer ? 12 : 2)),
             fontFace: "Arial",
-            fontSize: shape.h < 32 ? 7 : 9,
+            fontSize: nameSize || (shape.h < 32 ? 7 : 9),
             color: palette.color,
             bold: true,
             margin: 0,
@@ -343,6 +344,7 @@ export async function deckToPptx(org, slides, fileName) {
           color: shape.type === "nav" ? "FFFFFF" : "1C2430",
           fill: { color: shape.type === "nav" ? "173C5D" : "FFFFFF" },
           align: "center",
+          hyperlink: shape.target ? { slide: shape.target } : undefined,
         });
       }
     }

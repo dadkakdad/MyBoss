@@ -133,6 +133,17 @@ export function buildOrg(matrix, options = {}) {
     return reports.get(key);
   };
 
+  const halt = (message, row) => ({
+    people,
+    reports,
+    order: [],
+    ceo: null,
+    companySize: 0,
+    issues: [{ level: "error", message, ...(row ? { row } : {}) }],
+    fatal: true,
+    hasTitles,
+  });
+
   for (let index = firstRow; index < rows.length; index += 1) {
     const row = rows[index] || [];
     const excelRow = index + 1;
@@ -141,12 +152,7 @@ export function buildOrg(matrix, options = {}) {
     const surname = cellString(row[0]);
     const name = cellString(row[1]);
     if (!surname || !name) {
-      issues.push({
-        level: "error",
-        row: excelRow,
-        message: `Row ${excelRow} is missing a surname or a name. Every person needs both.`,
-      });
-      continue;
+      return halt(`Row ${excelRow} is missing a surname or a name. Every person needs both.`, excelRow);
     }
 
     const solidSurname = cellString(row[4]);
@@ -199,71 +205,60 @@ export function buildOrg(matrix, options = {}) {
   const ceos = [...people.values()].filter((person) => person.solidKey === "");
   let ceo = null;
   if (ceos.length === 0) {
-    issues.push({
-      level: "error",
-      message: "No CEO found. Leave the solid-line manager empty for exactly one person.",
-    });
-  } else if (ceos.length > 1) {
-    issues.push({
-      level: "error",
-      message: `Several people have no solid-line manager: ${ceos
+    return halt("No CEO found. Leave the solid-line manager empty for exactly one person.");
+  }
+  if (ceos.length > 1) {
+    return halt(
+      `Several people have no solid-line manager: ${ceos
         .map((person) => `${personFullName(person)} (row ${person.row})`)
         .join(", ")}. Only the CEO should.`,
-    });
-  } else {
-    ceo = ceos[0].key;
+    );
   }
+  ceo = ceos[0].key;
 
   for (const person of people.values()) {
     if (person.key === ceo) continue;
     if (!person.solidKey || !people.has(person.solidKey)) {
       const named = `${person.solidSurname} ${person.solidName}`.trim();
-      issues.push({
-        level: "error",
-        row: person.row,
-        message: named
+      return halt(
+        named
           ? `Row ${person.row}: ${personFullName(person)} reports to “${named}”, who is not in this sheet.`
           : `Row ${person.row}: ${personFullName(person)} has no solid-line manager.`,
-      });
+        person.row,
+      );
     }
     if (person.dottedKey) {
       if (person.dottedKey === person.solidKey) {
-        issues.push({
-          level: "error",
-          row: person.row,
-          message: `Row ${person.row}: ${personFullName(person)} has the same solid-line and dotted-line manager.`,
-        });
-      } else if (!people.has(person.dottedKey)) {
-        issues.push({
-          level: "error",
-          row: person.row,
-          message: `Row ${person.row}: dotted-line manager “${person.dottedSurname} ${person.dottedName}” is not in this sheet.`,
-        });
+        return halt(
+          `Row ${person.row}: ${personFullName(person)} has the same solid-line and dotted-line manager.`,
+          person.row,
+        );
+      }
+      if (!people.has(person.dottedKey)) {
+        return halt(
+          `Row ${person.row}: dotted-line manager “${person.dottedSurname} ${person.dottedName}” is not in this sheet.`,
+          person.row,
+        );
       }
     }
     for (const managerKey of [person.solidKey, person.dottedKey]) {
       if (!managerKey || !people.has(managerKey)) continue;
       const manager = people.get(managerKey);
       if (manager.duplicates > 0) {
-        issues.push({
-          level: "error",
-          row: person.row,
-          message: `Row ${person.row}: “${personFullName(manager)}” is a manager, but that name appears ${manager.duplicates + 1} times. Make the names unique.`,
-        });
+        return halt(
+          `Row ${person.row}: “${personFullName(manager)}” is a manager, but that name appears ${manager.duplicates + 1} times. Make the names unique.`,
+          person.row,
+        );
       }
     }
   }
 
-  if (ceo && !issues.some((issue) => issue.level === "error")) {
-    for (const person of people.values()) {
-      if (!reachesCeo(people, person.key, ceo)) {
-        issues.push({
-          level: "error",
-          row: person.row,
-          message: `${personFullName(person)} (row ${person.row}) never reaches the CEO. Look for a loop or a break in the reporting line.`,
-        });
-        break;
-      }
+  for (const person of people.values()) {
+    if (!chainReachesCeo(people, person.key, ceo, "solid") || !chainReachesCeo(people, person.key, ceo, "dotted")) {
+      return halt(
+        `${personFullName(person)} (row ${person.row}) never reaches the CEO. Look for a loop or a break in the reporting line.`,
+        person.row,
+      );
     }
   }
 
@@ -286,15 +281,23 @@ export function buildOrg(matrix, options = {}) {
   };
 }
 
-function reachesCeo(people, startKey, ceoKey) {
-  const seen = new Set();
-  let key = startKey;
-  while (key && !seen.has(key)) {
-    if (key === ceoKey) return true;
-    seen.add(key);
-    const person = people.get(key);
-    if (!person) return false;
-    key = person.solidKey;
+/** Solid and dotted walks, matching extractReportingSequence. After the first hop, a two-manager person is followed through the dotted key. */
+function chainReachesCeo(people, startKey, ceoKey, regime) {
+  const start = people.get(startKey);
+  if (!start) return false;
+  if (startKey === ceoKey) return true;
+  const seen = new Set([startKey]);
+  let current = start;
+  let next = current.dottedKey ? (regime === "dotted" ? current.dottedKey : current.solidKey) : current.solidKey;
+  let guard = 0;
+  while (next && !seen.has(next) && guard < 10000) {
+    guard += 1;
+    const node = people.get(next);
+    if (!node) return false;
+    seen.add(next);
+    if (next === ceoKey) return true;
+    current = node;
+    next = current.dottedKey ? current.dottedKey : current.solidKey;
   }
   return false;
 }
@@ -431,7 +434,7 @@ export function peopleInCategory(org, category) {
   if (!org?.order) return [];
   if (category === "CEO") return org.ceo ? [org.ceo] : [];
   if (category === "Managers") return org.order.filter((key) => isManager(org, key));
-  if (category === "AZ") return org.order.slice(0, 1000);
+  if (category === "AZ") return org.order;
   const letter = String(category || "").toLowerCase();
   return org.order.filter((key) => key.startsWith(letter));
 }

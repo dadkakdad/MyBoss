@@ -11,7 +11,7 @@ import {
   peopleInCategory,
   statisticsLines,
 } from "../js/org.js";
-import { GUIDE, SLIDE, buildSlides, chooseFit, layoutLeaves, makeMetrics } from "../js/layout.js";
+import { CARDS, GUIDE, SLIDE, buildSlides, chooseFit, layoutLeaves, makeMetrics } from "../js/layout.js";
 
 const samplePath = new URL("../../MyBoss-Sample data.xlsx", import.meta.url);
 
@@ -110,6 +110,43 @@ test("headcount skips people still to be hired and counts external staff", () =>
   assert.equal(grace.stats.cards, 3);
   assert.equal(displayName([...org.people.values()].find((person) => person.tbh)), "One");
   assert.equal(headcountLabel(grace), "2 (1)");
+});
+
+test("a dotted chain that never reaches the CEO stops the import", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("Grace", "Hopper", "Eng", "Lab", "Ada", "Lovelace"),
+    row("Bob", "Isolated", "Eng", "Lab", "Bob", "Isolated"),
+    row("Ken", "Thompson", "Eng", "Lab", "Grace", "Hopper", "Bob", "Isolated"),
+  ]);
+  assert.equal(org.fatal, true);
+  assert.equal(org.issues.length, 1);
+});
+
+test("letter lists are not capped at 1000", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const rows = [header, row("Ada", "Lovelace", "CEO", "Office", "", "")];
+  for (let i = 0; i < 3; i += 1) rows.push(row(`A${i}`, "Person", "Eng", "Lab", "Ada", "Lovelace"));
+  const org = buildOrg(rows);
+  assert.equal(org.fatal, false, org.issues.map((issue) => issue.message).join(" | "));
+  assert.equal(peopleInCategory(org, "AZ").length, org.order.length);
+});
+
+test("the generated head is Large and drops 15 points", () => {
+  const org = wideOrg(1, 3);
+  const slides = buildSlides(org, org.ceo, "clever");
+  const head = slides[0].shapes.find((shape) => shape.type === "card" && shape.head);
+  assert.equal(head.w, CARDS.Large.w);
+  const drop = slides[0].shapes.find(
+    (shape) =>
+      shape.type === "wire" &&
+      Math.abs(shape.x1 - shape.x2) < 1 &&
+      Math.abs(Math.min(shape.y1, shape.y2) - (head.y + head.h)) < 0.6 &&
+      Math.abs(Math.abs(shape.y2 - shape.y1) - 15) < 0.6,
+  );
+  assert.ok(drop, "15 point head tick");
 });
 
 test("dotted-line reports hang off both managers but only expand under the solid line", () => {

@@ -17,6 +17,7 @@ import {
   SHADE_COLORS,
   SLIDE,
   buildSlides,
+  layoutDepartmentShades,
   layoutManualBranch,
   layoutSingleCard,
   makeMetrics,
@@ -321,35 +322,13 @@ function shadeDepartments() {
   remember();
   const slide = current();
   slide.shapes = slide.shapes.filter((shape) => shape.type !== "shade");
-  const groups = new Map();
-  for (const shape of slide.shapes) {
-    if (shape.type !== "card" || shape.head || !shape.key) continue;
-    const person = state.org.people.get(shape.key);
-    if (!person?.department) continue;
-    const bucket = groups.get(person.departmentKey) || { name: person.department, x: Infinity, y: Infinity, r: -Infinity, b: -Infinity };
-    bucket.x = Math.min(bucket.x, shape.x);
-    bucket.y = Math.min(bucket.y, shape.y);
-    bucket.r = Math.max(bucket.r, shape.x + shape.w);
-    bucket.b = Math.max(bucket.b, shape.y + shape.h);
-    groups.set(person.departmentKey, bucket);
-  }
-  let index = 0;
-  for (const bucket of groups.values()) {
-    slide.shapes.push({
-      id: nid("shade"),
-      type: "shade",
-      x: bucket.x - 8,
-      y: bucket.y - 16,
-      w: bucket.r - bucket.x + 16,
-      h: bucket.b - bucket.y + 24,
-      z: 0,
-      text: bucket.name,
-      fill: SHADE_COLORS[index % SHADE_COLORS.length],
-    });
-    index += 1;
-  }
+  const shades = layoutDepartmentShades(
+    state.org,
+    slide.shapes.filter((shape) => shape.type === "card"),
+  ).map((shade) => ({ ...shade, id: nid("shade") }));
+  slide.shapes.push(...shades);
   render();
-  toast(index ? `${index} department shades.` : "No departments on this slide.");
+  toast(shades.length ? `${shades.length} department shades.` : "No departments on this slide.");
 }
 
 function linkSlides() {
@@ -579,6 +558,24 @@ function applySticky(shape) {
     }
   }
   if (best < 5) $("size").value = match;
+  const slide = current();
+  const center = shape.x + shape.w / 2;
+  const mid = shape.y + shape.h / 2;
+  let length = null;
+  for (const wire of slide.shapes) {
+    if (wire.type !== "wire") continue;
+    if (Math.abs(wire.x1 - wire.x2) < 1 && Math.abs(wire.x1 - center) < 4) {
+      const top = Math.min(wire.y1, wire.y2);
+      const bottom = Math.max(wire.y1, wire.y2);
+      if (Math.abs(bottom - shape.y) < 2 || Math.abs(top - (shape.y + shape.h)) < 2) length = Math.abs(wire.y2 - wire.y1);
+    }
+    if (Math.abs(wire.y1 - wire.y2) < 1 && Math.abs(wire.y1 - mid) < 4 && Math.abs(Math.max(wire.x1, wire.x2) - shape.x) < 2) {
+      length = Math.abs(wire.x2 - wire.x1);
+    }
+  }
+  const ticks = ["5", "7", "10", "12", "15"];
+  const snapped = ticks.find((tick) => length != null && Math.abs(Number(tick) - length) < 1);
+  if (snapped) $("gap").value = snapped;
 }
 
 function render() {
@@ -669,14 +666,15 @@ function renderShape(shape) {
         ? ["To be hired", moderated(person.job)]
         : [moderated(person.surname), moderated(person.name), moderated(person.job)]
       : shape.lines || [];
-    const nameSize = shape.h < 30 ? 7 : shape.h < 40 ? 8 : shape.h < 48 ? 9 : 12;
-    node.style.fontSize = `${nameSize}px`;
+    const spec = CARDS[shape.size] || CARDS.Medium;
+    node.style.fontSize = `${spec.name}px`;
     const badge = person ? headcountLabel(person) : "";
-    const footer = person?.termination ? `Works until ${person.termination}` : person?.location || "";
-    node.innerHTML = `${badge ? `<span class="hc">${escapeHtml(badge)}</span>` : ""}
+    const footer = person?.location || "";
+    const badgeColor = !footer && kind !== "outsource" ? "#ffffff" : "";
+    node.innerHTML = `${badge ? `<span class="hc"${badgeColor ? ` style="color:${badgeColor}"` : ""}>${escapeHtml(badge)}</span>` : ""}
       <span class="who">${escapeHtml(lines[0] || "")}</span>
       <span class="who">${escapeHtml(lines[1] || "")}</span>
-      ${shape.h >= 32 && lines[2] ? `<span class="job">${escapeHtml(lines[2])}</span>` : ""}
+      ${shape.h >= 32 && lines[2] ? `<span class="job" style="font-size:${spec.title}px">${escapeHtml(lines[2])}</span>` : ""}
       ${footer ? `<span class="loc">${escapeHtml(footer)}</span>` : ""}`;
     node.setAttribute("aria-label", person ? personFullName(person) : "Empty card");
     node.addEventListener("dblclick", (event) => {
@@ -744,6 +742,7 @@ function startPointer(event, shape) {
   pointer.moved = false;
   pointer.shape = shape;
   if (shape && !state.selection.has(shape.id)) selectGroup(shape, event.shiftKey);
+  if (shape?.type === "card" && shape.key) focusPerson(shape.key);
   else if (shape && event.shiftKey) {
     state.selection.delete(shape.id);
     pointer.shape = null;
