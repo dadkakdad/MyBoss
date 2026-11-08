@@ -373,6 +373,12 @@ button.tool small, button.tool-wide small {
 .card.important .loc { background: #4d0000; }
 .card.outsource { background: linear-gradient(#ffffff, #e4e4e4); color: #1a1a1a; }
 .card.outsource .loc { background: white; color: #1a1a1a; }
+.card.split {
+  background: linear-gradient(to top right, #f4f4f4 50%, #8c0000 50%);
+  color: #1a1a1a;
+}
+.card.split .hc { color: #fff; }
+.card.split .loc { background: transparent; color: #1a1a1a; }
 .card.tbh { background: white; color: #001b57; box-shadow: inset 0 0 0 1.25px #001b57; }
 .card.tbh .loc { background: #f4f7fb; }
 

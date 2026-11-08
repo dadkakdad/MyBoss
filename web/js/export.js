@@ -10,6 +10,7 @@ const STYLE = {
   ordinary: { fill: "001B58", color: "FFFFFF", bar: "00123F" },
   important: { fill: "8C0000", color: "FFFFFF", bar: "5C0000" },
   outsource: { fill: "F4F4F4", color: "1A1A1A", bar: "FFFFFF" },
+  split: { fill: "F4F4F4", color: "1A1A1A", bar: "F4F4F4", accent: "8C0000" },
   tbh: { fill: "FFFFFF", color: "001B57", bar: "F7F9FC" },
 };
 
@@ -123,12 +124,27 @@ function drawShape(ctx, org, shape) {
   if (shape.type === "card") {
     const kind = shape.key ? cardStyle(org.people.get(shape.key)) : shape.placeholder || "ordinary";
     const palette = STYLE[kind];
+    ctx.save();
+    roundRect(ctx, shape.x, shape.y, shape.w, shape.h, 2);
+    ctx.clip();
     ctx.fillStyle = `#${palette.fill}`;
+    ctx.fillRect(shape.x, shape.y, shape.w, shape.h);
+    if (kind === "split") {
+      ctx.fillStyle = `#${palette.accent}`;
+      ctx.beginPath();
+      ctx.moveTo(shape.x, shape.y);
+      ctx.lineTo(shape.x + shape.w, shape.y);
+      ctx.lineTo(shape.x + shape.w, shape.y + shape.h);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
     ctx.strokeStyle = kind === "tbh" ? "#001B57" : "transparent";
     ctx.lineWidth = 1;
-    roundRect(ctx, shape.x, shape.y, shape.w, shape.h, 2);
-    ctx.fill();
-    if (kind === "tbh") ctx.stroke();
+    if (kind === "tbh") {
+      roundRect(ctx, shape.x, shape.y, shape.w, shape.h, 2);
+      ctx.stroke();
+    }
     const lines = personLines(org, shape);
     const person = shape.key ? org.people.get(shape.key) : null;
     const footer = person?.location || "";
@@ -144,14 +160,14 @@ function drawShape(ctx, org, shape) {
     if (footer) {
       ctx.fillStyle = `#${palette.bar}`;
       ctx.fillRect(shape.x, shape.y + shape.h - 11, shape.w, 11);
-      ctx.fillStyle = kind === "outsource" ? "#1c2430" : "#ffffff";
+      ctx.fillStyle = kind === "ordinary" || kind === "important" ? "#ffffff" : "#1c2430";
       ctx.font = "7px Arial";
       ctx.fillText(footer, shape.x + 4, shape.y + shape.h - 3);
     }
     const badge = person ? headcountLabel(person) : "";
     if (badge) {
       ctx.font = "bold 8px Arial";
-      ctx.fillStyle = `#${palette.color}`;
+      ctx.fillStyle = kind === "split" ? "#ffffff" : `#${palette.color}`;
       ctx.textAlign = "right";
       ctx.fillText(badge, shape.x + shape.w - 4, shape.y + 9);
       ctx.textAlign = "left";
@@ -284,6 +300,22 @@ export async function deckToPptx(org, slides, fileName) {
           fill: { color: palette.fill },
           line: kind === "tbh" ? { color: "001B57", width: 1 } : { color: palette.fill },
         });
+        if (kind === "split") {
+          slide.addShape("custGeom", {
+            x: inches(shape.x),
+            y: inches(shape.y),
+            w: inches(shape.w),
+            h: inches(shape.h),
+            fill: { color: palette.accent },
+            line: { color: palette.accent, width: 0 },
+            points: [
+              { x: 0, y: 0, moveTo: true },
+              { x: inches(shape.w), y: 0 },
+              { x: inches(shape.w), y: inches(shape.h) },
+              { close: true },
+            ],
+          });
+        }
         const badge = person ? headcountLabel(person) : "";
         slide.addText(
           [lines[0], lines[1], shape.h >= 32 ? lines[2] : ""].filter(Boolean).join("\n"),
@@ -309,7 +341,7 @@ export async function deckToPptx(org, slides, fileName) {
             fontFace: "Arial",
             fontSize: 8,
             bold: true,
-            color: palette.color,
+            color: kind === "split" ? "FFFFFF" : palette.color,
           });
         }
         if (footer) {
@@ -327,7 +359,7 @@ export async function deckToPptx(org, slides, fileName) {
             h: inches(11),
             fontFace: "Arial",
             fontSize: 7,
-            color: kind === "outsource" ? "1C2430" : "FFFFFF",
+            color: kind === "ordinary" || kind === "important" ? "FFFFFF" : "1C2430",
             margin: 0,
           });
         }

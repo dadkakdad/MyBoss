@@ -14,6 +14,7 @@ import {
   isManager,
   managerType,
   moderated,
+  solidTree,
   statisticsLines,
 } from "./org.js";
 
@@ -1001,6 +1002,29 @@ export function buildSlides(org, rootKey, mode = "clever") {
   }
 
   build(rootKey, null);
+
+  if (mode === "infinity") {
+    const required = solidTree(org, rootKey);
+    const drawnKeys = () => {
+      const placed = new Set();
+      for (const slide of slides) {
+        for (const shape of slide.shapes) if (shape.type === "card" && shape.key) placed.add(shape.key);
+      }
+      return placed;
+    };
+    let guard = 0;
+    while (guard < required.size) {
+      guard += 1;
+      const placed = drawnKeys();
+      const missing = [...required].filter((key) => !placed.has(key));
+      if (!missing.length) break;
+      const host = missing
+        .map((key) => org.people.get(key)?.solidKey)
+        .find((key) => key && isManager(org, key) && !slides.some((slide) => slide.rootKey === key));
+      if (!host) break;
+      build(host, org.people.get(host)?.solidKey || null);
+    }
+  }
 
   for (const slide of slides) containOnSlide(slide.shapes);
 

@@ -322,9 +322,9 @@ function computeStats(people, reports) {
     if (!person.tbh) {
       stats.subordinates += 1;
       if (person.location === HOME_CITY) stats.home += 1;
+      if (!(person.outsource || person.important)) stats.ordinary += 1;
       if (person.outsource) stats.outsource += 1;
-      else if (person.important) stats.important += 1;
-      else stats.ordinary += 1;
+      if (person.important) stats.important += 1;
     }
     person.stats = stats;
     done.add(key);
@@ -418,9 +418,25 @@ export function headcountLabel(person) {
 export function cardStyle(person) {
   if (!person) return "ordinary";
   if (person.tbh) return "tbh";
+  if (person.important && person.outsource) return "split";
   if (person.important) return "important";
   if (person.outsource) return "outsource";
   return "ordinary";
+}
+
+/** Everyone reached from `rootKey` by solid-line links, including the root. */
+export function solidTree(org, rootKey) {
+  const seen = new Set();
+  const walk = (key) => {
+    if (!key || seen.has(key) || !org.people.has(key)) return;
+    seen.add(key);
+    for (const child of org.reports.get(key) || []) {
+      const person = org.people.get(child);
+      if (person && person.solidKey === key) walk(child);
+    }
+  };
+  walk(rootKey);
+  return seen;
 }
 
 export function categories(org) {

@@ -5,10 +5,10 @@ import {
   displayName,
   headcountLabel,
   isManager,
-  managerType,
   moderated,
   peopleInCategory,
   personFullName,
+  solidTree,
   statisticsLines,
 } from "./org.js";
 import {
@@ -868,25 +868,15 @@ function renderInspector() {
     for (const shape of slide.shapes) if (shape.type === "card" && shape.key) drawn.add(shape.key);
   }
   const expected = new Set();
-  if (state.org.ceo && drawn.size) {
-    const walk = (key) => {
-      if (!state.org.people.has(key) || expected.has(key)) return;
-      expected.add(key);
-      for (const child of state.org.reports.get(key) || []) {
-        const person = state.org.people.get(child);
-        if (person && managerType(person, key) === "Solid") walk(child);
-      }
-    };
-    walk(state.org.ceo);
-    for (const key of [...expected]) {
-      for (const child of state.org.reports.get(key) || []) expected.add(child);
-    }
+  for (const slide of state.slides) {
+    if (!slide.fit || !slide.rootKey) continue;
+    for (const key of solidTree(state.org, slide.rootKey)) expected.add(key);
   }
   const missing = [...expected].filter((key) => !drawn.has(key));
-  const coverage = drawn.size
+  const coverage = expected.size
     ? missing.length
-      ? `<p class="issue">${missing.length} people from the solid-line tree are not on a slide yet.</p>`
-      : `<p class="ok">Every person in the tree is on a slide.</p>`
+      ? `<p class="issue">The chart left out ${missing.length} ${missing.length === 1 ? "person" : "people"}.</p>`
+      : `<p class="ok">Every person in this chart is on a slide.</p>`
     : "";
   if (state.org.issues.length === 0) issues.innerHTML = `<p class='ok'>Reporting lines reach the CEO.</p>${coverage}`;
   else {

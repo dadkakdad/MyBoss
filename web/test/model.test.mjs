@@ -4,11 +4,13 @@ import { readFileSync } from "node:fs";
 import XLSX from "xlsx";
 import {
   buildOrg,
+  cardStyle,
   directReports,
   displayName,
   headcountLabel,
   isManager,
   peopleInCategory,
+  solidTree,
   statisticsLines,
 } from "../js/org.js";
 import { CARDS, GUIDE, SLIDE, buildSlides, chooseFit, layoutLeaves, makeMetrics } from "../js/layout.js";
@@ -110,6 +112,60 @@ test("headcount skips people still to be hired and counts external staff", () =>
   assert.equal(grace.stats.cards, 3);
   assert.equal(displayName([...org.people.values()].find((person) => person.tbh)), "One");
   assert.equal(headcountLabel(grace), "2 (1)");
+});
+
+test("a person who is both important and external is counted twice and drawn as a split card", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("Grace", "Hopper", "Eng", "Lab", "Ada", "Lovelace", "", "", "Berlin", "", "1", "1"),
+  ]);
+  assert.equal(org.fatal, false, org.issues.map((issue) => issue.message).join(" | "));
+  const grace = [...org.people.values()].find((person) => person.surname === "Grace");
+  const ada = org.people.get(org.ceo);
+  assert.equal(cardStyle(grace), "split");
+  assert.equal(grace.stats.important, 1);
+  assert.equal(grace.stats.outsource, 1);
+  assert.equal(grace.stats.ordinary, 0);
+  assert.equal(ada.stats.important, 1);
+  assert.equal(ada.stats.outsource, 1);
+  assert.equal(ada.stats.ordinary, 1);
+});
+
+test("an empty department is drawn as cards and not as a shade", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("Grace", "Hopper", "Eng", "", "Ada", "Lovelace"),
+  ]);
+  const slides = buildSlides(org, org.ceo, "infinity");
+  const shades = slides.flatMap((slide) => slide.shapes.filter((shape) => shape.type === "shade").map((shape) => shape.text));
+  assert.equal(shades.includes(""), false);
+  assert.equal(shades.includes("<no_department_specified>"), false);
+  const grace = [...org.people.values()].find((person) => person.surname === "Grace");
+  assert.ok(slides.some((slide) => slide.shapes.some((shape) => shape.type === "card" && shape.key === grace.key)));
+});
+
+test("a full chart places every solid-line person, including dotted reports", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("Grace", "Hopper", "Eng", "Lab", "Ada", "Lovelace"),
+    row("Ken", "Thompson", "Eng", "", "Grace", "Hopper", "Ada", "Lovelace", "", "", "1", "1"),
+    row("Lin", "Worker", "Eng", "Lab", "Ken", "Thompson"),
+    row("TBH_SE", "One", "Eng", "Lab", "Grace", "Hopper"),
+  ]);
+  assert.equal(org.fatal, false, org.issues.map((issue) => issue.message).join(" | "));
+  const slides = buildSlides(org, org.ceo, "infinity");
+  const seen = new Set();
+  for (const slide of slides) {
+    for (const shape of slide.shapes) if (shape.type === "card" && shape.key) seen.add(shape.key);
+  }
+  for (const key of solidTree(org, org.ceo)) assert.ok(seen.has(key), key);
+  assert.equal(seen.size, org.people.size);
 });
 
 test("a dotted chain that never reaches the CEO stops the import", () => {
