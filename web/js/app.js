@@ -8,7 +8,6 @@ import {
   moderated,
   peopleInCategory,
   personFullName,
-  solidTree,
   statisticsLines,
 } from "./org.js";
 import {
@@ -867,17 +866,14 @@ function renderInspector() {
   for (const slide of state.slides) {
     for (const shape of slide.shapes) if (shape.type === "card" && shape.key) drawn.add(shape.key);
   }
-  const expected = new Set();
-  for (const slide of state.slides) {
-    if (!slide.fit || !slide.rootKey) continue;
-    for (const key of solidTree(state.org, slide.rootKey)) expected.add(key);
-  }
-  const missing = [...expected].filter((key) => !drawn.has(key));
-  const coverage = expected.size
-    ? missing.length
-      ? `<p class="issue">The chart left out ${missing.length} ${missing.length === 1 ? "person" : "people"}.</p>`
-      : `<p class="ok">Every person in this chart is on a slide.</p>`
-    : "";
+  const missing = [...state.org.people.keys()].filter((key) => !drawn.has(key));
+  const coverage = !drawn.size
+    ? ""
+    : !missing.length
+      ? `<p class="ok">Every person is on a slide.</p>`
+      : state.slides.length > 1
+        ? `<p class="issue">The chart left out ${missing.length} ${missing.length === 1 ? "person" : "people"}.</p>`
+        : "";
   if (state.org.issues.length === 0) issues.innerHTML = `<p class='ok'>Reporting lines reach the CEO.</p>${coverage}`;
   else {
     issues.innerHTML = `<ul>${state.org.issues

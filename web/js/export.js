@@ -137,8 +137,19 @@ function drawShape(ctx, org, shape) {
       ctx.lineTo(shape.x + shape.w, shape.y + shape.h);
       ctx.closePath();
       ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(shape.x, shape.y);
+      ctx.lineTo(shape.x + shape.w, shape.y + shape.h);
+      ctx.strokeStyle = "#1a1a1a";
+      ctx.lineWidth = 1.25;
+      ctx.stroke();
     }
     ctx.restore();
+    if (kind === "split") {
+      ctx.strokeStyle = "#1a1a1a";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(shape.x, shape.y, shape.w, shape.h);
+    }
     ctx.strokeStyle = kind === "tbh" ? "#001B57" : "transparent";
     ctx.lineWidth = 1;
     if (kind === "tbh") {
@@ -314,6 +325,13 @@ export async function deckToPptx(org, slides, fileName) {
               { x: inches(shape.w), y: inches(shape.h) },
               { close: true },
             ],
+          });
+          slide.addShape("line", {
+            x: inches(shape.x),
+            y: inches(shape.y),
+            w: inches(shape.w),
+            h: inches(shape.h),
+            line: { color: "1A1A1A", width: 1.25 },
           });
         }
         const badge = person ? headcountLabel(person) : "";

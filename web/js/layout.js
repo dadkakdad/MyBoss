@@ -14,7 +14,6 @@ import {
   isManager,
   managerType,
   moderated,
-  solidTree,
   statisticsLines,
 } from "./org.js";
 
@@ -1004,7 +1003,7 @@ export function buildSlides(org, rootKey, mode = "clever") {
   build(rootKey, null);
 
   if (mode === "infinity") {
-    const required = solidTree(org, rootKey);
+    const required = new Set(org.people.keys());
     const drawnKeys = () => {
       const placed = new Set();
       for (const slide of slides) {
@@ -1013,16 +1012,23 @@ export function buildSlides(org, rootKey, mode = "clever") {
       return placed;
     };
     let guard = 0;
-    while (guard < required.size) {
+    while (guard < required.size + 1) {
       guard += 1;
-      const placed = drawnKeys();
-      const missing = [...required].filter((key) => !placed.has(key));
+      const missing = [...required].filter((key) => !drawnKeys().has(key));
       if (!missing.length) break;
-      const host = missing
-        .map((key) => org.people.get(key)?.solidKey)
-        .find((key) => key && isManager(org, key) && !slides.some((slide) => slide.rootKey === key));
-      if (!host) break;
-      build(host, org.people.get(host)?.solidKey || null);
+      const person = org.people.get(missing[0]);
+      const manager = person?.solidKey;
+      if (manager && !slides.some((slide) => slide.rootKey === manager)) {
+        build(manager, org.people.get(manager)?.solidKey || rootKey);
+        continue;
+      }
+      const slide = slides.find((item) => item.rootKey === manager) || slides[0];
+      if (slide.shapes.some((shape) => shape.type === "card" && shape.key === missing[0])) break;
+      const metrics = makeMetrics(slide.fit?.size || "Small", slide.fit?.gap || 8);
+      const cards = slide.shapes.filter((shape) => shape.type === "card");
+      const y = cards.length ? Math.max(...cards.map((card) => card.y + card.h)) + 8 : TREE_TOP;
+      const x = cards.length ? Math.min(...cards.map((card) => card.x)) : 48;
+      slide.shapes.push(...layoutSingleCard(org, missing[0], metrics, { x, y }));
     }
   }
 

@@ -148,7 +148,7 @@ test("an empty department is drawn as cards and not as a shade", () => {
   assert.ok(slides.some((slide) => slide.shapes.some((shape) => shape.type === "card" && shape.key === grace.key)));
 });
 
-test("a full chart places every solid-line person, including dotted reports", () => {
+test("a full chart places every person, including a split card and a blank department", () => {
   const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
   const org = buildOrg([
     header,
