@@ -16,8 +16,8 @@
 
       <div class="cluster needs-upload">
         <div class="upload">
-          <label>File <input id="file-name" type="text" readonly tabindex="-1"></label>
-          <label>Sheet <select id="sheet"></select></label>
+          <label><span>File</span><input id="file-name" type="text" readonly tabindex="-1"></label>
+          <label><span>Sheet</span><select id="sheet"></select></label>
           <label class="check"><input id="titles" type="checkbox" checked> Columns have titles</label>
         </div>
         <button class="large" id="import" type="button"><img src="icons/upload.png" alt=""><span>Import data</span></button>
@@ -26,7 +26,7 @@
       <div class="cluster needs-import">
         <div class="split">
           <button class="large" id="refresh" type="button" title=""><img src="icons/reload.png" alt=""><span>Refresh</span></button>
-          <button class="chev" id="refresh-more" type="button" aria-label="More file actions">▾</button>
+          <button class="chev" id="refresh-more" type="button" aria-label="More file actions"></button>
           <div class="menu" id="menu-refresh">
             <button type="button" id="pick-again"><img src="icons/icon2.png" alt="">Select another file</button>
             <button type="button" id="pick-sheet"><img src="icons/icon2.png" alt="">Select another sheet</button>
@@ -34,10 +34,12 @@
         </div>
       </div>
 
-      <div class="cluster needs-import">
-        <div class="stack">
-          <label>Select category <select id="category"></select></label>
-          <label>Select employee <select id="employee"></select></label>
+      <div class="sep needs-import" aria-hidden="true"></div>
+
+      <div class="cluster needs-import fields">
+        <div class="stack people">
+          <label><span>Select category</span><select id="category"></select></label>
+          <label><span>Select employee</span><select id="employee"></select></label>
         </div>
         <div class="split">
           <button class="large" id="create-main" type="button"><img src="icons/tree_clever0.png" alt=""><span>Create org chart</span></button>
@@ -48,15 +50,17 @@
         </div>
       </div>
 
+      <div class="sep needs-import" aria-hidden="true"></div>
+
       <div class="cluster needs-import">
-        <div class="stack">
-          <label>Element size <select id="size">
+        <div class="stack sizes">
+          <label><span>Element size</span><select id="size">
             <option>Large</option>
             <option selected>Medium</option>
             <option>Small</option>
             <option>ExtraSmall</option>
           </select></label>
-          <label>Tick size, pt. <select id="gap">
+          <label><span>Tick size, pt.</span><select id="gap">
             <option>15</option>
             <option>12</option>
             <option selected>10</option>
@@ -67,17 +71,24 @@
         </div>
       </div>
 
+      <div class="sep needs-import" aria-hidden="true"></div>
+
       <div class="cluster needs-import">
         <div class="split">
           <button class="large" id="place-head" type="button"><img src="icons/reg0king.png" alt=""><span>Manager</span></button>
-          <button class="chev" id="manager-more" type="button" aria-label="Employee">▾</button>
+          <button class="chev" id="manager-more" type="button" aria-label="Employee"></button>
           <div class="menu" id="menu-manager">
             <button type="button" id="place-one"><img src="icons/reg0.png" alt="">Employee</button>
           </div>
         </div>
+      </div>
+
+      <div class="sep needs-import" aria-hidden="true"></div>
+
+      <div class="cluster needs-import">
         <div class="split">
           <button class="large" id="place-auto" type="button"><img src="icons/regNplus.png" alt=""><span>Direct reports</span></button>
-          <button class="chev" id="reports-more" type="button" aria-label="Row layouts">▾</button>
+          <button class="chev" id="reports-more" type="button" aria-label="Row layouts"></button>
           <div class="menu" id="menu-reports">
             <button type="button" id="place-1"><img src="icons/reg10.png" alt="">1-in-row</button>
             <button type="button" id="place-2"><img src="icons/reg20.png" alt="">2-in-row</button>
@@ -86,10 +97,27 @@
         </div>
       </div>
 
-      <div class="cluster needs-import icons">
+      <div class="sep needs-import" aria-hidden="true"></div>
+
+      <div class="cluster needs-import">
         <button class="large" id="place-tree" type="button"><img src="icons/tree_stupid.png" alt=""><span>Subordinates</span></button>
+      </div>
+
+      <div class="sep needs-import" aria-hidden="true"></div>
+
+      <div class="cluster needs-import">
         <button class="large" id="departments" type="button"><img src="icons/shades.png" alt=""><span>Departments</span></button>
+      </div>
+
+      <div class="sep needs-import" aria-hidden="true"></div>
+
+      <div class="cluster needs-import">
         <button class="large" id="links" type="button"><img src="icons/slideNs.png" alt=""><span>Links</span></button>
+      </div>
+
+      <div class="sep needs-import" aria-hidden="true"></div>
+
+      <div class="cluster needs-import">
         <button class="large" id="add-slide" type="button"><img src="icons/newslide.png" alt=""><span>Slide</span></button>
         <div class="split">
           <button class="large" id="elements-main" type="button"><img src="icons/card.png" alt=""><span>Elements</span></button>
@@ -103,6 +131,8 @@
           </div>
         </div>
       </div>
+
+      <div class="sep needs-import" aria-hidden="true"></div>
 
       <div class="cluster needs-import">
         <button class="large" id="ungroup" type="button" disabled><img src="icons/ungroup.png" alt=""><span>Ungroup</span></button>
