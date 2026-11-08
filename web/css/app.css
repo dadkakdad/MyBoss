@@ -50,11 +50,31 @@ button, select, input { font: inherit; color: inherit; }
 .ribbon-tab {
   display: flex;
   align-items: flex-end;
-  gap: 2px;
-  min-height: 96px;
-  padding: 4px 8px 6px;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 84px;
+  padding: 2px 10px 4px;
   overflow: visible;
 }
+body[data-stage="ready"] .ribbon-tab {
+  justify-content: space-between;
+  gap: 8px;
+}
+@media (max-width: 1360px) {
+  .ribbon-tab { padding-left: 6px; padding-right: 6px; }
+  body[data-stage="ready"] .ribbon-tab { gap: 4px; }
+  .ribbon-tab .large { min-width: 46px; padding: 2px 2px 1px; }
+  .ribbon-tab .large span { font-size: 10px; max-width: 62px; }
+  .upload select, .ribbon-tab .stack select { width: 112px; }
+}
+.cluster {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+.cluster.icons { gap: 0; }
 
 .ribbon-tab .sep {
   align-self: stretch;
@@ -64,8 +84,10 @@ button, select, input { font: inherit; color: inherit; }
 }
 
 .ribbon-tab .large {
-  width: 68px;
-  min-height: 78px;
+  width: auto;
+  min-width: 54px;
+  max-width: 78px;
+  min-height: 68px;
   border: 1px solid transparent;
   background: transparent;
   border-radius: 3px;
@@ -73,13 +95,20 @@ button, select, input { font: inherit; color: inherit; }
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 2px;
-  padding: 4px 4px 2px;
+  gap: 1px;
+  padding: 2px 4px 1px;
   cursor: pointer;
-  color: #444;
+  color: #666;
 }
-.ribbon-tab .large img { width: 32px; height: 32px; object-fit: contain; }
-.ribbon-tab .large span { font-size: 11px; line-height: 1.15; text-align: center; max-width: 66px; }
+.ribbon-tab .large img { width: 26px; height: 26px; object-fit: contain; }
+.ribbon-tab .large span {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.1;
+  text-align: center;
+  max-width: 72px;
+  color: #555;
+}
 .ribbon-tab .large:hover, .ribbon-tab .chev:hover, .menu button:hover { background: #fde7d0; border-color: #f4c28a; }
 .ribbon-tab .large:disabled { opacity: 0.35; cursor: not-allowed; }
 
@@ -137,14 +166,14 @@ button, select, input { font: inherit; color: inherit; }
   color: #666;
 }
 .upload input, .upload select, .ribbon-tab .stack select {
-  height: 22px;
-  border: 1px solid #b4b4b4;
+  height: 20px;
+  border: 1px solid #c6c6c6;
   background: #fff;
   border-radius: 2px;
-  min-width: 160px;
-  max-width: 210px;
+  width: 132px;
   font-size: 12px;
   color: #222;
+  margin-left: 4px;
 }
 .upload input { color: #888; }
 .ribbon-tab .check { display: flex; gap: 6px; align-items: center; color: #444; }
@@ -474,6 +503,8 @@ button.tool small, button.tool-wide small {
 .person dt { color: var(--muted); font-size: 11px; margin-top: 6px; }
 .person dd { margin: 0; font-size: 13px; }
 
+.export { display: flex; gap: 4px; align-items: center; }
+.export .mini { padding: 0 8px; }
 .status {
   display: flex;
   justify-content: space-between;

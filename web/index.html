@@ -10,120 +10,116 @@
   <header class="ribbon">
     <div class="tabstrip"><span class="tab">Org chart</span></div>
     <div class="ribbon-tab" id="ribbon">
-      <button class="large needs-pick" id="open-file" type="button"><img src="icons/icon2.png" alt=""><span>Select Excel file</span></button>
-      <button class="large needs-pick" id="open-sample" type="button"><img src="icons/icon2.png" alt=""><span>Sample</span></button>
-      <input id="file" type="file" accept=".xls,.xlsx,.xlsm" hidden>
-
-      <div class="upload needs-upload">
-        <label>File <input id="file-name" type="text" readonly tabindex="-1"></label>
-        <label>Sheet <select id="sheet"></select></label>
-        <label class="check"><input id="titles" type="checkbox" checked> Columns have titles</label>
+      <div class="cluster needs-pick">
+        <button class="large" id="open-file" type="button"><img src="icons/icon2.png" alt=""><span>Select Excel file</span></button>
+        <button class="large" id="open-sample" type="button"><img src="icons/icon2.png" alt=""><span>Sample</span></button>
+        <input id="file" type="file" accept=".xls,.xlsx,.xlsm" hidden>
       </div>
-      <button class="large needs-upload" id="import" type="button"><img src="icons/upload.png" alt=""><span>Import data</span></button>
 
-      <div class="split needs-import">
-        <button class="large" id="refresh" type="button" title=""><img src="icons/reload.png" alt=""><span>Refresh</span></button>
-        <button class="chev" id="refresh-more" type="button" aria-label="More file actions">▾</button>
-        <div class="menu" id="menu-refresh">
-          <button type="button" id="pick-again"><img src="icons/icon2.png" alt="">Select another file</button>
-          <button type="button" id="pick-sheet"><img src="icons/icon2.png" alt="">Select another sheet</button>
+      <div class="cluster needs-upload">
+        <div class="upload">
+          <label>File <input id="file-name" type="text" readonly tabindex="-1"></label>
+          <label>Sheet <select id="sheet"></select></label>
+          <label class="check"><input id="titles" type="checkbox" checked> Columns have titles</label>
+        </div>
+        <button class="large" id="import" type="button"><img src="icons/upload.png" alt=""><span>Import data</span></button>
+      </div>
+
+      <div class="cluster needs-import">
+        <div class="split">
+          <button class="large" id="refresh" type="button" title=""><img src="icons/reload.png" alt=""><span>Refresh</span></button>
+          <button class="chev" id="refresh-more" type="button" aria-label="More file actions">▾</button>
+          <div class="menu" id="menu-refresh">
+            <button type="button" id="pick-again"><img src="icons/icon2.png" alt="">Select another file</button>
+            <button type="button" id="pick-sheet"><img src="icons/icon2.png" alt="">Select another sheet</button>
+          </div>
         </div>
       </div>
 
-      <div class="stack needs-import">
-        <label>Select category <select id="category"></select></label>
-        <label>Select employee <select id="employee"></select></label>
-      </div>
-
-      <div class="split needs-import">
-        <button class="large" id="create-main" type="button"><img src="icons/tree_clever0.png" alt=""><span>Create org chart</span></button>
-        <div class="menu" id="menu-create">
-          <button type="button" id="single"><img src="icons/tree_clever0.png" alt="">Single slide org structure</button>
-          <button type="button" id="infinity"><img src="icons/tree_infinity.png" alt="">Full org structure</button>
+      <div class="cluster needs-import">
+        <div class="stack">
+          <label>Select category <select id="category"></select></label>
+          <label>Select employee <select id="employee"></select></label>
+        </div>
+        <div class="split">
+          <button class="large" id="create-main" type="button"><img src="icons/tree_clever0.png" alt=""><span>Create org chart</span></button>
+          <div class="menu" id="menu-create">
+            <button type="button" id="single"><img src="icons/tree_clever0.png" alt="">Single slide org structure</button>
+            <button type="button" id="infinity"><img src="icons/tree_infinity.png" alt="">Full org structure</button>
+          </div>
         </div>
       </div>
 
-      <i class="sep needs-import"></i>
-
-      <div class="stack needs-import">
-        <label>Element size <select id="size">
-          <option>Large</option>
-          <option selected>Medium</option>
-          <option>Small</option>
-          <option>ExtraSmall</option>
-        </select></label>
-        <label>Tick size, pt. <select id="gap">
-          <option>15</option>
-          <option>12</option>
-          <option selected>10</option>
-          <option>7</option>
-          <option>5</option>
-        </select></label>
-        <label class="check"><input id="sticky" type="checkbox" checked> Sticky sizes</label>
-      </div>
-
-      <i class="sep needs-import"></i>
-
-      <div class="split needs-import">
-        <button class="large" id="place-head" type="button"><img src="icons/reg0king.png" alt=""><span>Manager</span></button>
-        <button class="chev" id="manager-more" type="button" aria-label="Employee">▾</button>
-        <div class="menu" id="menu-manager">
-          <button type="button" id="place-one"><img src="icons/reg0.png" alt="">Employee</button>
+      <div class="cluster needs-import">
+        <div class="stack">
+          <label>Element size <select id="size">
+            <option>Large</option>
+            <option selected>Medium</option>
+            <option>Small</option>
+            <option>ExtraSmall</option>
+          </select></label>
+          <label>Tick size, pt. <select id="gap">
+            <option>15</option>
+            <option>12</option>
+            <option selected>10</option>
+            <option>7</option>
+            <option>5</option>
+          </select></label>
+          <label class="check"><input id="sticky" type="checkbox" checked> Sticky sizes</label>
         </div>
       </div>
 
-      <i class="sep needs-import"></i>
-
-      <div class="split needs-import">
-        <button class="large" id="place-auto" type="button"><img src="icons/regNplus.png" alt=""><span>Direct reports</span></button>
-        <button class="chev" id="reports-more" type="button" aria-label="Row layouts">▾</button>
-        <div class="menu" id="menu-reports">
-          <button type="button" id="place-1"><img src="icons/reg10.png" alt="">1-in-row</button>
-          <button type="button" id="place-2"><img src="icons/reg20.png" alt="">2-in-row</button>
-          <button type="button" id="place-4"><img src="icons/reg40.png" alt="">4-in-row</button>
+      <div class="cluster needs-import">
+        <div class="split">
+          <button class="large" id="place-head" type="button"><img src="icons/reg0king.png" alt=""><span>Manager</span></button>
+          <button class="chev" id="manager-more" type="button" aria-label="Employee">▾</button>
+          <div class="menu" id="menu-manager">
+            <button type="button" id="place-one"><img src="icons/reg0.png" alt="">Employee</button>
+          </div>
+        </div>
+        <div class="split">
+          <button class="large" id="place-auto" type="button"><img src="icons/regNplus.png" alt=""><span>Direct reports</span></button>
+          <button class="chev" id="reports-more" type="button" aria-label="Row layouts">▾</button>
+          <div class="menu" id="menu-reports">
+            <button type="button" id="place-1"><img src="icons/reg10.png" alt="">1-in-row</button>
+            <button type="button" id="place-2"><img src="icons/reg20.png" alt="">2-in-row</button>
+            <button type="button" id="place-4"><img src="icons/reg40.png" alt="">4-in-row</button>
+          </div>
         </div>
       </div>
 
-      <i class="sep needs-import"></i>
-      <button class="large needs-import" id="place-tree" type="button"><img src="icons/tree_stupid.png" alt=""><span>Subordinates</span></button>
-      <i class="sep needs-import"></i>
-      <button class="large needs-import" id="departments" type="button"><img src="icons/shades.png" alt=""><span>Departments</span></button>
-      <i class="sep needs-import"></i>
-      <button class="large needs-import" id="links" type="button"><img src="icons/slideNs.png" alt=""><span>Links</span></button>
-
-      <i class="sep needs-import"></i>
-      <button class="large needs-import" id="add-slide" type="button"><img src="icons/newslide.png" alt=""><span>Slide</span></button>
-      <div class="split needs-import">
-        <button class="large" id="elements-main" type="button"><img src="icons/card.png" alt=""><span>Elements</span></button>
-        <div class="menu" id="menu-elements">
-          <button type="button" id="add-title"><img src="icons/title.png" alt="">Title</button>
-          <button type="button" id="add-shade"><img src="icons/shade.png" alt="">Shade</button>
-          <button type="button" id="add-frame"><img src="icons/border.png" alt="">Frame</button>
-          <button type="button" id="add-card"><img src="icons/card.png" alt="">Card</button>
-          <button type="button" id="add-line"><img src="icons/line.png" alt="">Connector</button>
-          <button type="button" id="add-link" disabled><img src="icons/slideN.png" alt="">Link</button>
+      <div class="cluster needs-import icons">
+        <button class="large" id="place-tree" type="button"><img src="icons/tree_stupid.png" alt=""><span>Subordinates</span></button>
+        <button class="large" id="departments" type="button"><img src="icons/shades.png" alt=""><span>Departments</span></button>
+        <button class="large" id="links" type="button"><img src="icons/slideNs.png" alt=""><span>Links</span></button>
+        <button class="large" id="add-slide" type="button"><img src="icons/newslide.png" alt=""><span>Slide</span></button>
+        <div class="split">
+          <button class="large" id="elements-main" type="button"><img src="icons/card.png" alt=""><span>Elements</span></button>
+          <div class="menu" id="menu-elements">
+            <button type="button" id="add-title"><img src="icons/title.png" alt="">Title</button>
+            <button type="button" id="add-shade"><img src="icons/shade.png" alt="">Shade</button>
+            <button type="button" id="add-frame"><img src="icons/border.png" alt="">Frame</button>
+            <button type="button" id="add-card"><img src="icons/card.png" alt="">Card</button>
+            <button type="button" id="add-line"><img src="icons/line.png" alt="">Connector</button>
+            <button type="button" id="add-link" disabled><img src="icons/slideN.png" alt="">Link</button>
+          </div>
         </div>
       </div>
 
-      <i class="sep needs-import"></i>
-      <button class="large needs-import" id="ungroup" type="button" disabled><img src="icons/ungroup.png" alt=""><span>Ungroup</span></button>
-      <button class="large needs-import" id="group" type="button" disabled><img src="icons/group.png" alt=""><span>Group</span></button>
-      <div class="split needs-import">
-        <button class="large" id="arrange-main" type="button"><img src="icons/alignTop.png" alt=""><span>Arrange</span></button>
-        <div class="menu" id="menu-arrange">
-          <button type="button" id="dist-h"><img src="icons/distributeHor.png" alt="">Distribute Horizontally</button>
-          <button type="button" id="align-top"><img src="icons/alignTop.png" alt="">Align Top</button>
-          <button type="button" id="dist-v"><img src="icons/distributeVer.png" alt="">Distribute Vertically</button>
-          <button type="button" id="align-left"><img src="icons/alighLeft.png" alt="">Align Left</button>
-          <button type="button" id="remove">Delete</button>
+      <div class="cluster needs-import">
+        <button class="large" id="ungroup" type="button" disabled><img src="icons/ungroup.png" alt=""><span>Ungroup</span></button>
+        <button class="large" id="group" type="button" disabled><img src="icons/group.png" alt=""><span>Group</span></button>
+        <div class="split">
+          <button class="large" id="arrange-main" type="button"><img src="icons/alignTop.png" alt=""><span>Arrange</span></button>
+          <div class="menu" id="menu-arrange">
+            <button type="button" id="dist-h"><img src="icons/distributeHor.png" alt="">Distribute Horizontally</button>
+            <button type="button" id="align-top"><img src="icons/alignTop.png" alt="">Align Top</button>
+            <button type="button" id="dist-v"><img src="icons/distributeVer.png" alt="">Distribute Vertically</button>
+            <button type="button" id="align-left"><img src="icons/alighLeft.png" alt="">Align Left</button>
+            <button type="button" id="remove">Delete</button>
+          </div>
         </div>
       </div>
-
-      <i class="sep needs-import"></i>
-      <button class="large needs-import" id="undo" type="button"><span>Undo</span></button>
-      <button class="large needs-import" id="png" type="button"><span>PNG</span></button>
-      <button class="large needs-import" id="pptx" type="button"><span>PowerPoint</span></button>
-      <button class="large needs-import" id="json" type="button"><span>Project</span></button>
     </div>
   </header>
 
@@ -137,6 +133,12 @@
       <div class="filmstrip" id="filmstrip"></div>
       <div class="status">
         <span id="status-left">No workbook yet.</span>
+        <span class="export">
+          <button class="mini" id="undo" type="button">Undo</button>
+          <button class="mini" id="png" type="button">PNG</button>
+          <button class="mini" id="pptx" type="button">PowerPoint</button>
+          <button class="mini" id="json" type="button">Project</button>
+        </span>
         <span class="zoom">
           <button class="mini" id="zoom-out" type="button">−</button>
           <span id="zoom-label">100%</span>
