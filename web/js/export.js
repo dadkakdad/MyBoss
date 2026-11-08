@@ -1,0 +1,315 @@
+/**
+ * Download the deck as PNG or as an editable PowerPoint file.
+ * Points on the 960×540 slide become inches at 72 pt per inch.
+ */
+
+import { cardStyle, displayName, headcountLabel, moderated } from "./org.js";
+import { SLIDE } from "./layout.js";
+
+const STYLE = {
+  ordinary: { fill: "001B58", color: "FFFFFF", bar: "00123F" },
+  important: { fill: "8C0000", color: "FFFFFF", bar: "5C0000" },
+  outsource: { fill: "F4F4F4", color: "1A1A1A", bar: "FFFFFF" },
+  tbh: { fill: "FFFFFF", color: "001B57", bar: "F7F9FC" },
+};
+
+function personLines(org, shape) {
+  if (!shape.key) return shape.lines || ["", "", ""];
+  const person = org.people.get(shape.key);
+  if (!person) return ["", "", ""];
+  if (person.tbh) return ["To be hired", moderated(person.job), ""];
+  return [moderated(person.surname), moderated(person.name), moderated(person.job)];
+}
+
+export function slideToCanvas(org, slide, scale = 2) {
+  const canvas = document.createElement("canvas");
+  canvas.width = SLIDE.width * scale;
+  canvas.height = SLIDE.height * scale;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, SLIDE.width, SLIDE.height);
+  const shapes = [...slide.shapes].sort((a, b) => (a.z || 0) - (b.z || 0));
+  for (const shape of shapes) drawShape(ctx, org, shape);
+  return canvas;
+}
+
+function drawShape(ctx, org, shape) {
+  if (shape.type === "shade") {
+    ctx.fillStyle = shape.fill || "#DEEBF7";
+    ctx.fillRect(shape.x, shape.y, shape.w, shape.h);
+    ctx.fillStyle = "#173C5D";
+    ctx.font = "9px Arial";
+    ctx.fillText(shape.text || "", shape.x + 6, shape.y + 12);
+    return;
+  }
+  if (shape.type === "wire") {
+    ctx.beginPath();
+    ctx.moveTo(shape.x1, shape.y1);
+    ctx.lineTo(shape.x2, shape.y2);
+    ctx.strokeStyle = "#00123F";
+    ctx.lineWidth = shape.weight || 2;
+    ctx.setLineDash(shape.dotted ? [4, 3] : []);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    return;
+  }
+  if (shape.type === "frame") {
+    ctx.strokeStyle = "#9d1c2a";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 3]);
+    ctx.strokeRect(shape.x, shape.y, shape.w, shape.h);
+    ctx.setLineDash([]);
+    return;
+  }
+  if (shape.type === "title") {
+    ctx.fillStyle = "#001B58";
+    ctx.font = "bold 22px Arial";
+    ctx.fillText(shape.name || "", shape.x, shape.y + 22);
+    ctx.font = "14px Arial";
+    ctx.fillStyle = "#3d4d66";
+    ctx.fillText(shape.department || "Organisation", shape.x, shape.y + 40);
+    const stats = shape.stats || {};
+    ctx.font = "11px Arial";
+    ctx.fillText(
+      `${stats.subordinates || 0} people · ${shape.direct || 0} direct reports · ${stats.ordinary || 0} staff · ${stats.important || 0} key · ${stats.outsource || 0} external`,
+      shape.x,
+      shape.y + 58,
+    );
+    return;
+  }
+  if (shape.type === "legend") {
+    const rows = [
+      ["ordinary", "Staff"],
+      ["important", "Key people"],
+      ["outsource", "External"],
+    ];
+    rows.forEach(([kind, label], index) => {
+      ctx.fillStyle = `#${STYLE[kind].fill}`;
+      ctx.fillRect(shape.x, shape.y + index * 18, 14, 10);
+      ctx.fillStyle = "#1c2430";
+      ctx.font = "11px Arial";
+      ctx.fillText(label, shape.x + 20, shape.y + 10 + index * 18);
+    });
+    return;
+  }
+  if (shape.type === "bubble" || shape.type === "comment" || shape.type === "link" || shape.type === "nav") {
+    ctx.fillStyle = shape.type === "nav" ? "#173C5D" : "#ffffff";
+    ctx.strokeStyle = shape.dotted ? "#00123F" : "#8a8175";
+    ctx.lineWidth = 1;
+    ctx.setLineDash(shape.dotted ? [3, 2] : []);
+    roundRect(ctx, shape.x, shape.y, shape.w, shape.h, 3);
+    ctx.fill();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = shape.type === "nav" ? "#ffffff" : "#1c2430";
+    ctx.font = "8px Arial";
+    ctx.fillText(shape.text || "", shape.x + 4, shape.y + shape.h - 3);
+    return;
+  }
+  if (shape.type === "card") {
+    const kind = shape.key ? cardStyle(org.people.get(shape.key)) : shape.placeholder || "ordinary";
+    const palette = STYLE[kind];
+    ctx.fillStyle = `#${palette.fill}`;
+    ctx.strokeStyle = kind === "tbh" ? "#001B57" : "transparent";
+    ctx.lineWidth = 1;
+    roundRect(ctx, shape.x, shape.y, shape.w, shape.h, 2);
+    ctx.fill();
+    if (kind === "tbh") ctx.stroke();
+    const lines = personLines(org, shape);
+    const person = shape.key ? org.people.get(shape.key) : null;
+    const nameSize = shape.h < 30 ? 7 : shape.h < 40 ? 8 : shape.h < 48 ? 10 : 12;
+    ctx.fillStyle = `#${palette.color}`;
+    ctx.font = `bold ${nameSize}px Arial`;
+    ctx.fillText(lines[0] || "", shape.x + 4, shape.y + nameSize + 2);
+    ctx.fillText(lines[1] || "", shape.x + 4, shape.y + nameSize * 2 + 3);
+    if (shape.h >= 32) {
+      ctx.font = `${Math.max(6, nameSize - 3)}px Arial`;
+      ctx.fillText(lines[2] || "", shape.x + 4, shape.y + shape.h - (person?.location ? 12 : 4));
+    }
+    if (person?.location) {
+      ctx.fillStyle = `#${palette.bar}`;
+      ctx.fillRect(shape.x, shape.y + shape.h - 11, shape.w, 11);
+      ctx.fillStyle = kind === "outsource" ? "#1c2430" : "#ffffff";
+      ctx.font = "7px Arial";
+      ctx.fillText(person.location, shape.x + 4, shape.y + shape.h - 3);
+    }
+    const badge = person ? headcountLabel(person) : "";
+    if (badge) {
+      ctx.font = "bold 8px Arial";
+      ctx.fillStyle = `#${palette.color}`;
+      ctx.textAlign = "right";
+      ctx.fillText(badge, shape.x + shape.w - 4, shape.y + 9);
+      ctx.textAlign = "left";
+    }
+  }
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function inches(points) {
+  return points / 72;
+}
+
+function addLine(slide, shape) {
+  const x1 = inches(shape.x1);
+  const y1 = inches(shape.y1);
+  const x2 = inches(shape.x2);
+  const y2 = inches(shape.y2);
+  slide.addShape("line", {
+    x: Math.min(x1, x2),
+    y: Math.min(y1, y2),
+    w: Math.max(Math.abs(x2 - x1), 0.01),
+    h: Math.max(Math.abs(y2 - y1), 0.01),
+    flipH: x1 > x2,
+    flipV: y1 > y2,
+    line: {
+      color: "00123F",
+      width: shape.weight || 1.5,
+      dashType: shape.dotted ? "dash" : "solid",
+    },
+  });
+}
+
+export async function deckToPptx(org, slides, fileName) {
+  const PptxGenJS = window.PptxGenJS;
+  if (!PptxGenJS) throw new Error("PowerPoint export is not loaded.");
+  const pptx = new PptxGenJS();
+  pptx.defineLayout({ name: "MYBOSS", width: inches(SLIDE.width), height: inches(SLIDE.height) });
+  pptx.layout = "MYBOSS";
+  pptx.author = "MyBoss";
+  pptx.title = fileName || "Org chart";
+
+  slides.forEach((source, index) => {
+    const slide = pptx.addSlide();
+    slide.background = { color: "FFFFFF" };
+    const shapes = [...source.shapes].sort((a, b) => (a.z || 0) - (b.z || 0));
+    for (const shape of shapes) {
+      if (shape.type === "wire") {
+        addLine(slide, shape);
+        continue;
+      }
+      if (shape.type === "shade") {
+        slide.addShape("rect", {
+          x: inches(shape.x),
+          y: inches(shape.y),
+          w: inches(shape.w),
+          h: inches(shape.h),
+          fill: { color: (shape.fill || "#DEEBF7").replace("#", "") },
+        });
+        slide.addText(shape.text || "", {
+          x: inches(shape.x + 4),
+          y: inches(shape.y + 1),
+          w: inches(shape.w - 8),
+          h: inches(14),
+          fontFace: "Arial",
+          fontSize: 9,
+          color: "173C5D",
+        });
+        continue;
+      }
+      if (shape.type === "title") {
+        const stats = shape.stats || {};
+        slide.addText(
+          [
+            { text: `${shape.name || ""}\n`, options: { fontSize: 20, bold: true, color: "001B58" } },
+            { text: `${shape.department || "Organisation"}\n`, options: { fontSize: 12, color: "3D4D66" } },
+            {
+              text: `${stats.subordinates || 0} people · ${shape.direct || 0} direct · ${stats.ordinary || 0} staff · ${stats.important || 0} key · ${stats.outsource || 0} external`,
+              options: { fontSize: 10, color: "3D4D66" },
+            },
+          ],
+          { x: inches(shape.x), y: inches(shape.y), w: inches(shape.w), h: inches(shape.h), fontFace: "Arial" },
+        );
+        continue;
+      }
+      if (shape.type === "card") {
+        const kind = shape.key ? cardStyle(org.people.get(shape.key)) : shape.placeholder || "ordinary";
+        const palette = STYLE[kind];
+        const lines = personLines(org, shape);
+        const person = shape.key ? org.people.get(shape.key) : null;
+        slide.addShape("rect", {
+          x: inches(shape.x),
+          y: inches(shape.y),
+          w: inches(shape.w),
+          h: inches(shape.h),
+          fill: { color: palette.fill },
+          line: kind === "tbh" ? { color: "001B57", width: 1 } : { color: palette.fill },
+        });
+        const badge = person ? headcountLabel(person) : "";
+        slide.addText(
+          [lines[0], lines[1], shape.h >= 32 ? lines[2] : ""].filter(Boolean).join("\n"),
+          {
+            x: inches(shape.x + 3),
+            y: inches(shape.y + 1),
+            w: inches(shape.w - 6),
+            h: inches(shape.h - (person?.location ? 12 : 2)),
+            fontFace: "Arial",
+            fontSize: shape.h < 32 ? 7 : 9,
+            color: palette.color,
+            bold: true,
+            margin: 0,
+          },
+        );
+        if (badge) {
+          slide.addText(badge, {
+            x: inches(shape.x),
+            y: inches(shape.y),
+            w: inches(shape.w - 2),
+            h: inches(10),
+            align: "right",
+            fontFace: "Arial",
+            fontSize: 8,
+            bold: true,
+            color: palette.color,
+          });
+        }
+        if (person?.location) {
+          slide.addShape("rect", {
+            x: inches(shape.x),
+            y: inches(shape.y + shape.h - 11),
+            w: inches(shape.w),
+            h: inches(11),
+            fill: { color: palette.bar },
+          });
+          slide.addText(person.location, {
+            x: inches(shape.x + 3),
+            y: inches(shape.y + shape.h - 11),
+            w: inches(shape.w - 6),
+            h: inches(11),
+            fontFace: "Arial",
+            fontSize: 7,
+            color: kind === "outsource" ? "1C2430" : "FFFFFF",
+            margin: 0,
+          });
+        }
+        continue;
+      }
+      if (shape.type === "link" || shape.type === "nav" || shape.type === "bubble" || shape.type === "comment") {
+        slide.addText(shape.text || "", {
+          x: inches(shape.x),
+          y: inches(shape.y),
+          w: inches(Math.max(shape.w, 8)),
+          h: inches(Math.max(shape.h, 8)),
+          fontFace: "Arial",
+          fontSize: 8,
+          color: shape.type === "nav" ? "FFFFFF" : "1C2430",
+          fill: { color: shape.type === "nav" ? "173C5D" : "FFFFFF" },
+          align: "center",
+        });
+      }
+    }
+    const root = source.rootKey ? org.people.get(source.rootKey) : null;
+    slide.addNotes(root ? `${displayName(root)} · slide ${index + 1}` : `Slide ${index + 1}`);
+  });
+
+  await pptx.writeFile({ fileName: fileName || "MyBoss-org-chart.pptx" });
+}

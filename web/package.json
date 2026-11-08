@@ -1,0 +1,13 @@
+{
+  "name": "myboss-web",
+  "private": true,
+  "type": "module",
+  "description": "Browser version of MyBoss, the PowerPoint org-chart tool.",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "pptxgenjs": "^4.0.1",
+    "xlsx": "^0.18.5"
+  }
+}

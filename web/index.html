@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MyBoss — org charts in the browser</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="ribbon">
+    <div class="brand">
+      <strong>MyBoss</strong>
+      <span>Org charts from the Excel template, drawn in the browser.</span>
+    </div>
+    <div class="groups">
+      <figure class="group">
+        <div class="group-body">
+          <button class="tool" id="open-sample" type="button"><b>Sample</b><small>Advanced</small></button>
+          <button class="tool" id="open-file" type="button"><b>Excel</b><small>Choose file</small></button>
+          <input id="file" type="file" accept=".xlsx,.xls,.xlsm" hidden>
+          <div class="stack">
+            <label>Sheet <select id="sheet"></select></label>
+            <label class="check"><input id="titles" type="checkbox" checked> Columns have titles</label>
+          </div>
+          <button class="tool" id="import" type="button"><b>Import</b><small>Read sheet</small></button>
+        </div>
+        <figcaption>Data</figcaption>
+      </figure>
+
+      <figure class="group">
+        <div class="group-body">
+          <div class="stack">
+            <label>Category <select id="category"></select></label>
+            <label>Employee <select id="employee"></select></label>
+          </div>
+          <button class="tool-wide" id="single" type="button"><b>Single slide</b><small>Fit one page</small></button>
+          <button class="tool-wide" id="infinity" type="button"><b>Full structure</b><small>One slide per team</small></button>
+        </div>
+        <figcaption>Create</figcaption>
+      </figure>
+
+      <figure class="group">
+        <div class="group-body">
+          <button class="tool" id="place-head" type="button"><b>Manager</b><small>Head card</small></button>
+          <button class="tool" id="place-one" type="button"><b>Employee</b><small>One card</small></button>
+          <button class="tool" id="place-auto" type="button"><b>Direct</b><small>By department</small></button>
+          <button class="tool" id="place-1" type="button"><b>1 column</b><small>Stacked</small></button>
+          <button class="tool" id="place-2" type="button"><b>2 in a row</b><small>Grid</small></button>
+          <button class="tool" id="place-4" type="button"><b>4 in a row</b><small>Grid</small></button>
+          <button class="tool" id="place-tree" type="button"><b>Subordinates</b><small>Whole team</small></button>
+        </div>
+        <figcaption>Place</figcaption>
+      </figure>
+
+      <figure class="group">
+        <div class="group-body">
+          <div class="stack">
+            <label>Element <select id="size">
+              <option>ExtraSmall</option>
+              <option>Small</option>
+              <option selected>Medium</option>
+              <option>Large</option>
+            </select></label>
+            <label>Tick, pt <select id="gap">
+              <option>15</option>
+              <option>12</option>
+              <option selected>10</option>
+              <option>7</option>
+              <option>5</option>
+            </select></label>
+            <label class="check"><input id="sticky" type="checkbox" checked> Sticky sizes</label>
+          </div>
+        </div>
+        <figcaption>Size</figcaption>
+      </figure>
+
+      <figure class="group">
+        <div class="group-body">
+          <button class="tool" id="add-slide" type="button"><b>Slide</b><small>Insert</small></button>
+          <button class="tool" id="add-title" type="button"><b>Title</b><small>Name and team</small></button>
+          <button class="tool" id="add-shade" type="button"><b>Shade</b><small>Department</small></button>
+          <button class="tool" id="add-frame" type="button"><b>Frame</b><small>Highlight</small></button>
+          <button class="tool" id="add-card" type="button"><b>Card</b><small>Empty</small></button>
+          <button class="tool" id="add-line" type="button"><b>Connector</b><small>Line</small></button>
+          <button class="tool" id="departments" type="button"><b>Departments</b><small>Shade cards</small></button>
+          <button class="tool" id="links" type="button"><b>Links</b><small>Between slides</small></button>
+        </div>
+        <figcaption>Draw</figcaption>
+      </figure>
+
+      <figure class="group">
+        <div class="group-body">
+          <button class="tool" id="group" type="button"><b>Group</b><small>Selected</small></button>
+          <button class="tool" id="ungroup" type="button"><b>Ungroup</b><small>Selected</small></button>
+          <button class="tool" id="align-left" type="button"><b>Align left</b><small>Edges</small></button>
+          <button class="tool" id="align-top" type="button"><b>Align top</b><small>Edges</small></button>
+          <button class="tool" id="dist-h" type="button"><b>Distribute</b><small>Horizontal</small></button>
+          <button class="tool" id="dist-v" type="button"><b>Distribute</b><small>Vertical</small></button>
+          <button class="tool" id="undo" type="button"><b>Undo</b><small>Ctrl Z</small></button>
+          <button class="tool" id="remove" type="button"><b>Delete</b><small>Selected</small></button>
+        </div>
+        <figcaption>Arrange</figcaption>
+      </figure>
+
+      <figure class="group">
+        <div class="group-body">
+          <button class="tool" id="png" type="button"><b>PNG</b><small>This slide</small></button>
+          <button class="tool" id="pptx" type="button"><b>PowerPoint</b><small>Whole deck</small></button>
+          <button class="tool" id="json" type="button"><b>Project</b><small>JSON</small></button>
+        </div>
+        <figcaption>Export</figcaption>
+      </figure>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <div class="stage-wrap">
+      <div class="stage" id="stage">
+        <div class="holder" id="holder">
+          <div class="slide" id="slide"></div>
+        </div>
+      </div>
+      <div class="filmstrip" id="filmstrip"></div>
+      <div class="status">
+        <span id="status-left">No workbook yet.</span>
+        <span class="zoom">
+          <button class="mini" id="zoom-out" type="button">−</button>
+          <span id="zoom-label">100%</span>
+          <button class="mini" id="zoom-in" type="button">+</button>
+          <button class="mini" id="zoom-fit" type="button">Fit</button>
+        </span>
+      </div>
+    </div>
+    <aside class="inspector" id="inspector">
+      <h2>This sheet</h2>
+      <div id="sheet-summary"><p>Open the sample, or choose an Excel file that follows the MyBoss template.</p></div>
+      <h2>Selected card</h2>
+      <dl class="person" id="person"></dl>
+      <h2>Checks</h2>
+      <div id="issues"></div>
+    </aside>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+
+  <script src="node_modules/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="node_modules/pptxgenjs/dist/pptxgen.bundle.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
