@@ -35,17 +35,6 @@ button, select, input { font: inherit; color: inherit; }
   color: #444;
 }
 
-.tabstrip { padding: 4px 10px 0; background: #f3f2f1; }
-.tab {
-  display: inline-block;
-  background: linear-gradient(#fff, #f3f2f1);
-  border: 1px solid #b4b4b4;
-  border-bottom: 0;
-  border-radius: 3px 3px 0 0;
-  padding: 3px 14px 4px;
-  font-size: 12px;
-  color: #c45500;
-}
 
 .ribbon-tab {
   display: flex;
@@ -330,6 +319,7 @@ button.tool small, button.tool-wide small {
   height: 540px;
   overflow: visible;
   pointer-events: none;
+  z-index: 1;
 }
 
 .slide svg.wires line { pointer-events: stroke; }
@@ -410,14 +400,14 @@ button.tool small, button.tool-wide small {
   border-radius: 2px;
   color: var(--navy-2);
   font-size: 11px;
-  padding: 0 4px 3px;
+  line-height: 1.15;
+  padding: 0 4px 5px;
   text-align: center;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  white-space: nowrap;
+  white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 .frame { box-shadow: inset 0 0 0 1.5px var(--red); background: transparent; }
 .title { cursor: grab; }

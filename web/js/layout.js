@@ -18,7 +18,7 @@ import {
 } from "./org.js";
 
 export const SLIDE = { width: 960, height: 540 };
-export const GUIDE = { width: 920, height: 350 };
+export const GUIDE = { width: 920, height: 400 };
 export const MAX_PEOPLE_FOR_2D = 6;
 export const MAX_PEOPLE_FOR_4D = 14;
 export const MAX_BRANCHES = 7;
@@ -122,7 +122,7 @@ function leafLayout(org, key, metrics, shownUnder) {
 
 /** A vertical stack, one card wide, centered on the connector. Matches the columns in the demo. */
 function columnLayout(org, people, parentKey, metrics) {
-  const stackGap = 4;
+  const stackGap = Math.max(10, metrics.gapY);
   const anchorX = metrics.w / 2;
   const items = [];
   let y = 0;
@@ -177,7 +177,7 @@ function rowsLayout(org, people, parentKey, metrics, perRow) {
   const pitch = metrics.gapX + metrics.w;
   const shifts = shiftMap(perRow);
   const items = [];
-  let y = metrics.gapY;
+  let y = 0;
   let minLeft = Infinity;
   let maxRight = -Infinity;
   for (let start = 0; start < people.length; start += perRow) {
@@ -250,10 +250,14 @@ function placeBranches(branches, metrics) {
     items.push(...translate(entry.branch.box.items, entry.x, stem));
     maxH = Math.max(maxH, stem + entry.branch.box.h);
   }
-  const bar = (anchors, dotted) => {
-    if (anchors.length < 2) return;
-    const left = Math.min(...anchors);
-    const right = Math.max(...anchors);
+  const anchors = solidAnchors.length ? solidAnchors : dottedAnchors;
+  const anchorX = anchors.length ? (Math.min(...anchors) + Math.max(...anchors)) / 2 : totalW / 2;
+  const bar = (lineAnchors, dotted) => {
+    if (!lineAnchors.length || stem <= 0 && lineAnchors.length < 2) return;
+    const xs = lineAnchors.length === 1 ? [lineAnchors[0], anchorX] : lineAnchors;
+    const left = Math.min(...xs);
+    const right = Math.max(...xs);
+    if (right - left < 0.5) return;
     items.push({
       type: "wire",
       x1: left,
@@ -266,8 +270,6 @@ function placeBranches(branches, metrics) {
   };
   bar(solidAnchors, false);
   bar(dottedAnchors, true);
-  const anchors = solidAnchors.length ? solidAnchors : dottedAnchors;
-  const anchorX = anchors.length ? (Math.min(...anchors) + Math.max(...anchors)) / 2 : totalW / 2;
   if (stem > 0) {
     items.push({
       type: "wire",
@@ -381,7 +383,7 @@ function layoutExpandedManager(org, key, metrics, visibility, options) {
   const subs = layoutSubordinates(org, key, metrics, visibility, { stack: options.stack });
   const person = org.people.get(key);
   const bubble = hasTwoManagers(person) ? metrics.bubbleH : 0;
-  const tick = 2 + bubble;
+  const tick = metrics.gapY + bubble;
   if (!subs.items.length) {
     const leaf = leafLayout(org, key, metrics, shownUnder);
     return leaf;
@@ -681,9 +683,9 @@ function shadeShapes(org, cards) {
   const lowest = Math.max(...[...groups.values()].map((bucket) => bucket.b));
   for (const bucket of groups.values()) {
     if (bucket.b - bucket.y < 8) continue;
-    const pad = 10;
-    const top = bucket.y - 8;
-    const bottom = Math.min(SLIDE.height - 6, lowest + 18);
+    const pad = 8;
+    const top = bucket.y;
+    const bottom = Math.min(SLIDE.height - 6, Math.max(bucket.b, lowest) + 22);
     shades.push({
       id: sid("shade"),
       type: "shade",
