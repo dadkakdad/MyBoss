@@ -374,6 +374,19 @@ export function departmentsOf(org, keys) {
   return groups;
 }
 
+/** Wording from the Department statistics shape on the template slide. */
+export function statisticsLines(person, directCount) {
+  const stats = person?.stats || {};
+  const first = moderated(person?.name) || "This person";
+  return [
+    `${first} has ${directCount} direct reports`,
+    `Team Size – ${stats.subordinates || 0} people`,
+    `${stats.ordinary || 0} ordinary employees`,
+    `${stats.important || 0} non-ordinary employees`,
+    `${stats.outsource || 0} outsourcers`,
+  ];
+}
+
 export function headcountLabel(person) {
   const count = person?.stats?.subordinates ?? 0;
   if (count <= 1) return "";

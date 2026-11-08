@@ -9,6 +9,7 @@ import {
   headcountLabel,
   isManager,
   peopleInCategory,
+  statisticsLines,
 } from "../js/org.js";
 import { GUIDE, SLIDE, buildSlides, chooseFit, layoutLeaves, makeMetrics } from "../js/layout.js";
 
@@ -144,7 +145,7 @@ test("a wide organisation folds onto one slide inside the PowerPoint guide", () 
 });
 
 test("full structure gives a folded team its own slide and links back", () => {
-  const org = wideOrg(8, 6);
+  const org = wideOrg(10, 8);
   const slides = buildSlides(org, org.ceo, "infinity");
   assert.ok(slides.length > 1, `slides ${slides.length}`);
   const seen = new Set();
@@ -165,6 +166,50 @@ test("a company of 100 or more starts collapsed and still lays out", () => {
   const slides = buildSlides(org, org.ceo, "infinity");
   assert.ok(slides.length >= 1);
   assert.ok(fit.box.w < 5000);
+});
+
+test("every sample sheet builds a complete chart", () => {
+  for (const name of ["Simplest", "Real-life", "Advanced"]) {
+    const org = buildOrg(matrixFrom(name));
+    assert.equal(org.fatal, false, name);
+    assert.equal(org.people.get(org.ceo).surname, "Goldberg");
+    const slides = buildSlides(org, org.ceo, "infinity");
+    const seen = new Set();
+    for (const slide of slides) {
+      const keys = new Set(slide.shapes.filter((shape) => shape.type === "card").map((shape) => shape.key));
+      for (const key of keys) seen.add(key);
+      const missing = directReports(org, slide.rootKey).all.filter((key) => !keys.has(key));
+      assert.deepEqual(missing, [], `${name} ${slide.rootKey}`);
+      assert.ok(slide.shapes.some((shape) => shape.type === "stats"));
+      assert.ok(slide.shapes.some((shape) => shape.type === "legend"));
+      for (const shape of slide.shapes) {
+        if (shape.type === "wire") continue;
+        if (["title", "legend", "nav", "stats"].includes(shape.type)) continue;
+        assert.ok(shape.x >= -1 && shape.x + shape.w <= SLIDE.width + 1, `${name} ${shape.type}`);
+        assert.ok(shape.y + shape.h <= SLIDE.height + 1, `${name} ${shape.type} bottom`);
+      }
+    }
+    assert.equal(seen.size, org.people.size, `${name} missing people`);
+  }
+});
+
+test("Advanced statistics and Larsen’s departments match the template", () => {
+  const org = buildOrg(matrixFrom("Advanced"));
+  const ceo = org.people.get(org.ceo);
+  assert.deepEqual(statisticsLines(ceo, directReports(org, org.ceo).all.length), [
+    "Jossef has 5 direct reports",
+    "Team Size – 51 people",
+    "46 ordinary employees",
+    "2 non-ordinary employees",
+    "3 outsourcers",
+  ]);
+  const slides = buildSlides(org, org.ceo, "infinity");
+  const larsen = slides.find((slide) => org.people.get(slide.rootKey).surname === "Larsen");
+  assert.equal(larsen.fit.size, "Large");
+  const shades = larsen.shapes.filter((shape) => shape.type === "shade").map((shape) => shape.text).sort();
+  assert.deepEqual(shades, ["Development", "Research"]);
+  const smith = [...org.people.values()].find((person) => person.surname === "Smith");
+  assert.match(smith.termination, /July/);
 });
 
 test("sample charts stay inside the slide", () => {

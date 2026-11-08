@@ -90,13 +90,18 @@ button.tool, button.tool-wide {
   border: 1px solid transparent;
   background: transparent;
   border-radius: 4px;
-  padding: 4px 6px;
+  padding: 2px 6px 3px;
   cursor: pointer;
-  line-height: 1.15;
+  line-height: 1.1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
 }
 
-button.tool { width: auto; min-width: 54px; }
-button.tool-wide { width: auto; min-width: 72px; }
+button.tool { width: auto; min-width: 62px; }
+button.tool-wide { width: auto; min-width: 78px; }
+button.tool img, button.tool-wide img { width: 28px; height: 28px; object-fit: contain; }
 
 button.tool:hover, button.tool-wide:hover, button.mini:hover { background: #efe8dc; }
 
@@ -239,29 +244,49 @@ button.tool small, button.tool-wide small {
   white-space: nowrap;
   box-shadow: inset 0 0 0 1px #8d867c;
 }
+.link { padding: 0 2px; text-align: center; }
 .bubble.dotted, .link { box-shadow: inset 0 0 0 1px #001b58; }
 .bubble.dotted { background: repeating-linear-gradient(90deg, white, white 3px, #eef2f8 3px, #eef2f8 4px); }
 .nav {
-  background: var(--navy-2);
-  color: white;
-  text-align: center;
+  background: transparent;
+  color: var(--navy-2);
+  text-align: left;
   box-shadow: none;
-  font-size: 10px;
-  line-height: 18px;
+  font-size: 11px;
+  line-height: 16px;
+  text-decoration: underline;
 }
 .shade {
-  border-radius: 4px;
+  border-radius: 2px;
   color: var(--navy-2);
-  font-size: 9px;
-  padding: 2px 6px;
-  text-align: left;
+  font-size: 11px;
+  padding: 0 4px 3px;
+  text-align: center;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .frame { box-shadow: inset 0 0 0 1.5px var(--red); background: transparent; }
 .title { cursor: grab; }
-.title .name { font-size: 22px; font-weight: 700; color: var(--navy); line-height: 1.1; }
-.title .dept { font-size: 13px; color: #3d4d66; }
-.title .meta { font-size: 11px; color: #3d4d66; margin-top: 2px; }
-.legend { font-size: 11px; display: flex; flex-direction: column; gap: 3px; }
+.title .name { font-size: 26px; font-weight: 700; color: var(--navy); line-height: 1.05; }
+.title .dept { font-size: 16px; color: #3d4d66; }
+.legend { font-size: 11px; display: flex; flex-direction: column; gap: 2px; color: var(--ink); }
+.legend-title { font-size: 11px; font-weight: 700; color: var(--muted); }
+.stats {
+  background: #f3f3f3;
+  border: 1px solid #c8c8c8;
+  border-radius: 3px;
+  color: var(--ink);
+  text-align: left;
+  padding: 6px 8px;
+  cursor: grab;
+}
+.stats-title { font-size: 11px; font-weight: 700; margin-bottom: 3px; }
+.stats ul { margin: 0; padding-left: 14px; }
+.stats li { font-size: 10px; line-height: 1.25; }
 .legend i {
   display: inline-block;
   width: 14px;

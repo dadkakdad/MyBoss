@@ -8,6 +8,7 @@ import {
   moderated,
   peopleInCategory,
   personFullName,
+  statisticsLines,
 } from "./org.js";
 import {
   CARDS,
@@ -201,7 +202,23 @@ function placeCard(head) {
   const x = head ? SLIDE.width / 2 - cardMetrics.w / 2 : 48 + (slide.shapes.length % 5) * 20;
   const y = head ? 96 : 120 + (slide.shapes.length % 4) * 16;
   slide.shapes.push(...layoutSingleCard(state.org, key, cardMetrics, { head, x, y }));
-  if (head && !slide.shapes.some((shape) => shape.type === "title")) slide.shapes.unshift(titleFor(key));
+  if (head && !slide.shapes.some((shape) => shape.type === "title")) {
+    slide.shapes.unshift(titleFor(key));
+    slide.shapes.push(
+      { id: nid("legend"), type: "legend", x: 18, y: 66, w: 210, h: 58, z: 5 },
+      {
+        id: nid("stats"),
+        type: "stats",
+        x: 742,
+        y: 10,
+        w: 204,
+        h: 96,
+        z: 5,
+        heading: "Department statistics",
+        lines: statisticsLines(state.org.people.get(key), (state.org.reports.get(key) || []).length),
+      },
+    );
+  }
   slide.rootKey = slide.rootKey || key;
   render();
 }
@@ -237,7 +254,7 @@ function placeBranch(mode) {
   remember();
   const slide = current();
   slide.shapes = slide.shapes.filter((shape) => {
-    if (shape.type === "title" || shape.type === "legend" || shape.type === "nav") return true;
+    if (shape.type === "title" || shape.type === "legend" || shape.type === "nav" || shape.type === "stats") return true;
     if (shape.key === key && (shape.type === "card" || shape.type === "bubble" || shape.type === "comment")) return true;
     return false;
   });
@@ -347,7 +364,7 @@ function linkSlides() {
       w: 280,
       h: 18,
       z: 4,
-      text: `Back to ${parent.surname} · slide ${earlier}`,
+      text: `Up to ${parent.surname} ${parent.name} (slide ${earlier})`,
       target: earlier,
     });
     links += 1;
@@ -592,23 +609,24 @@ function renderShape(shape) {
     const nameSize = shape.h < 30 ? 7 : shape.h < 40 ? 8 : shape.h < 48 ? 9 : 12;
     node.style.fontSize = `${nameSize}px`;
     const badge = person ? headcountLabel(person) : "";
+    const footer = person?.termination ? `Works until ${person.termination}` : person?.location || "";
     node.innerHTML = `${badge ? `<span class="hc">${escapeHtml(badge)}</span>` : ""}
       <span class="who">${escapeHtml(lines[0] || "")}</span>
       <span class="who">${escapeHtml(lines[1] || "")}</span>
       ${shape.h >= 32 && lines[2] ? `<span class="job">${escapeHtml(lines[2])}</span>` : ""}
-      ${person?.location ? `<span class="loc">${escapeHtml(person.location)}</span>` : ""}`;
+      ${footer ? `<span class="loc">${escapeHtml(footer)}</span>` : ""}`;
     node.setAttribute("aria-label", person ? personFullName(person) : "Empty card");
     node.addEventListener("dblclick", (event) => {
       event.stopPropagation();
       focusPerson(shape.key);
     });
   } else if (shape.type === "title") {
-    const stats = shape.stats || {};
     node.innerHTML = `<div class="name">${escapeHtml(shape.name || "")}</div>
-      <div class="dept">${escapeHtml(shape.department || "Organisation")}</div>
-      <div class="meta">${stats.subordinates || 0} people · ${shape.direct || 0} direct reports · ${stats.ordinary || 0} staff · ${stats.important || 0} key · ${stats.outsource || 0} external</div>`;
+      <div class="dept">${escapeHtml(shape.department || "Organisation")}</div>`;
   } else if (shape.type === "legend") {
-    node.innerHTML = `<div class="legend"><div><i class="ordinary"></i>Staff</div><div><i class="important"></i>Key people</div><div><i class="outsource"></i>External</div></div>`;
+    node.innerHTML = `<div class="legend"><div class="legend-title">Indicators</div><div><i class="ordinary"></i>Ordinary employee</div><div><i class="important"></i>Important employee</div><div><i class="outsource"></i>Outsourcer</div></div>`;
+  } else if (shape.type === "stats") {
+    node.innerHTML = `<div class="stats-title">${escapeHtml(shape.heading || "Department statistics")}</div><ul>${(shape.lines || []).map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>`;
   } else if (shape.type === "shade") {
     node.textContent = shape.text || "";
     node.style.background = shape.fill || "#DEEBF7";

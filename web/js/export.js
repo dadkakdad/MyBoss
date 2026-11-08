@@ -64,32 +64,44 @@ function drawShape(ctx, org, shape) {
   }
   if (shape.type === "title") {
     ctx.fillStyle = "#001B58";
-    ctx.font = "bold 22px Arial";
-    ctx.fillText(shape.name || "", shape.x, shape.y + 22);
-    ctx.font = "14px Arial";
+    ctx.font = "bold 26px Arial";
+    ctx.fillText(shape.name || "", shape.x, shape.y + 26);
+    ctx.font = "16px Arial";
     ctx.fillStyle = "#3d4d66";
-    ctx.fillText(shape.department || "Organisation", shape.x, shape.y + 40);
-    const stats = shape.stats || {};
-    ctx.font = "11px Arial";
-    ctx.fillText(
-      `${stats.subordinates || 0} people · ${shape.direct || 0} direct reports · ${stats.ordinary || 0} staff · ${stats.important || 0} key · ${stats.outsource || 0} external`,
-      shape.x,
-      shape.y + 58,
-    );
+    ctx.fillText(shape.department || "Organisation", shape.x, shape.y + 48);
+    return;
+  }
+  if (shape.type === "stats") {
+    ctx.fillStyle = "#f3f3f3";
+    ctx.strokeStyle = "#b9b9b9";
+    ctx.lineWidth = 1;
+    roundRect(ctx, shape.x, shape.y, shape.w, shape.h, 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#1c2430";
+    ctx.font = "bold 11px Arial";
+    ctx.fillText(shape.heading || "Department statistics", shape.x + 8, shape.y + 14);
+    ctx.font = "10px Arial";
+    (shape.lines || []).forEach((line, index) => {
+      ctx.fillText(`• ${line}`, shape.x + 8, shape.y + 30 + index * 12);
+    });
     return;
   }
   if (shape.type === "legend") {
+    ctx.fillStyle = "#5c6778";
+    ctx.font = "bold 10px Arial";
+    ctx.fillText("Indicators", shape.x, shape.y + 10);
     const rows = [
-      ["ordinary", "Staff"],
-      ["important", "Key people"],
-      ["outsource", "External"],
+      ["ordinary", "Ordinary employee"],
+      ["important", "Important employee"],
+      ["outsource", "Outsourcer"],
     ];
     rows.forEach(([kind, label], index) => {
       ctx.fillStyle = `#${STYLE[kind].fill}`;
-      ctx.fillRect(shape.x, shape.y + index * 18, 14, 10);
+      ctx.fillRect(shape.x, shape.y + 16 + index * 14, 12, 8);
       ctx.fillStyle = "#1c2430";
-      ctx.font = "11px Arial";
-      ctx.fillText(label, shape.x + 20, shape.y + 10 + index * 18);
+      ctx.font = "10px Arial";
+      ctx.fillText(label, shape.x + 16, shape.y + 24 + index * 14);
     });
     return;
   }
@@ -118,6 +130,7 @@ function drawShape(ctx, org, shape) {
     if (kind === "tbh") ctx.stroke();
     const lines = personLines(org, shape);
     const person = shape.key ? org.people.get(shape.key) : null;
+    const footer = person?.termination ? `Works until ${person.termination}` : person?.location || "";
     const nameSize = shape.h < 30 ? 7 : shape.h < 40 ? 8 : shape.h < 48 ? 10 : 12;
     ctx.fillStyle = `#${palette.color}`;
     ctx.font = `bold ${nameSize}px Arial`;
@@ -125,14 +138,14 @@ function drawShape(ctx, org, shape) {
     ctx.fillText(lines[1] || "", shape.x + 4, shape.y + nameSize * 2 + 3);
     if (shape.h >= 32) {
       ctx.font = `${Math.max(6, nameSize - 3)}px Arial`;
-      ctx.fillText(lines[2] || "", shape.x + 4, shape.y + shape.h - (person?.location ? 12 : 4));
+      ctx.fillText(lines[2] || "", shape.x + 4, shape.y + shape.h - (footer ? 12 : 4));
     }
-    if (person?.location) {
+    if (footer) {
       ctx.fillStyle = `#${palette.bar}`;
       ctx.fillRect(shape.x, shape.y + shape.h - 11, shape.w, 11);
       ctx.fillStyle = kind === "outsource" ? "#1c2430" : "#ffffff";
       ctx.font = "7px Arial";
-      ctx.fillText(person.location, shape.x + 4, shape.y + shape.h - 3);
+      ctx.fillText(footer, shape.x + 4, shape.y + shape.h - 3);
     }
     const badge = person ? headcountLabel(person) : "";
     if (badge) {
@@ -207,28 +220,52 @@ export async function deckToPptx(org, slides, fileName) {
         });
         slide.addText(shape.text || "", {
           x: inches(shape.x + 4),
-          y: inches(shape.y + 1),
+          y: inches(shape.y + shape.h - 16),
           w: inches(shape.w - 8),
           h: inches(14),
           fontFace: "Arial",
-          fontSize: 9,
+          fontSize: 11,
           color: "173C5D",
+          align: "center",
         });
         continue;
       }
       if (shape.type === "title") {
-        const stats = shape.stats || {};
         slide.addText(
           [
-            { text: `${shape.name || ""}\n`, options: { fontSize: 20, bold: true, color: "001B58" } },
-            { text: `${shape.department || "Organisation"}\n`, options: { fontSize: 12, color: "3D4D66" } },
-            {
-              text: `${stats.subordinates || 0} people · ${shape.direct || 0} direct · ${stats.ordinary || 0} staff · ${stats.important || 0} key · ${stats.outsource || 0} external`,
-              options: { fontSize: 10, color: "3D4D66" },
-            },
+            { text: `${shape.name || ""}\n`, options: { fontSize: 26, bold: true, color: "001B58" } },
+            { text: shape.department || "Organisation", options: { fontSize: 16, color: "3D4D66" } },
           ],
-          { x: inches(shape.x), y: inches(shape.y), w: inches(shape.w), h: inches(shape.h), fontFace: "Arial" },
+          { x: inches(shape.x), y: inches(shape.y), w: inches(shape.w), h: inches(shape.h), fontFace: "Arial", margin: 0 },
         );
+        continue;
+      }
+      if (shape.type === "stats") {
+        slide.addText(
+          [{ text: `${shape.heading || "Department statistics"}\n`, options: { bold: true, fontSize: 11 } }, ...(shape.lines || []).map((line) => ({ text: `${line}\n`, options: { fontSize: 10 } }))],
+          {
+            x: inches(shape.x),
+            y: inches(shape.y),
+            w: inches(shape.w),
+            h: inches(shape.h),
+            fontFace: "Arial",
+            color: "1C2430",
+            fill: { color: "F3F3F3" },
+            valign: "top",
+          },
+        );
+        continue;
+      }
+      if (shape.type === "legend") {
+        slide.addText("Indicators\nOrdinary employee\nImportant employee\nOutsourcer", {
+          x: inches(shape.x),
+          y: inches(shape.y),
+          w: inches(shape.w),
+          h: inches(shape.h),
+          fontFace: "Arial",
+          fontSize: 10,
+          color: "1C2430",
+        });
         continue;
       }
       if (shape.type === "card") {
@@ -236,6 +273,7 @@ export async function deckToPptx(org, slides, fileName) {
         const palette = STYLE[kind];
         const lines = personLines(org, shape);
         const person = shape.key ? org.people.get(shape.key) : null;
+        const footer = person?.termination ? `Works until ${person.termination}` : person?.location || "";
         slide.addShape("rect", {
           x: inches(shape.x),
           y: inches(shape.y),
@@ -251,7 +289,7 @@ export async function deckToPptx(org, slides, fileName) {
             x: inches(shape.x + 3),
             y: inches(shape.y + 1),
             w: inches(shape.w - 6),
-            h: inches(shape.h - (person?.location ? 12 : 2)),
+            h: inches(shape.h - (footer ? 12 : 2)),
             fontFace: "Arial",
             fontSize: shape.h < 32 ? 7 : 9,
             color: palette.color,
@@ -272,7 +310,7 @@ export async function deckToPptx(org, slides, fileName) {
             color: palette.color,
           });
         }
-        if (person?.location) {
+        if (footer) {
           slide.addShape("rect", {
             x: inches(shape.x),
             y: inches(shape.y + shape.h - 11),
@@ -280,7 +318,7 @@ export async function deckToPptx(org, slides, fileName) {
             h: inches(11),
             fill: { color: palette.bar },
           });
-          slide.addText(person.location, {
+          slide.addText(footer, {
             x: inches(shape.x + 3),
             y: inches(shape.y + shape.h - 11),
             w: inches(shape.w - 6),

@@ -13,6 +13,8 @@ import {
   hasTwoManagers,
   isManager,
   managerType,
+  moderated,
+  statisticsLines,
 } from "./org.js";
 
 export const SLIDE = { width: 960, height: 540 };
@@ -20,7 +22,7 @@ export const GUIDE = { width: 920, height: 350 };
 export const MAX_PEOPLE_FOR_2D = 6;
 export const MAX_PEOPLE_FOR_4D = 14;
 export const MAX_BRANCHES = 7;
-export const TREE_TOP = 164;
+export const TREE_TOP = 132;
 
 export const CARD_SIZES = ["ExtraSmall", "Small", "Medium", "Large"];
 
@@ -68,7 +70,6 @@ function otherManagerSurname(org, person, shownUnder) {
 function leafLayout(org, key, metrics, shownUnder) {
   const person = org.people.get(key);
   const bubble = hasTwoManagers(person) ? metrics.bubbleH : 0;
-  const comment = person.termination ? metrics.commentH : 0;
   const tick = metrics.gapY + bubble;
   const anchorX = metrics.w / 2;
   const items = [
@@ -116,38 +117,29 @@ function leafLayout(org, key, metrics, shownUnder) {
     collapsed: false,
     head: false,
   });
-  if (comment) {
-    items.push({
-      type: "comment",
-      key,
-      x: 0,
-      y: tick + metrics.h,
-      w: metrics.w,
-      h: comment,
-      text: person.termination,
-    });
-  }
-  return { w: metrics.w, h: tick + metrics.h + comment, anchorX, items };
+  return { w: metrics.w, h: tick + metrics.h, anchorX, items };
 }
 
+/** A vertical stack, one card wide, centered on the connector. Matches the columns in the demo. */
 function columnLayout(org, people, parentKey, metrics) {
+  const stackGap = 4;
+  const anchorX = metrics.w / 2;
   const items = [];
   let y = 0;
-  let lowestSolid = null;
-  let lowestDotted = null;
+  let previousBottom = 0;
   for (const key of people) {
     const person = org.people.get(key);
     const shownUnder = managerType(person, parentKey) || "Solid";
-    const bubbleExtra = hasTwoManagers(person) ? metrics.gapY / 2 + metrics.bubbleH : 0;
-    y += metrics.gapY + bubbleExtra;
+    const bubble = hasTwoManagers(person) ? metrics.bubbleH + 1 : 0;
+    if (y > 0) y += stackGap;
+    y += bubble;
     const cardY = y;
-    const midY = cardY + metrics.h / 2;
-    if (hasTwoManagers(person)) {
+    if (bubble) {
       items.push({
         type: "bubble",
         key,
-        x: metrics.gapX + metrics.w / 2 - metrics.bubbleW / 2,
-        y: cardY - metrics.gapY / 2 - metrics.bubbleH,
+        x: anchorX - metrics.bubbleW / 2,
+        y: cardY - metrics.bubbleH - 1,
         w: metrics.bubbleW,
         h: metrics.bubbleH,
         dotted: shownUnder !== "Dotted",
@@ -156,17 +148,17 @@ function columnLayout(org, people, parentKey, metrics) {
     }
     items.push({
       type: "wire",
-      x1: 0,
-      y1: midY,
-      x2: metrics.gapX,
-      y2: midY,
+      x1: anchorX,
+      y1: previousBottom,
+      x2: anchorX,
+      y2: cardY,
       dotted: shownUnder === "Dotted",
       weight: metrics.line,
     });
     items.push({
       type: "card",
       key,
-      x: metrics.gapX,
+      x: 0,
       y: cardY,
       w: metrics.w,
       h: metrics.h,
@@ -176,28 +168,9 @@ function columnLayout(org, people, parentKey, metrics) {
       head: false,
     });
     y += metrics.h;
-    if (person.termination) {
-      items.push({
-        type: "comment",
-        key,
-        x: metrics.gapX,
-        y,
-        w: metrics.w,
-        h: metrics.commentH,
-        text: person.termination,
-      });
-      y += metrics.commentH;
-    }
-    if (shownUnder === "Dotted") lowestDotted = midY;
-    else lowestSolid = midY;
+    previousBottom = y;
   }
-  if (lowestSolid != null) {
-    items.push({ type: "wire", x1: 0, y1: 0, x2: 0, y2: lowestSolid, dotted: false, weight: metrics.line });
-  }
-  if (lowestDotted != null) {
-    items.push({ type: "wire", x1: 0, y1: 0, x2: 0, y2: lowestDotted, dotted: true, weight: metrics.line });
-  }
-  return { w: metrics.gapX + metrics.w, h: y, anchorX: 0, items };
+  return { w: metrics.w, h: y, anchorX, items };
 }
 
 function rowsLayout(org, people, parentKey, metrics, perRow) {
@@ -407,9 +380,8 @@ function layoutExpandedManager(org, key, metrics, visibility, options) {
   const shownUnder = options.shownUnder || "Solid";
   const subs = layoutSubordinates(org, key, metrics, visibility, { stack: options.stack });
   const person = org.people.get(key);
-  const comment = person.termination ? metrics.commentH : 0;
   const bubble = hasTwoManagers(person) ? metrics.bubbleH : 0;
-  const tick = metrics.gapY + bubble;
+  const tick = 2 + bubble;
   if (!subs.items.length) {
     const leaf = leafLayout(org, key, metrics, shownUnder);
     return leaf;
@@ -419,7 +391,7 @@ function layoutExpandedManager(org, key, metrics, visibility, options) {
   const right = Math.max(subs.w, cardX + metrics.w);
   const shift = -left;
   const cardY = tick;
-  const subsY = cardY + metrics.h + comment;
+  const subsY = cardY + metrics.h;
   const items = [
     {
       type: "wire",
@@ -453,17 +425,6 @@ function layoutExpandedManager(org, key, metrics, visibility, options) {
       h: metrics.bubbleH,
       dotted: shownUnder !== "Dotted",
       text: otherManagerSurname(org, person, shownUnder),
-    });
-  }
-  if (comment) {
-    items.push({
-      type: "comment",
-      key,
-      x: cardX + shift,
-      y: cardY + metrics.h,
-      w: metrics.w,
-      h: comment,
-      text: person.termination,
     });
   }
   items.push(...translate(subs.items, shift, subsY));
@@ -622,7 +583,7 @@ function sid(prefix) {
 
 /** Shift the drawing so cards and lines stay inside the slide. Title, legend, and navigation stay put. */
 export function containOnSlide(shapes) {
-  const fixed = new Set(["title", "legend", "nav"]);
+  const fixed = new Set(["title", "legend", "nav", "stats"]);
   let minX = Infinity;
   let maxX = -Infinity;
   for (const shape of shapes) {
@@ -661,25 +622,39 @@ function paint(items, dx, dy, extra = {}) {
 
 function titleShape(org, rootKey) {
   const person = org.people.get(rootKey);
-  const reports = directReports(org, rootKey);
   return {
     id: sid("title"),
     type: "title",
     x: 18,
-    y: 12,
-    w: 430,
-    h: 74,
-    z: 3,
+    y: 8,
+    w: 360,
+    h: 58,
+    z: 5,
     key: rootKey,
     name: `${person.surname} ${person.name}`.trim(),
-    department: person.department,
-    direct: reports.all.length,
-    stats: person.stats,
+    department: person.department || "Organisation",
   };
 }
 
 function legendShape() {
-  return { id: sid("legend"), type: "legend", x: 760, y: 16, w: 180, h: 62, z: 3 };
+  return { id: sid("legend"), type: "legend", x: 18, y: 66, w: 210, h: 58, z: 5 };
+}
+
+function statsShape(org, rootKey) {
+  const person = org.people.get(rootKey);
+  const direct = directReports(org, rootKey).all.length;
+  return {
+    id: sid("stats"),
+    type: "stats",
+    x: 742,
+    y: 10,
+    w: 204,
+    h: 96,
+    z: 5,
+    key: rootKey,
+    heading: "Department statistics",
+    lines: statisticsLines(person, direct),
+  };
 }
 
 function shadeShapes(org, cards) {
@@ -703,16 +678,19 @@ function shadeShapes(org, cards) {
   }
   const shades = [];
   let index = 0;
+  const lowest = Math.max(...[...groups.values()].map((bucket) => bucket.b));
   for (const bucket of groups.values()) {
     if (bucket.b - bucket.y < 8) continue;
-    const pad = 8;
+    const pad = 10;
+    const top = bucket.y - 8;
+    const bottom = Math.min(SLIDE.height - 6, lowest + 18);
     shades.push({
       id: sid("shade"),
       type: "shade",
       x: bucket.x - pad,
-      y: bucket.y - 16,
+      y: top,
       w: bucket.r - bucket.x + pad * 2,
-      h: bucket.b - bucket.y + 16 + pad,
+      h: Math.max(24, bottom - top),
       z: 0,
       text: bucket.name,
       fill: SHADE_COLORS[index % SHADE_COLORS.length],
@@ -722,10 +700,10 @@ function shadeShapes(org, cards) {
   return shades;
 }
 
-function headCard(org, rootKey, tree) {
-  const metrics = CARDS.Large;
+function headCard(org, rootKey, tree, bodySize) {
+  const metrics = CARDS[bodySize] || CARDS.Large;
   const x = SLIDE.width / 2 - metrics.w / 2;
-  const y = TREE_TOP - metrics.h - 14;
+  const y = TREE_TOP - metrics.h - 16;
   const items = [
     {
       type: "card",
@@ -737,7 +715,7 @@ function headCard(org, rootKey, tree) {
       managerType: "Solid",
       collapsed: false,
       head: true,
-      size: "Large",
+      size: bodySize || "Large",
     },
   ];
   if (tree.items.length) {
@@ -749,18 +727,6 @@ function headCard(org, rootKey, tree) {
       y2: TREE_TOP,
       dotted: false,
       weight: 4,
-    });
-  }
-  const person = org.people.get(rootKey);
-  if (person.termination) {
-    items.push({
-      type: "comment",
-      key: rootKey,
-      x,
-      y: y + metrics.h,
-      w: metrics.w,
-      h: CARDS.Large.commentH,
-      text: person.termination,
     });
   }
   return paint(items, 0, 0);
@@ -781,7 +747,14 @@ export function buildSlides(org, rootKey, mode = "clever") {
     const tree = layoutSubordinates(org, key, metrics, fit.visibility, { shrunk: fit.shrunk });
     const dx = SLIDE.width / 2 - tree.anchorX;
     const body = paint(tree.items, dx, TREE_TOP);
-    const shapes = [titleShape(org, key), legendShape(), ...shadeShapes(org, body.filter((item) => item.type === "card")), ...headCard(org, key, tree), ...body];
+    const shapes = [
+      titleShape(org, key),
+      legendShape(),
+      statsShape(org, key),
+      ...shadeShapes(org, body.filter((item) => item.type === "card")),
+      ...headCard(org, key, tree, fit.size),
+      ...body,
+    ];
     const slide = {
       id: sid("slide"),
       rootKey: key,
@@ -816,17 +789,18 @@ export function buildSlides(org, rootKey, mode = "clever") {
     for (const shape of [...slide.shapes]) {
       if (shape.type !== "card" || !shape.collapsed) continue;
       const target = slideOf.get(shape.key);
-      if (target) shape.linkSlide = target;
+      if (!target) continue;
+      shape.linkSlide = target;
       slide.shapes.push({
         id: sid("link"),
         type: "link",
         x: shape.x,
-        y: shape.y + shape.h,
+        y: shape.y + shape.h - 11,
         w: shape.w,
         h: 11,
-        z: 3,
-        text: target ? `See slide ${target}` : "Team folded",
-        target: target || null,
+        z: 4,
+        text: `See slide ${target}`,
+        target,
         key: shape.key,
       });
     }
@@ -841,7 +815,7 @@ export function buildSlides(org, rootKey, mode = "clever") {
         w: 280,
         h: 18,
         z: 4,
-        text: `Up to ${parent.surname} ${parent.name} · slide ${back}`,
+        text: `Up to ${parent.surname} ${moderated(parent.name)} (slide ${back})`,
         target: back,
       });
     }
@@ -881,19 +855,6 @@ export function layoutSingleCard(org, key, metrics, { head = false, x = 80, y = 
       z: 3,
       dotted: true,
       text: org.people.get(person.dottedKey)?.surname || "",
-    });
-  }
-  if (person.termination) {
-    items.push({
-      id: sid("comment"),
-      type: "comment",
-      key,
-      x,
-      y: y + metrics.h,
-      w: metrics.w,
-      h: metrics.commentH,
-      z: 3,
-      text: person.termination,
     });
   }
   return items;
