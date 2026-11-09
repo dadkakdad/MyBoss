@@ -188,6 +188,30 @@ test("the app page is served and private files are not", async () => {
   }
 });
 
+test("the page is rechecked every visit and versioned files can stay cached", async () => {
+  const { server, base } = await start();
+  try {
+    const page = await fetch(base + "/");
+    assert.equal(page.status, 200);
+    assert.match(page.headers.get("cache-control") || "", /no-cache/);
+    const etag = page.headers.get("etag");
+    assert.ok(etag);
+    const again = await fetch(base + "/", { headers: { "if-none-match": etag } });
+    assert.equal(again.status, 304);
+
+    const bundle = await fetch(base + "/app.bundle.js");
+    assert.match(bundle.headers.get("cache-control") || "", /immutable/);
+    const css = await fetch(base + "/css/app.css");
+    assert.match(css.headers.get("cache-control") || "", /immutable/);
+    const icon = await fetch(base + "/icons/icon2.png");
+    assert.match(icon.headers.get("cache-control") || "", /no-cache/);
+    const vendor = await fetch(base + "/node_modules/xlsx/dist/xlsx.full.min.js");
+    assert.match(vendor.headers.get("cache-control") || "", /immutable/);
+  } finally {
+    await stop(server);
+  }
+});
+
 test("slides that are not a list are rejected", async () => {
   const { server, base } = await start();
   try {

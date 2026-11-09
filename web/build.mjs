@@ -28,11 +28,14 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   writeFileSync(join(dir, "app.bundle.js"), out);
   // Stamp the script URL with a content hash so a browser never keeps serving an old bundle.
   const hash = createHash("sha1").update(out).digest("hex").slice(0, 8);
-  const page = readFileSync(join(dir, "index.html"), "utf8");
-  const css = createHash("sha1").update(readFileSync(join(dir, "css", "app.css"))).digest("hex").slice(0, 8);
-  writeFileSync(
-    join(dir, "index.html"),
-    page.replace(/app\.bundle\.js(\?v=\w+)?/, `app.bundle.js?v=${hash}`).replace(/css\/app\.css(\?v=\w+)?/, `css/app.css?v=${css}`),
-  );
+  let page = readFileSync(join(dir, "index.html"), "utf8");
+  const stamped = [
+    ["app\\.bundle\\.js(\\?v=\\w+)?", `app.bundle.js?v=${hash}`],
+    ["css/app\\.css(\\?v=\\w+)?", `css/app.css?v=${createHash("sha1").update(readFileSync(join(dir, "css", "app.css"))).digest("hex").slice(0, 8)}`],
+    ["node_modules/xlsx/dist/xlsx\\.full\\.min\\.js(\\?v=\\w+)?", `node_modules/xlsx/dist/xlsx.full.min.js?v=${createHash("sha1").update(readFileSync(join(dir, "node_modules/xlsx/dist/xlsx.full.min.js"))).digest("hex").slice(0, 8)}`],
+    ["node_modules/pptxgenjs/dist/pptxgen\\.bundle\\.js(\\?v=\\w+)?", `node_modules/pptxgenjs/dist/pptxgen.bundle.js?v=${createHash("sha1").update(readFileSync(join(dir, "node_modules/pptxgenjs/dist/pptxgen.bundle.js"))).digest("hex").slice(0, 8)}`],
+  ];
+  for (const [pattern, next] of stamped) page = page.replace(new RegExp(pattern), next);
+  writeFileSync(join(dir, "index.html"), page);
   console.log(`Wrote app.bundle.js (${Buffer.byteLength(out)} bytes)`);
 }

@@ -159,6 +159,31 @@ const STATIC_TYPES = {
   ".webp": "image/webp",
 };
 
+// The HTML always carries a content hash for these files, so a new deploy is a new URL.
+const FINGERPRINTED = new Set([
+  "app.bundle.js",
+  "css/app.css",
+  "node_modules/xlsx/dist/xlsx.full.min.js",
+  "node_modules/pptxgenjs/dist/pptxgen.bundle.js",
+]);
+
+function cacheControlFor(requested) {
+  if (FINGERPRINTED.has(requested)) return "public, max-age=31536000, immutable";
+  return "no-cache";
+}
+
+function etagFor(info) {
+  return `"${info.size.toString(16)}-${Math.round(info.mtimeMs).toString(16)}"`;
+}
+
+function noneMatch(header, etag) {
+  if (!header) return false;
+  return header.split(",").some((part) => {
+    const value = part.trim().replace(/^W\//, "");
+    return value === "*" || value === etag;
+  });
+}
+
 function staticPath(webRoot, urlPath) {
   let path = urlPath.split("?")[0];
   try {
@@ -184,8 +209,9 @@ function staticPath(webRoot, urlPath) {
   return full;
 }
 
-function serveStatic(res, webRoot, urlPath) {
-  const full = staticPath(webRoot, urlPath);
+function serveStatic(req, res, webRoot, urlPath) {
+  const requested = staticRequest(urlPath);
+  const full = requested && staticPath(webRoot, urlPath);
   if (!full) {
     sendJson(res, 404, { error: "Not found." });
     return;
@@ -196,11 +222,34 @@ function serveStatic(res, webRoot, urlPath) {
         sendJson(res, 404, { error: "Not found." });
         return;
       }
+      const etag = etagFor(info);
+      const cacheControl = cacheControlFor(requested);
+      if (noneMatch(req.headers["if-none-match"], etag)) {
+        res.writeHead(304, { etag, "cache-control": cacheControl });
+        res.end();
+        return;
+      }
       const type = STATIC_TYPES[extname(full)] || "application/octet-stream";
-      res.writeHead(200, { "content-type": type, "content-length": info.size });
+      res.writeHead(200, {
+        "content-type": type,
+        "content-length": info.size,
+        etag,
+        "cache-control": cacheControl,
+      });
       createReadStream(full).pipe(res);
     })
     .catch(() => sendJson(res, 404, { error: "Not found." }));
+}
+
+function staticRequest(urlPath) {
+  let path = urlPath.split("?")[0];
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    return null;
+  }
+  if (path === "/") return "index.html";
+  return path.replace(/^\/+/, "");
 }
 
 async function routeApi(req, res, url, store, now, secure) {
@@ -306,7 +355,7 @@ export function createHandler({ store, webRoot, now = () => new Date(), cookieSe
     const secure = cookieSecure(req);
     const run = url.pathname.startsWith("/api/")
       ? routeApi(req, res, url, store, now(), secure)
-      : Promise.resolve(serveStatic(res, webRoot, url.pathname));
+      : Promise.resolve(serveStatic(req, res, webRoot, url.pathname));
     run.catch((error) => {
       if (res.headersSent) return;
       const status = error.status || 500;
