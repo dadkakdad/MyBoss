@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { gunzipSync } from "node:zlib";
 import http from "node:http";
 import test from "node:test";
 import { hashPassword, verifyPassword } from "../server/auth.mjs";
 import { createHandler } from "../server/app.mjs";
 import { createMemoryStore } from "../server/memory-store.mjs";
 
-function start(store = createMemoryStore()) {
+function start(store = createMemoryStore(), options = {}) {
   const handler = createHandler({
     store,
     webRoot: new URL("..", import.meta.url).pathname,
     cookieSecure: (req) => req.headers["x-forwarded-proto"] === "https",
+    limits: options.limits,
   });
   const server = http.createServer(handler);
   server.listen(0, "127.0.0.1");
@@ -211,6 +213,62 @@ test("the page is rechecked every visit and versioned files can stay cached", as
     await stop(server);
   }
 });
+
+test("script responses are gzipped when the browser asks", async () => {
+  const { server, base } = await start();
+  try {
+    const compressed = await rawGet(base + "/app.bundle.js", { "accept-encoding": "gzip" });
+    assert.equal(compressed.status, 200);
+    assert.equal(compressed.headers["content-encoding"], "gzip");
+    assert.match(gunzipSync(compressed.body).toString("utf8"), /function/);
+    const plain = await rawGet(base + "/app.bundle.js");
+    assert.equal(plain.headers["content-encoding"], undefined);
+  } finally {
+    await stop(server);
+  }
+});
+
+test("pages send browser hardening headers", async () => {
+  const { server, base } = await start();
+  try {
+    const page = await rawGet(base + "/");
+    assert.equal(page.headers["x-content-type-options"], "nosniff");
+    assert.equal(page.headers["x-frame-options"], "DENY");
+    assert.match(page.headers["content-security-policy"], /script-src 'self'/);
+  } finally {
+    await stop(server);
+  }
+});
+
+test("repeated login attempts are refused", async () => {
+  const { server, base } = await start(createMemoryStore(), { limits: { max: 3, windowMs: 60_000 } });
+  try {
+    await send(base, "/api/register", { method: "POST", body: { email: "ada@example.com", password: "correct horse" } });
+    for (let i = 0; i < 3; i += 1) {
+      const wrong = await send(base, "/api/login", { method: "POST", body: { email: "ada@example.com", password: "wrong password" } });
+      assert.equal(wrong.status, 401);
+    }
+    const blocked = await send(base, "/api/login", { method: "POST", body: { email: "ada@example.com", password: "wrong password" } });
+    assert.equal(blocked.status, 429);
+  } finally {
+    await stop(server);
+  }
+});
+
+function rawGet(url, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, { headers }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => resolve({
+        status: response.statusCode,
+        headers: response.headers,
+        body: Buffer.concat(chunks),
+      }));
+    });
+    req.on("error", reject);
+  });
+}
 
 test("slides that are not a list are rejected", async () => {
   const { server, base } = await start();

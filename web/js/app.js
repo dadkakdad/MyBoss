@@ -144,11 +144,49 @@ function selectedPersonKey() {
   return state.personKey;
 }
 
-function readWorkbook(buffer, fileName) {
+const libraryLoads = new Map();
+
+function assetUrl(name) {
+  const node = document.getElementById("myboss-assets");
+  if (!node) return "";
+  try {
+    return JSON.parse(node.textContent)[name] || "";
+  } catch {
+    return "";
+  }
+}
+
+function loadScript(url) {
+  if (!url) return Promise.reject(new Error("A required library is missing."));
+  const existing = libraryLoads.get(url);
+  if (existing) return existing;
+  const loading = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = url;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Could not load a library."));
+    document.head.appendChild(script);
+  });
+  libraryLoads.set(url, loading);
+  return loading;
+}
+
+function ensureXlsx() {
+  if (window.XLSX) return Promise.resolve();
+  return loadScript(assetUrl("xlsx"));
+}
+
+function ensurePptx() {
+  if (window.PptxGenJS) return Promise.resolve();
+  return loadScript(assetUrl("pptx"));
+}
+
+async function readWorkbook(buffer, fileName) {
   if (!/\.(xlsx|xls|xlsm)$/i.test(fileName)) {
     toast("File extension should be .xls, .xlsx, or .xlsm.");
     return;
   }
+  await ensureXlsx();
   const workbook = window.XLSX.read(buffer, { type: "array", cellDates: true });
   state.fileName = fileName;
   state.imported = false;
@@ -1390,6 +1428,7 @@ function exportPng() {
 
 async function exportPptx() {
   try {
+    await ensurePptx();
     const base = (state.fileName || "org-chart").replace(/\.(xlsx|xls|xlsm)$/i, "");
     await deckToPptx(state.org || { people: new Map() }, state.slides, `MyBoss-${base}.pptx`);
   } catch (error) {
@@ -1641,11 +1680,13 @@ function applySheetEdits() {
       : "";
     toast(`Data applied, ${size}.${note}`);
   }
-  rewriteFileBytes();
-  enqueueSave(() => saveWork({ file: true, deck: true })).catch((error) => toast(error.message || "Could not save."));
+  rewriteFileBytes()
+    .then(() => enqueueSave(() => saveWork({ file: true, deck: true })))
+    .catch((error) => toast(error.message || "Could not save."));
 }
 
-function downloadSheetXlsx() {
+async function downloadSheetXlsx() {
+  await ensureXlsx();
   const XLSX = window.XLSX;
   const workbook = XLSX.utils.book_new();
   for (const sheet of state.workbookSheets || []) {
@@ -1741,7 +1782,7 @@ function bind() {
       state.fileBytes = bytes;
       state.workId = null;
       state.saveLabel = "";
-      readWorkbook(bytes, file.name);
+      await readWorkbook(bytes, file.name);
       enqueueSave(() => saveWork({ file: true })).catch((error) => toast(error.message || "Could not save."));
     } catch (error) {
       toast(`Could not read ${file.name}: ${error.message || "not an Excel file"}.`);
@@ -1890,8 +1931,9 @@ function base64ToBytes(value) {
   return out;
 }
 
-function rewriteFileBytes() {
-  if (!window.XLSX || !state.workbookSheets?.length) return;
+async function rewriteFileBytes() {
+  if (!state.workbookSheets?.length) return;
+  await ensureXlsx();
   const workbook = window.XLSX.utils.book_new();
   for (const sheet of state.workbookSheets) {
     window.XLSX.utils.book_append_sheet(
@@ -2044,7 +2086,7 @@ async function openWork(id, { quiet = false } = {}) {
   state.workId = work.id;
   state.saveLabel = "saved";
   try {
-    readWorkbook(state.fileBytes, work.name);
+    await readWorkbook(state.fileBytes, work.name);
     const sheet = state.workbookSheets?.find((item) => item.name === work.sheetName && !item.problem);
     if (sheet) importSheet(sheet.name);
     if (Array.isArray(work.slides) && work.slides.length) {

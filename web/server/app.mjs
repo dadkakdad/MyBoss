@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, sep } from "node:path";
+import { gzipSync } from "node:zlib";
 import {
   hashPassword,
   hashToken,
@@ -17,6 +18,13 @@ const FILE_LIMIT = 8_000_000;
 const JSON_LIMIT = 12_000_000;
 const SLIDES_LIMIT = 4_000_000;
 const COOKIE = "myboss_session";
+const SECURITY_HEADERS = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+  "x-frame-options": "DENY",
+  "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+};
+const gzipped = new Map();
 
 let dummyHash = "";
 
@@ -34,6 +42,7 @@ function httpError(status, message) {
 function sendJson(res, status, body, extraHeaders) {
   const payload = body === undefined ? "" : JSON.stringify(body);
   const headers = {
+    ...SECURITY_HEADERS,
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
     ...extraHeaders,
@@ -209,6 +218,21 @@ function staticPath(webRoot, urlPath) {
   return full;
 }
 
+function wantsGzip(req, type) {
+  const text = type.startsWith("text/") || type.includes("javascript") || type.includes("json") || type.includes("svg");
+  return text && /\bgzip\b/.test(req.headers["accept-encoding"] || "");
+}
+
+function gzipBuffer(full, info, raw) {
+  const key = `${full}\0${info.mtimeMs}\0${info.size}`;
+  let hit = gzipped.get(key);
+  if (!hit) {
+    hit = gzipSync(raw, { level: 6 });
+    gzipped.set(key, hit);
+  }
+  return hit;
+}
+
 function serveStatic(req, res, webRoot, urlPath) {
   const requested = staticRequest(urlPath);
   const full = requested && staticPath(webRoot, urlPath);
@@ -217,26 +241,33 @@ function serveStatic(req, res, webRoot, urlPath) {
     return;
   }
   stat(full)
-    .then((info) => {
+    .then(async (info) => {
       if (!info.isFile()) {
         sendJson(res, 404, { error: "Not found." });
         return;
       }
       const etag = etagFor(info);
       const cacheControl = cacheControlFor(requested);
+      const type = STATIC_TYPES[extname(full)] || "application/octet-stream";
+      const headers = { ...SECURITY_HEADERS, etag, "cache-control": cacheControl, "content-type": type };
       if (noneMatch(req.headers["if-none-match"], etag)) {
-        res.writeHead(304, { etag, "cache-control": cacheControl });
+        res.writeHead(304, headers);
         res.end();
         return;
       }
-      const type = STATIC_TYPES[extname(full)] || "application/octet-stream";
+      if (!wantsGzip(req, type)) {
+        res.writeHead(200, { ...headers, "content-length": info.size });
+        createReadStream(full).pipe(res);
+        return;
+      }
+      const gz = gzipBuffer(full, info, await readFile(full));
       res.writeHead(200, {
-        "content-type": type,
-        "content-length": info.size,
-        etag,
-        "cache-control": cacheControl,
+        ...headers,
+        "content-encoding": "gzip",
+        vary: "accept-encoding",
+        "content-length": gz.length,
       });
-      createReadStream(full).pipe(res);
+      res.end(gz);
     })
     .catch(() => sendJson(res, 404, { error: "Not found." }));
 }
@@ -252,11 +283,12 @@ function staticRequest(urlPath) {
   return path.replace(/^\/+/, "");
 }
 
-async function routeApi(req, res, url, store, now, secure) {
+async function routeApi(req, res, url, store, now, secure, loginLimited) {
   const user = await currentUser(req, store, now);
   const path = url.pathname;
 
   if (req.method === "POST" && (path === "/api/register" || path === "/api/login")) {
+    if (loginLimited(req, now)) throw httpError(429, "Too many attempts. Wait a few minutes and try again.");
     const body = await readJson(req);
     const email = normalizeEmail(body.email);
     const password = String(body.password || "");
@@ -281,6 +313,7 @@ async function routeApi(req, res, url, store, now, secure) {
     const token = readCookie(req, COOKIE);
     if (token) await store.deleteSession(hashToken(token));
     res.writeHead(204, {
+      ...SECURITY_HEADERS,
       "set-cookie": sessionCookie("", { secure, maxAge: 0 }),
       "cache-control": "no-store",
     });
@@ -349,12 +382,37 @@ async function routeApi(req, res, url, store, now, secure) {
   throw httpError(404, "Not found.");
 }
 
-export function createHandler({ store, webRoot, now = () => new Date(), cookieSecure = () => false }) {
+function clientKey(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    const parts = forwarded.split(",").map((part) => part.trim()).filter(Boolean);
+    if (parts.length) return parts[parts.length - 1];
+  }
+  return req.socket?.remoteAddress || "unknown";
+}
+
+function createLoginLimiter({ max = 20, windowMs = 15 * 60 * 1000 } = {}) {
+  const buckets = new Map();
+  return function limited(req, now) {
+    const key = `${req.url || ""} ${clientKey(req)}`;
+    const time = now.getTime();
+    const bucket = buckets.get(key);
+    if (!bucket || bucket.reset <= time) {
+      buckets.set(key, { count: 1, reset: time + windowMs });
+      return false;
+    }
+    bucket.count += 1;
+    return bucket.count > max;
+  };
+}
+
+export function createHandler({ store, webRoot, now = () => new Date(), cookieSecure = () => false, limits } = {}) {
+  const loginLimited = createLoginLimiter(limits);
   return function handler(req, res) {
     const url = new URL(req.url || "/", "http://localhost");
     const secure = cookieSecure(req);
     const run = url.pathname.startsWith("/api/")
-      ? routeApi(req, res, url, store, now(), secure)
+      ? routeApi(req, res, url, store, now(), secure, loginLimited)
       : Promise.resolve(serveStatic(req, res, webRoot, url.pathname));
     run.catch((error) => {
       if (res.headersSent) return;
