@@ -55,6 +55,7 @@ import {
   showCostCenterStamps,
   stickNotes,
 } from "./editor.js";
+import { saveBody, workToReopen } from "./persist.js";
 import {
   blankDraftRow,
   cellText,
@@ -155,11 +156,49 @@ function selectedPersonKey() {
   return state.personKey;
 }
 
-function readWorkbook(buffer, fileName) {
+const libraryLoads = new Map();
+
+function assetUrl(name) {
+  const node = document.getElementById("myboss-assets");
+  if (!node) return "";
+  try {
+    return JSON.parse(node.textContent)[name] || "";
+  } catch {
+    return "";
+  }
+}
+
+function loadScript(url) {
+  if (!url) return Promise.reject(new Error("A required library is missing."));
+  const existing = libraryLoads.get(url);
+  if (existing) return existing;
+  const loading = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = url;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Could not load a library."));
+    document.head.appendChild(script);
+  });
+  libraryLoads.set(url, loading);
+  return loading;
+}
+
+function ensureXlsx() {
+  if (window.XLSX) return Promise.resolve();
+  return loadScript(assetUrl("xlsx"));
+}
+
+function ensurePptx() {
+  if (window.PptxGenJS) return Promise.resolve();
+  return loadScript(assetUrl("pptx"));
+}
+
+async function readWorkbook(buffer, fileName) {
   if (!/\.(xlsx|xls|xlsm)$/i.test(fileName)) {
     toast("File extension should be .xls, .xlsx, or .xlsm.");
     return;
   }
+  await ensureXlsx();
   const workbook = window.XLSX.read(buffer, { type: "array", cellDates: true });
   state.fileName = fileName;
   state.imported = false;
@@ -196,6 +235,7 @@ function autoImport(prefer = "") {
   showImportProblem();
   document.body.dataset.stage = "file";
   render();
+  if (state.hydrating) return;
   toast(
     !sheets.length
       ? "This file has no sheets."
@@ -245,12 +285,13 @@ function importSheet(name = state.sheetName, { checked = false } = {}) {
     state.imported = false;
     document.body.dataset.stage = "file";
     render();
-    toast("This sheet has problems. The chart stays blocked until they are fixed.");
+    if (!state.hydrating) toast("This sheet has problems. The chart stays blocked until they are fixed.");
     return;
   }
   state.imported = true;
   document.body.dataset.stage = "ready";
   render();
+  if (state.hydrating) return;
   const size = state.org.companySize === 1 ? "1 person" : `${state.org.companySize} people`;
   toast(`Imported ${state.sheetName}. CEO ${personFullName(state.org.people.get(state.org.ceo))}, ${size}.`);
 }
@@ -318,6 +359,7 @@ function createDeck(mode) {
   const placed = fresh.length === 1 ? "Added 1 slide in front." : `Added ${fresh.length} slides in front.`;
   const fit = mode === "infinity" ? "" : hidden ? ` ${hidden} team${hidden === 1 ? "" : "s"} folded to fit.` : " Chart fits on one slide.";
   toast(`${placed}${fit}`);
+  scheduleSave();
 }
 
 function hiddenTeams(slide) {
@@ -1552,12 +1594,16 @@ function applyScale() {
   state.frame = frame;
   const scale = baseScale() * state.zoom;
   const holder = $("holder");
-  holder.style.width = `${frame.w * scale}px`;
-  holder.style.height = `${frame.h * scale}px`;
+  const width = `${frame.w * scale}px`;
+  const height = `${frame.h * scale}px`;
+  const transform = `scale(${scale})`;
+  if (holder.style.width === width && holder.style.height === height && $("scaler").style.transform === transform) return;
+  holder.style.width = width;
+  holder.style.height = height;
   const scaler = $("scaler");
   scaler.style.width = `${frame.w}px`;
   scaler.style.height = `${frame.h}px`;
-  scaler.style.transform = `scale(${scale})`;
+  scaler.style.transform = transform;
   const page = $("page");
   page.style.left = `${-frame.x}px`;
   page.style.top = `${-frame.y}px`;
@@ -1626,6 +1672,7 @@ function exportPng() {
 
 async function exportPptx() {
   try {
+    await ensurePptx();
     const base = (state.fileName || "org-chart").replace(/\.(xlsx|xls|xlsm)$/i, "");
     await deckToPptx(state.org || { people: new Map() }, state.slides, `MyBoss-${base}.pptx`);
   } catch (error) {
@@ -1877,11 +1924,13 @@ function applySheetEdits() {
       : "";
     toast(`Data applied, ${size}.${note}`);
   }
-  rewriteFileBytes();
-  enqueueSave(() => saveWork({ file: true, deck: true })).catch((error) => toast(error.message || "Could not save."));
+  rewriteFileBytes()
+    .then(() => enqueueSave(() => saveWork({ file: true, deck: true })))
+    .catch((error) => toast(error.message || "Could not save."));
 }
 
-function downloadSheetXlsx() {
+async function downloadSheetXlsx() {
+  await ensureXlsx();
   const XLSX = window.XLSX;
   const workbook = XLSX.utils.book_new();
   for (const sheet of state.workbookSheets || []) {
@@ -1982,7 +2031,7 @@ function bind() {
       state.fileBytes = bytes;
       state.workId = null;
       state.saveLabel = "";
-      readWorkbook(bytes, file.name);
+      await readWorkbook(bytes, file.name);
       enqueueSave(() => saveWork({ file: true })).catch((error) => toast(error.message || "Could not save."));
     } catch (error) {
       toast(`Could not read ${file.name}: ${error.message || "not an Excel file"}.`);
@@ -2131,6 +2180,9 @@ function bind() {
   window.addEventListener("pointerup", onPointerUp);
   window.addEventListener("keydown", onKey);
   window.addEventListener("resize", applyScale);
+  window.addEventListener("pagehide", flushSave);
+  if (window.ResizeObserver) new ResizeObserver(() => applyScale()).observe($("stage"));
+  requestAnimationFrame(() => applyScale());
 }
 
 function bytesToBase64(bytes) {
@@ -2150,8 +2202,9 @@ function base64ToBytes(value) {
   return out;
 }
 
-function rewriteFileBytes() {
-  if (!window.XLSX || !state.workbookSheets?.length) return;
+async function rewriteFileBytes() {
+  if (!state.workbookSheets?.length) return;
+  await ensureXlsx();
   const workbook = window.XLSX.utils.book_new();
   for (const sheet of state.workbookSheets) {
     window.XLSX.utils.book_append_sheet(
@@ -2175,23 +2228,50 @@ function scheduleSave() {
   clearTimeout(scheduleSave.timer);
   scheduleSave.timer = setTimeout(() => {
     enqueueSave(() => saveWork({ deck: true })).catch((error) => toast(error.message || "Could not save."));
-  }, 800);
+  }, 50);
+}
+
+function flushSave() {
+  clearTimeout(scheduleSave.timer);
+  if (state.hydrating || !state.account) return;
+  if (!state.fileBytes && !state.workId) return;
+  const includeFile = !state.workId;
+  const body = saveBody({
+    workId: state.workId,
+    fileName: state.fileName,
+    fileBase64: includeFile && state.fileBytes ? bytesToBase64(state.fileBytes) : "",
+    sheetName: state.sheetName,
+    slides: state.slides,
+    active: state.active,
+    includeFile,
+  });
+  const json = JSON.stringify(body);
+  if (json.length > 60000) return;
+  const path = state.workId ? `/api/works/${state.workId}` : "/api/works";
+  fetch(path, {
+    method: state.workId ? "PUT" : "POST",
+    credentials: "same-origin",
+    keepalive: true,
+    headers: { "content-type": "application/json" },
+    body: json,
+  }).catch(() => {});
 }
 
 async function saveWork({ file = false, deck = false } = {}) {
   if (!state.account || state.hydrating) return;
   if (!state.fileBytes && !state.workId) return;
-  const body = {};
-  if (file || !state.workId) {
-    if (!state.fileBytes) return;
-    body.name = state.fileName || "workbook.xlsx";
-    body.dataBase64 = bytesToBase64(state.fileBytes);
-  }
-  if (deck || !state.workId) {
-    body.sheetName = state.sheetName || "";
-    body.slides = state.slides;
-    body.active = state.active;
-  }
+  const includeFile = file || !state.workId;
+  if (includeFile && !state.fileBytes) return;
+  const body = saveBody({
+    workId: includeFile ? "" : state.workId,
+    fileName: state.fileName,
+    fileBase64: includeFile ? bytesToBase64(state.fileBytes) : "",
+    sheetName: state.sheetName,
+    slides: deck || !state.workId ? state.slides : undefined,
+    active: state.active,
+    includeFile,
+  });
+  if (!deck && state.workId && !includeFile) return;
   state.saveLabel = "saving";
   renderStatus();
   const path = state.workId ? `/api/works/${state.workId}` : "/api/works";
@@ -2265,7 +2345,7 @@ async function refreshWorkList() {
   }
 }
 
-async function openWork(id) {
+async function openWork(id, { quiet = false } = {}) {
   const response = await fetch(`/api/works/${id}`, { credentials: "same-origin" });
   const work = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -2277,7 +2357,7 @@ async function openWork(id) {
   state.workId = work.id;
   state.saveLabel = "saved";
   try {
-    readWorkbook(state.fileBytes, work.name);
+    await readWorkbook(state.fileBytes, work.name);
     const sheet = state.workbookSheets?.find((item) => item.name === work.sheetName && !item.problem);
     if (sheet) importSheet(sheet.name);
     if (Array.isArray(work.slides) && work.slides.length) {
@@ -2290,7 +2370,17 @@ async function openWork(id) {
   }
   closeAccount();
   render();
-  toast(`Opened ${work.name}`);
+  if (!quiet) toast(`Opened ${work.name}`);
+  return work.name;
+}
+
+async function restoreLatest() {
+  const response = await fetch("/api/works", { credentials: "same-origin" });
+  if (!response.ok) return "";
+  const payload = await response.json().catch(() => ({}));
+  const latest = workToReopen(payload.works);
+  if (!latest) return "";
+  return openWork(latest.id, { quiet: true });
 }
 
 async function submitAccount(path) {
@@ -2311,13 +2401,18 @@ async function submitAccount(path) {
   state.account = { email: payload.email };
   $("account-password").value = "";
   paintAccount();
+  closeAccount();
   try {
-    if (state.fileBytes) await enqueueSave(() => saveWork({ file: true, deck: Boolean(state.slides?.some((slide) => slide.shapes?.length)) }));
+    if (state.fileBytes) {
+      await enqueueSave(() => saveWork({ file: true, deck: true }));
+      toast(`Saved to ${payload.email}`);
+    } else {
+      const restored = await restoreLatest();
+      toast(restored ? `Restored ${restored}` : `Logged in as ${payload.email}`);
+    }
   } catch (error) {
     toast(error.message || "Could not save.");
   }
-  await openAccount();
-  toast(path.endsWith("register") ? `Account created for ${payload.email}` : `Logged in as ${payload.email}`);
 }
 
 async function logoutAccount() {
@@ -2337,6 +2432,8 @@ async function restoreAccount() {
     const me = await response.json();
     state.account = { email: me.email };
     paintAccount();
+    const restored = await restoreLatest();
+    if (restored) toast(`Restored ${restored}`);
   } catch {
     // Opening the page from disk has no account server.
   }

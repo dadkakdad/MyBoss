@@ -4,10 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MyBoss — org charts in the browser</title>
-  <link rel="stylesheet" href="css/app.css?v=7d71f182">
+  <link rel="stylesheet" href="css/app.css?v=8d932604">
 </head>
 <body data-stage="empty">
   <header class="ribbon">
+    <button id="account" type="button">Log in</button>
     <div class="ribbon-tab" id="ribbon">
       <div class="cluster needs-pick">
         <button class="large" id="open-file" type="button"><img src="icons/icon2.png" alt=""><span>Select Excel file</span></button>
@@ -189,7 +190,9 @@
         <div class="holder" id="holder">
           <div class="scaler" id="scaler">
             <div class="page" id="page"></div>
-            <div class="slide" id="slide"></div>
+            <div class="slide" id="slide">
+              <div class="empty-slide"><div><strong>Empty slide</strong>Select an Excel file, then create the chart.</div></div>
+            </div>
           </div>
         </div>
       </div>
@@ -202,7 +205,6 @@
           <button class="mini" id="png" type="button">PNG</button>
           <button class="mini" id="pptx" type="button">PowerPoint</button>
           <button class="mini" id="json" type="button">Project</button>
-          <button class="mini" id="account" type="button">Log in</button>
         </span>
         <span class="zoom">
           <button class="mini" id="zoom-out" type="button">−</button>
@@ -271,8 +273,7 @@
   </div>
   <div class="toast" id="toast" role="status"></div>
 
-  <script src="node_modules/xlsx/dist/xlsx.full.min.js"></script>
-  <script src="node_modules/pptxgenjs/dist/pptxgen.bundle.js"></script>
-  <script src="app.bundle.js?v=48533fb8"></script>
+  <script type="application/json" id="myboss-assets">{"xlsx":"node_modules/xlsx/dist/xlsx.full.min.js?v=7f749f81","pptx":"node_modules/pptxgenjs/dist/pptxgen.bundle.js?v=8b9b814f"}</script>
+  <script src="app.bundle.js?v=e90e979e"></script>
 </body>
 </html>
