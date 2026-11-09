@@ -2867,6 +2867,27 @@ function checkSheet(matrix) {
   return { org: titled, hasTitles: true, problem: sheetProblem(titled) };
 }
 
+// ---- js/persist.js ----
+/** The works list is newest first. Reopen that one after a refresh. */
+function workToReopen(works) {
+  if (!Array.isArray(works) || !works.length) return null;
+  return works[0];
+}
+
+/** File bytes and slides travel together on the first save. Later saves can send slides only. */
+function saveBody({ workId, fileName, fileBase64, sheetName, slides, active, includeFile }) {
+  const body = {
+    sheetName: sheetName || "",
+    active: Number.isInteger(active) && active >= 0 ? active : 0,
+  };
+  if (slides !== undefined) body.slides = Array.isArray(slides) ? slides : [];
+  if (includeFile || !workId) {
+    body.name = fileName || "workbook.xlsx";
+    if (fileBase64) body.dataBase64 = fileBase64;
+  }
+  return body;
+}
+
 // ---- js/app.js ----
 
 const $ = (id) => document.getElementById(id);
@@ -2992,6 +3013,7 @@ function autoImport(prefer = "") {
   showImportProblem();
   document.body.dataset.stage = "file";
   render();
+  if (state.hydrating) return;
   toast(
     !sheets.length
       ? "This file has no sheets."
@@ -3041,12 +3063,13 @@ function importSheet(name = state.sheetName, { checked = false } = {}) {
     state.imported = false;
     document.body.dataset.stage = "file";
     render();
-    toast("This sheet has problems. The chart stays blocked until they are fixed.");
+    if (!state.hydrating) toast("This sheet has problems. The chart stays blocked until they are fixed.");
     return;
   }
   state.imported = true;
   document.body.dataset.stage = "ready";
   render();
+  if (state.hydrating) return;
   const size = state.org.companySize === 1 ? "1 person" : `${state.org.companySize} people`;
   toast(`Imported ${state.sheetName}. CEO ${personFullName(state.org.people.get(state.org.ceo))}, ${size}.`);
 }
@@ -3111,6 +3134,7 @@ function createDeck(mode) {
   const placed = fresh.length === 1 ? "Added 1 slide in front." : `Added ${fresh.length} slides in front.`;
   const fit = mode === "infinity" ? "" : hidden ? ` ${hidden} team${hidden === 1 ? "" : "s"} folded to fit.` : " Chart fits on one slide.";
   toast(`${placed}${fit}`);
+  scheduleSave();
 }
 
 function hiddenTeams(slide) {
@@ -4674,6 +4698,7 @@ function bind() {
   window.addEventListener("pointerup", onPointerUp);
   window.addEventListener("keydown", onKey);
   window.addEventListener("resize", applyScale);
+  window.addEventListener("pagehide", flushSave);
 }
 
 function bytesToBase64(bytes) {
@@ -4718,23 +4743,50 @@ function scheduleSave() {
   clearTimeout(scheduleSave.timer);
   scheduleSave.timer = setTimeout(() => {
     enqueueSave(() => saveWork({ deck: true })).catch((error) => toast(error.message || "Could not save."));
-  }, 800);
+  }, 50);
+}
+
+function flushSave() {
+  clearTimeout(scheduleSave.timer);
+  if (state.hydrating || !state.account) return;
+  if (!state.fileBytes && !state.workId) return;
+  const includeFile = !state.workId;
+  const body = saveBody({
+    workId: state.workId,
+    fileName: state.fileName,
+    fileBase64: includeFile && state.fileBytes ? bytesToBase64(state.fileBytes) : "",
+    sheetName: state.sheetName,
+    slides: state.slides,
+    active: state.active,
+    includeFile,
+  });
+  const json = JSON.stringify(body);
+  if (json.length > 60000) return;
+  const path = state.workId ? `/api/works/${state.workId}` : "/api/works";
+  fetch(path, {
+    method: state.workId ? "PUT" : "POST",
+    credentials: "same-origin",
+    keepalive: true,
+    headers: { "content-type": "application/json" },
+    body: json,
+  }).catch(() => {});
 }
 
 async function saveWork({ file = false, deck = false } = {}) {
   if (!state.account || state.hydrating) return;
   if (!state.fileBytes && !state.workId) return;
-  const body = {};
-  if (file || !state.workId) {
-    if (!state.fileBytes) return;
-    body.name = state.fileName || "workbook.xlsx";
-    body.dataBase64 = bytesToBase64(state.fileBytes);
-  }
-  if (deck || !state.workId) {
-    body.sheetName = state.sheetName || "";
-    body.slides = state.slides;
-    body.active = state.active;
-  }
+  const includeFile = file || !state.workId;
+  if (includeFile && !state.fileBytes) return;
+  const body = saveBody({
+    workId: includeFile ? "" : state.workId,
+    fileName: state.fileName,
+    fileBase64: includeFile ? bytesToBase64(state.fileBytes) : "",
+    sheetName: state.sheetName,
+    slides: deck || !state.workId ? state.slides : undefined,
+    active: state.active,
+    includeFile,
+  });
+  if (!deck && state.workId && !includeFile) return;
   state.saveLabel = "saving";
   renderStatus();
   const path = state.workId ? `/api/works/${state.workId}` : "/api/works";
@@ -4808,7 +4860,7 @@ async function refreshWorkList() {
   }
 }
 
-async function openWork(id) {
+async function openWork(id, { quiet = false } = {}) {
   const response = await fetch(`/api/works/${id}`, { credentials: "same-origin" });
   const work = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -4833,7 +4885,17 @@ async function openWork(id) {
   }
   closeAccount();
   render();
-  toast(`Opened ${work.name}`);
+  if (!quiet) toast(`Opened ${work.name}`);
+  return work.name;
+}
+
+async function restoreLatest() {
+  const response = await fetch("/api/works", { credentials: "same-origin" });
+  if (!response.ok) return "";
+  const payload = await response.json().catch(() => ({}));
+  const latest = workToReopen(payload.works);
+  if (!latest) return "";
+  return openWork(latest.id, { quiet: true });
 }
 
 async function submitAccount(path) {
@@ -4854,13 +4916,18 @@ async function submitAccount(path) {
   state.account = { email: payload.email };
   $("account-password").value = "";
   paintAccount();
+  closeAccount();
   try {
-    if (state.fileBytes) await enqueueSave(() => saveWork({ file: true, deck: Boolean(state.slides?.some((slide) => slide.shapes?.length)) }));
+    if (state.fileBytes) {
+      await enqueueSave(() => saveWork({ file: true, deck: true }));
+      toast(`Saved to ${payload.email}`);
+    } else {
+      const restored = await restoreLatest();
+      toast(restored ? `Restored ${restored}` : `Logged in as ${payload.email}`);
+    }
   } catch (error) {
     toast(error.message || "Could not save.");
   }
-  await openAccount();
-  toast(path.endsWith("register") ? `Account created for ${payload.email}` : `Logged in as ${payload.email}`);
 }
 
 async function logoutAccount() {
@@ -4880,6 +4947,8 @@ async function restoreAccount() {
     const me = await response.json();
     state.account = { email: me.email };
     paintAccount();
+    const restored = await restoreLatest();
+    if (restored) toast(`Restored ${restored}`);
   } catch {
     // Opening the page from disk has no account server.
   }

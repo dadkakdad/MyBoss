@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ORDER = ["org", "layout", "editor", "export", "sheet", "app"];
+const ORDER = ["org", "layout", "editor", "export", "sheet", "persist", "app"];
 
 export function bundle(readModule) {
   const parts = ORDER.map((name) => {
