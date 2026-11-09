@@ -298,19 +298,29 @@ button.tool small, button.tool-wide small {
   overflow: auto;
 }
 
-.holder { position: relative; overflow: visible; }
+.holder {
+  position: relative;
+  overflow: visible;
+  /* Fitted slide before script runs. JS then sets the exact scaled size. */
+  width: min(100%, calc((100dvh - 210px) * 960 / 540));
+  max-height: calc(100dvh - 210px);
+  aspect-ratio: 960 / 540;
+}
 
 .scaler {
   position: absolute;
-  left: 0;
-  top: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   transform-origin: top left;
 }
 
 .page {
   position: absolute;
-  width: 960px;
-  height: 540px;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
   background: white;
   box-shadow: 0 12px 40px rgba(40, 32, 20, 0.18);
   pointer-events: none;
@@ -320,6 +330,8 @@ button.tool small, button.tool-wide small {
   position: absolute;
   left: 0;
   top: 0;
+  width: 100%;
+  height: 100%;
   overflow: visible;
   background: transparent;
   user-select: none;

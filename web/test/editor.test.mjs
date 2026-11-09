@@ -123,6 +123,9 @@ test("the ribbon exposes slide tools and cost centers", () => {
   assert.match(ribbon, /id="account"[^>]*>Log in</);
   const status = html.slice(html.indexOf('<div class="status">'), html.indexOf('<div class="sheet-dialog"'));
   assert.equal(status.includes('id="account"'), false);
+  assert.match(html, /class="empty-slide"/);
+  const css = readFileSync(new URL("../css/app.css", import.meta.url), "utf8");
+  assert.match(css, /\.holder[\s\S]*aspect-ratio:\s*960\s*\/\s*540/);
 });
 
 test("cost-center stamps sit on the card corner and toggle off", () => {

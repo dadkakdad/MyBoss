@@ -4182,12 +4182,16 @@ function applyScale() {
   state.frame = frame;
   const scale = baseScale() * state.zoom;
   const holder = $("holder");
-  holder.style.width = `${frame.w * scale}px`;
-  holder.style.height = `${frame.h * scale}px`;
+  const width = `${frame.w * scale}px`;
+  const height = `${frame.h * scale}px`;
+  const transform = `scale(${scale})`;
+  if (holder.style.width === width && holder.style.height === height && $("scaler").style.transform === transform) return;
+  holder.style.width = width;
+  holder.style.height = height;
   const scaler = $("scaler");
   scaler.style.width = `${frame.w}px`;
   scaler.style.height = `${frame.h}px`;
-  scaler.style.transform = `scale(${scale})`;
+  scaler.style.transform = transform;
   const page = $("page");
   page.style.left = `${-frame.x}px`;
   page.style.top = `${-frame.y}px`;
@@ -4740,6 +4744,8 @@ function bind() {
   window.addEventListener("keydown", onKey);
   window.addEventListener("resize", applyScale);
   window.addEventListener("pagehide", flushSave);
+  if (window.ResizeObserver) new ResizeObserver(() => applyScale()).observe($("stage"));
+  requestAnimationFrame(() => applyScale());
 }
 
 function bytesToBase64(bytes) {
