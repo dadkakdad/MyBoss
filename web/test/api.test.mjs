@@ -188,6 +188,36 @@ test("the app page is served and private files are not", async () => {
   }
 });
 
+test("a card note is stored with the account's slides", async () => {
+  const { server, base } = await start();
+  try {
+    const ada = await send(base, "/api/register", { method: "POST", body: { email: "ada@example.com", password: "correct horse" } });
+    const slides = [{
+      id: "s1",
+      shapes: [
+        { id: "c1", type: "card", key: "olga", x: 10, y: 20, w: 88, h: 42 },
+        { id: "n1", type: "note", key: "olga", text: "Василиса Премудрая?", fill: "#E8891A", x: 26, y: 52, w: 110, h: 28, dx: 16, dy: 32 },
+      ],
+    }];
+    const saved = await send(base, "/api/works", {
+      method: "POST",
+      cookie: cookieOf(ada.token),
+      body: { name: "team.xlsx", dataBase64: Buffer.from("excel-bytes").toString("base64"), sheetName: "Advanced", slides, active: 0 },
+    });
+    assert.equal(saved.status, 201);
+    const opened = await send(base, `/api/works/${saved.json.id}`, { cookie: cookieOf(ada.token) });
+    assert.equal(opened.status, 200);
+    assert.equal(opened.json.slides[0].shapes[1].type, "note");
+    assert.equal(opened.json.slides[0].shapes[1].text, "Василиса Премудрая?");
+    assert.equal(opened.json.slides[0].shapes[1].key, "olga");
+    const grace = await send(base, "/api/register", { method: "POST", body: { email: "grace@example.com", password: "correct horse" } });
+    const hidden = await send(base, `/api/works/${saved.json.id}`, { cookie: cookieOf(grace.token) });
+    assert.equal(hidden.status, 404);
+  } finally {
+    await stop(server);
+  }
+});
+
 test("slides that are not a list are rejected", async () => {
   const { server, base } = await start();
   try {

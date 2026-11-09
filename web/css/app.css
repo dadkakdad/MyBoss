@@ -335,6 +335,65 @@ body[data-tool="scale"] .shape { cursor: nwse-resize; }
 
 .shape.selected { outline: 1.5px solid #c45500; outline-offset: 1px; }
 
+.shape.note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 6px;
+  overflow: hidden;
+  color: #1a1a1a;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  cursor: grab;
+}
+.shape.note.empty { color: rgba(26, 26, 26, 0.55); font-weight: 600; }
+.shape.note textarea {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  resize: none;
+  background: transparent;
+  color: #1a1a1a;
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  outline: none;
+  cursor: text;
+  user-select: text;
+  touch-action: auto;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 132px;
+  margin: 0;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid #c8c2b6;
+  box-shadow: 0 8px 24px rgba(40, 32, 20, 0.18);
+}
+.context-menu[hidden] { display: none; }
+.context-menu button {
+  display: block;
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+}
+.context-menu button:hover { background: #fde7d0; border-color: #f4c28a; }
+
 .card {
   border-radius: 2px;
   overflow: hidden;

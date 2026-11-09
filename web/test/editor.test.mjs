@@ -3,17 +3,24 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { SLIDE } from "../js/layout.js";
 import {
+  anchorNotes,
   boxesIntersect,
+  cardNoteRecords,
   contentFrame,
   costCenterText,
   hideCostCenterStamps,
+  noteBox,
+  noteHeightFor,
+  NOTE_COLORS,
   offsetSlideTargets,
+  placeCardNotes,
   prependCharts,
   removeSlide,
   scaleShapes,
   selectionBounds,
   showCostCenterStamps,
   stampSize,
+  stickNotes,
 } from "../js/editor.js";
 
 function slide(shapes, title = "") {
@@ -182,6 +189,7 @@ test("a slide copies as Markdown: title, statistics, nested structure, data tabl
     { type: "stats", heading: "Department statistics", lines: ["Ada has 2 direct reports", "Team Size – 3 people"], x: 0, y: 0, w: 10, h: 10 },
     { type: "card", key: "ada", person: boss, x: 100, y: 100, w: 80, h: 40, head: true, managerType: "Solid" },
     { type: "card", key: "grace", person: grace, x: 50, y: 200, w: 80, h: 40, managerType: "Solid" },
+    { type: "note", key: "grace", text: "call her", x: 64, y: 230, w: 110, h: 28 },
     { type: "card", key: "ken", person: ken, x: 150, y: 200, w: 80, h: 40, managerType: "Solid" },
     { type: "card", key: "ken", person: ken, x: 60, y: 300, w: 80, h: 40, managerType: "Dotted" },
     { type: "hiddenlist", text: "Hidden – 1 person: Zed Last", x: 0, y: 500, w: 100, h: 10 },
@@ -189,9 +197,74 @@ test("a slide copies as Markdown: title, statistics, nested structure, data tabl
   const md = slideMarkdown({ people: new Map() }, shapes, { number: 1, total: 2 });
   assert.match(md, /^# Ada Lovelace\n_Office_\n\nSlide 1 of 2/);
   assert.match(md, /\*\*Department statistics\*\*\n\n- Ada has 2 direct reports\n- Team Size – 3 people/);
-  assert.match(md, /## Structure\n\n- \*\*Ada Lovelace\*\* — CEO _\(team of 3\)_\n  - \*\*Grace Hopper\*\* — Eng _\(London; newcomer, joins 16.11\)_\n    - \*\*Ken Thompson\*\* — Eng \| Ops _\(dotted line; works until 30.12.2026\)_\n  - \*\*Ken Thompson\*\*/);
+  assert.match(md, /## Structure\n\n- \*\*Ada Lovelace\*\* — CEO _\(team of 3\)_\n  - \*\*Grace Hopper\*\* — Eng _\(London; newcomer, joins 16.11; call her\)_\n    - \*\*Ken Thompson\*\* — Eng \| Ops _\(dotted line; works until 30.12.2026\)_\n  - \*\*Ken Thompson\*\*/);
+  assert.match(md, /\| Grace Hopper \| Eng \| Lab \| London \| Ada Lovelace \| 1 \| newcomer, joins 16.11; call her \|/);
   assert.match(md, /\| Name \| Job \| Department \| Location \| Reports to \| Team \| Notes \|/);
   assert.match(md, /\| Ken Thompson \| Eng \\\| Ops \| Lab \| — \| Grace Hopper \| 1 \| dotted line; works until 30.12.2026 \|/);
   assert.match(md, /> Hidden – 1 person: Zed Last\n$/);
   assert.equal(slideMarkdown({ people: new Map() }, [{ type: "comment", text: "Works until 1 May", x: 0, y: 0, w: 10, h: 10 }]), "Works until 1 May");
+});
+
+test("a note is an orange rectangle on the card, and a second one stacks under it", () => {
+  const card = { id: "c1", type: "card", key: "ada", x: 100, y: 40, w: 80, h: 40 };
+  const first = noteBox(card, 0);
+  const second = noteBox(card, 1);
+  assert.equal(NOTE_COLORS[0], "#E8891A");
+  assert.ok(first.w >= card.w);
+  assert.ok(first.y < card.y + card.h, "overlaps the card");
+  assert.ok(first.y + first.h > card.y + card.h, "hangs below the card");
+  assert.ok(first.x + first.w > card.x + card.w, "hangs to the right");
+  assert.equal(second.x, first.x);
+  assert.ok(second.y >= first.y + first.h);
+  assert.ok(noteHeightFor("one line", first.w) >= 28);
+  assert.ok(noteHeightFor("one\ntwo\nthree\nfour", first.w) > noteHeightFor("one", first.w));
+});
+
+test("notes follow their card, and a dragged note keeps its new offset", () => {
+  const card = { id: "c1", type: "card", key: "ada", x: 10, y: 20, w: 80, h: 40 };
+  const box = noteBox(card, 0);
+  const note = { id: "n1", type: "note", key: "ada", cardId: "c1", text: "hello", ...box };
+  const shapes = [card, note];
+  card.x = 50;
+  card.y = 80;
+  stickNotes(shapes);
+  assert.equal(note.x, 50 + box.dx);
+  assert.equal(note.y, 80 + box.dy);
+
+  note.x += 12;
+  note.y += 3;
+  anchorNotes(shapes, new Set(["n1"]));
+  assert.equal(note.dx, box.dx + 12);
+  assert.equal(note.dy, box.dy + 3);
+  card.x += 5;
+  anchorNotes(shapes, new Set(["c1"]));
+  assert.equal(note.x, card.x + note.dx);
+  assert.equal(note.dx, box.dx + 12);
+});
+
+test("generating a chart stamps the note from the slide you were editing", () => {
+  const older = {
+    shapes: [
+      { id: "c-old", type: "card", key: "ada", x: 0, y: 0, w: 80, h: 40 },
+      { id: "n1", type: "note", key: "ada", text: "old", fill: "#E8891A", dx: 14, dy: 30, w: 110, h: 28, x: 14, y: 30 },
+    ],
+  };
+  const current = {
+    shapes: [
+      { id: "c-now", type: "card", key: "ada", x: 0, y: 0, w: 80, h: 40 },
+      { id: "n1", type: "note", key: "ada", text: "Василиса Премудрая?", fill: "#F6C445", dx: 20, dy: 36, w: 120, h: 32, x: 20, y: 36 },
+    ],
+  };
+  const records = cardNoteRecords([older, current], 1);
+  const fresh = [{ id: "c-new", type: "card", key: "ada", x: 200, y: 100, w: 90, h: 42 }];
+  placeCardNotes(fresh, records);
+  placeCardNotes(fresh, records);
+  const notes = fresh.filter((shape) => shape.type === "note");
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].id, "n1");
+  assert.equal(notes[0].text, "Василиса Премудрая?");
+  assert.equal(notes[0].fill, "#F6C445");
+  assert.equal(notes[0].x, 200 + 20);
+  assert.equal(notes[0].y, 100 + 36);
+  assert.equal(notes[0].cardId, "c-new");
 });

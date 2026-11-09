@@ -231,6 +231,177 @@ function cardNotes(person, card) {
   return notes;
 }
 
+/** Sticky-note colors. The first one is the orange used for a new note. */
+export const NOTE_COLORS = ["#E8891A", "#F6C445", "#F29CA3", "#8FCB9B", "#E7B15A"];
+export const NOTE_MIN_H = 28;
+
+/**
+ * A note sits on the card's lower edge and hangs to the right, like a sticky.
+ * Another note on the same card stacks under the previous one.
+ */
+export function noteBox(card, index = 0) {
+  const cardW = Number(card?.w) || 0;
+  const cardH = Number(card?.h) || 0;
+  const w = Math.max(cardW, 110);
+  const h = NOTE_MIN_H;
+  const dx = Math.round((cardW || w) * 0.18);
+  const dy = cardH - 10 + index * (h + 4);
+  return { w, h, dx, dy, x: (Number(card?.x) || 0) + dx, y: (Number(card?.y) || 0) + dy };
+}
+
+/** Height of a note for its text, so a second line still fits inside the rectangle. */
+export function noteHeightFor(text, width) {
+  const inner = Math.max(20, (Number(width) || 110) - 12);
+  const perLine = Math.max(6, Math.floor(inner / 6.4));
+  const lines = String(text ?? "").split("\n").reduce((count, line) => count + Math.max(1, Math.ceil(line.length / perLine) || 1), 0);
+  return Math.min(120, Math.max(NOTE_MIN_H, (lines || 1) * 14 + 8));
+}
+
+function cardsByKey(shapes) {
+  const map = new Map();
+  for (const shape of shapes || []) {
+    if (shape.type !== "card" || !shape.key) continue;
+    if (!map.has(shape.key)) map.set(shape.key, []);
+    map.get(shape.key).push(shape);
+  }
+  return map;
+}
+
+function cardForNote(cards, note) {
+  const list = cards.get(note.key) || [];
+  if (!list.length) return null;
+  if (note.cardId) {
+    const exact = list.find((card) => card.id === note.cardId);
+    if (exact) return exact;
+  }
+  if (list.length === 1) return list[0];
+  const ax = note.x - (Number.isFinite(note.dx) ? note.dx : 0);
+  const ay = note.y - (Number.isFinite(note.dy) ? note.dy : 0);
+  let best = list[0];
+  let bestDist = Infinity;
+  for (const card of list) {
+    const dist = Math.hypot(card.x - ax, card.y - ay);
+    if (dist < bestDist) {
+      best = card;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+/** Put each note back on its card using the offset stored when it was added or dragged. */
+export function stickNotes(shapes) {
+  const cards = cardsByKey(shapes);
+  for (const shape of shapes || []) {
+    if (shape.type !== "note" || !shape.key) continue;
+    const card = cardForNote(cards, shape);
+    if (!card || !Number.isFinite(shape.dx) || !Number.isFinite(shape.dy)) continue;
+    shape.x = card.x + shape.dx;
+    shape.y = card.y + shape.dy;
+    shape.cardId = card.id;
+  }
+}
+
+/**
+ * While a card is dragged or scaled, its notes follow.
+ * A note that is itself being dragged keeps the new offset from its card.
+ */
+export function anchorNotes(shapes, movingIds) {
+  const cards = cardsByKey(shapes);
+  for (const shape of shapes || []) {
+    if (shape.type !== "note" || !shape.key) continue;
+    const card = cardForNote(cards, shape);
+    if (!card) continue;
+    if (movingIds.has(shape.id)) {
+      shape.dx = shape.x - card.x;
+      shape.dy = shape.y - card.y;
+      shape.cardId = card.id;
+    } else if (movingIds.has(card.id) && Number.isFinite(shape.dx) && Number.isFinite(shape.dy)) {
+      shape.x = card.x + shape.dx;
+      shape.y = card.y + shape.dy;
+      shape.cardId = card.id;
+    }
+  }
+}
+
+/**
+ * Notes already on the deck, one record per id.
+ * The preferred slide wins, so an edit on the slide you are looking at is what the next chart uses.
+ */
+export function cardNoteRecords(slides, preferIndex = 0) {
+  const byId = new Map();
+  const take = (slide) => {
+    for (const shape of slide?.shapes || []) {
+      if (shape?.type !== "note" || !shape.key || !shape.id) continue;
+      byId.set(shape.id, {
+        id: shape.id,
+        key: shape.key,
+        cardId: shape.cardId || "",
+        text: shape.text || "",
+        fill: shape.fill || NOTE_COLORS[0],
+        dx: Number.isFinite(shape.dx) ? shape.dx : 0,
+        dy: Number.isFinite(shape.dy) ? shape.dy : 0,
+        w: shape.w,
+        h: shape.h,
+      });
+    }
+  };
+  (slides || []).forEach((slide, index) => {
+    if (index !== preferIndex) take(slide);
+  });
+  take((slides || [])[preferIndex]);
+  const byKey = new Map();
+  for (const note of byId.values()) {
+    if (!byKey.has(note.key)) byKey.set(note.key, []);
+    byKey.get(note.key).push(note);
+  }
+  return byKey;
+}
+
+/** Stamp saved notes onto the cards of a newly generated slide. The same note id is not added twice. */
+export function placeCardNotes(shapes, records) {
+  const present = new Set();
+  for (const shape of shapes || []) {
+    if (shape.type === "note" && shape.id) present.add(shape.id);
+  }
+  const cards = cardsByKey(shapes);
+  for (const [key, list] of cards) {
+    const card = list[0];
+    for (const note of records?.get(key) || []) {
+      if (present.has(note.id)) continue;
+      present.add(note.id);
+      shapes.push({
+        id: note.id,
+        type: "note",
+        key,
+        cardId: card.id,
+        text: note.text || "",
+        fill: note.fill || NOTE_COLORS[0],
+        dx: note.dx,
+        dy: note.dy,
+        w: note.w,
+        h: note.h,
+        x: card.x + note.dx,
+        y: card.y + note.dy,
+        z: 8,
+      });
+    }
+  }
+}
+
+function userNoteTexts(shapes, key) {
+  const seen = new Set();
+  const texts = [];
+  for (const shape of shapes) {
+    if (shape.type !== "note" || shape.key !== key) continue;
+    const text = String(shape.text || "").trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    texts.push(text);
+  }
+  return texts;
+}
+
 /**
  * The slide as Markdown: title, statistics, the reporting tree as a nested list, and a table with the
  * data behind every card. Built from the cards' own copies of the people, so it matches the slide.
@@ -269,7 +440,7 @@ export function slideMarkdown(org, shapes, meta = {}) {
       const facts = [];
       if (person.location) facts.push(person.location);
       if ((person.stats?.subordinates || 0) > 1) facts.push(`team of ${person.stats.subordinates}`);
-      facts.push(...cardNotes(person, card));
+      facts.push(...cardNotes(person, card), ...userNoteTexts(shapes, person.key));
       const tail = facts.length ? ` _(${facts.join("; ")})_` : "";
       return `${"  ".repeat(depth)}- **${name}**${job ? ` — ${job}` : ""}${tail}`;
     };
@@ -300,7 +471,7 @@ export function slideMarkdown(org, shapes, meta = {}) {
       const name = person.tbh ? "To be hired" : `${moderated(person.surname)} ${moderated(person.name)}`;
       const reports = card.managerType === "Dotted" ? person.dottedName : person.solidName;
       out.push(
-        `| ${[name, moderated(person.job), person.department, person.location, reports, person.stats?.subordinates || 1, cardNotes(person, card).join("; ")].map(mdCell).join(" | ")} |`,
+        `| ${[name, moderated(person.job), person.department, person.location, reports, person.stats?.subordinates || 1, [...cardNotes(person, card), ...userNoteTexts(shapes, person.key)].join("; ")].map(mdCell).join(" | ")} |`,
       );
     }
   }

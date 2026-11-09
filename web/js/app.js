@@ -35,10 +35,16 @@ import {
 } from "./layout.js";
 import { deckToPptx, slideToCanvas } from "./export.js";
 import {
+  anchorNotes,
   boxesIntersect,
+  cardNoteRecords,
   contentFrame,
   hideCostCenterStamps,
+  noteBox,
+  noteHeightFor,
+  NOTE_COLORS,
   offsetSlideTargets,
+  placeCardNotes,
   prependCharts,
   removeSlide,
   scaleShapes,
@@ -46,6 +52,7 @@ import {
   slideMarkdown,
   shapeBox,
   showCostCenterStamps,
+  stickNotes,
 } from "./editor.js";
 import {
   blankDraftRow,
@@ -92,6 +99,9 @@ const state = {
   fileBytes: null,
   saveLabel: "",
   hydrating: false,
+  editingNote: null,
+  noteEditReady: false,
+  noteTargetId: "",
 };
 
 function blankSlide() {
@@ -289,13 +299,16 @@ function metrics() {
 function createDeck(mode) {
   if (!requireOrg()) return;
   const key = $("employee").value || state.org.ceo;
+  const records = cardNoteRecords(state.slides, state.active);
   remember();
   const fresh = buildSlides(state.org, key, mode);
+  for (const slide of fresh) placeCardNotes(slide.shapes, records);
   const deck = { id: nid("deck"), mode, rootKey: key };
   for (const slide of fresh) slide.deck = deck;
   state.slides = prependCharts(state.slides, fresh);
   state.active = 0;
   state.selection.clear();
+  state.editingNote = null;
   state.renaming = null;
   if (state.costCenters) showCostCenterStamps(state.org, state.slides, nid);
   const hidden = hiddenTeams(state.slides[0]);
@@ -327,6 +340,7 @@ function placeCard(head) {
   const x = head ? SLIDE.width / 2 - cardMetrics.w / 2 : 48 + (slide.shapes.length % 5) * 20;
   const y = head ? 96 : 120 + (slide.shapes.length % 4) * 16;
   slide.shapes.push(...layoutSingleCard(state.org, key, cardMetrics, { head, x, y }));
+  stickNotes(slide.shapes);
   if (head && !slide.shapes.some((shape) => shape.type === "title")) {
     slide.shapes.unshift(titleFor(key));
     slide.shapes.push(
@@ -385,6 +399,7 @@ function placeBranch(mode) {
   remember();
   const slide = current();
   slide.shapes = slide.shapes.filter((shape) => {
+    if (shape.type === "note") return true;
     if (["title", "legend", "nav", "stats", "hiddenlist"].includes(shape.type)) return true;
     if (shape.key === key && (shape.type === "card" || shape.type === "bubble" || shape.type === "comment")) return true;
     return false;
@@ -407,6 +422,7 @@ function placeBranch(mode) {
     slide.shapes.push(shape);
   }
   freezeCards(state.org, slide.shapes);
+  stickNotes(slide.shapes);
   render();
 }
 
@@ -610,9 +626,17 @@ function arrange(kind) {
   if (kind === "delete") {
     if (state.selection.size === 0) return;
     remember();
-    const slide = current();
-    slide.shapes = slide.shapes.filter((shape) => !state.selection.has(shape.id));
+    const noteIds = new Set(selectedShapes().filter((shape) => shape.type === "note").map((shape) => shape.id));
+    const slideNow = current();
+    for (const slide of state.slides) {
+      slide.shapes = slide.shapes.filter((shape) => {
+        if (slide === slideNow && state.selection.has(shape.id)) return false;
+        if (shape.type === "note" && noteIds.has(shape.id)) return false;
+        return true;
+      });
+    }
     state.selection.clear();
+    if (noteIds.has(state.editingNote)) state.editingNote = null;
     render();
     return;
   }
@@ -642,6 +666,8 @@ function arrange(kind) {
       shape.y = first + step * index;
     });
   }
+  anchorNotes(current().shapes, new Set(boxes.map((shape) => shape.id)));
+  mirrorNotesFrom(current().shapes);
   render();
 }
 
@@ -650,6 +676,8 @@ function nudge(dx, dy) {
   if (!shapes.length) return;
   remember();
   for (const shape of shapes) moveShape(shape, dx, dy);
+  anchorNotes(current().shapes, new Set(shapes.map((shape) => shape.id)));
+  mirrorNotesFrom(current().shapes);
   render();
 }
 
@@ -824,8 +852,9 @@ function selectionFrame(bounds) {
 }
 
 function renderShape(shape) {
-  const node = document.createElement("button");
-  node.type = "button";
+  const editing = shape.type === "note" && state.editingNote === shape.id;
+  const node = editing ? document.createElement("div") : document.createElement("button");
+  if (!editing) node.type = "button";
   node.className = `shape ${shape.type}`;
   node.dataset.id = shape.id;
   node.style.left = `${viewX(shape.x)}px`;
@@ -888,6 +917,49 @@ function renderShape(shape) {
       node.style.background = LINK_STYLE.fill;
       node.style.color = LINK_STYLE.color;
     }
+  } else if (shape.type === "note") {
+    node.style.background = shape.fill || NOTE_COLORS[0];
+    if (editing) {
+      const input = document.createElement("textarea");
+      input.className = "note-input";
+      input.value = shape.text || "";
+      input.placeholder = "Note";
+      input.setAttribute("aria-label", "Note");
+      input.addEventListener("pointerdown", (event) => event.stopPropagation());
+      input.addEventListener("input", () => onNoteInput(shape, input.value, node));
+      input.addEventListener("blur", () => {
+        if (state.editingNote !== shape.id) return;
+        state.editingNote = null;
+        // Rebuild after the click that left the note, unless that click is still dragging.
+        setTimeout(() => {
+          if (pointer.id != null || state.editingNote) return;
+          render();
+        }, 0);
+      });
+      input.addEventListener("keydown", (event) => {
+        event.stopPropagation();
+        if (event.key === "Escape") {
+          event.preventDefault();
+          state.editingNote = null;
+          render();
+        }
+      });
+      node.appendChild(input);
+      queueMicrotask(() => {
+        input.focus();
+        const end = input.value.length;
+        input.setSelectionRange(end, end);
+      });
+    } else {
+      node.textContent = shape.text || "Note";
+      node.classList.toggle("empty", !shape.text);
+      node.setAttribute("aria-label", shape.text ? `Note: ${shape.text}` : "Empty note");
+      node.addEventListener("dblclick", (event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        beginNoteEdit(shape);
+      });
+    }
   }
 
   node.addEventListener("pointerdown", (event) => startPointer(event, shape));
@@ -905,6 +977,128 @@ function renderShape(shape) {
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+}
+
+function beginNoteEdit(shape) {
+  state.editingNote = shape.id;
+  state.noteEditReady = false;
+  state.selection.clear();
+  state.selection.add(shape.id);
+  render();
+}
+
+function onNoteInput(shape, value, node) {
+  if (!state.noteEditReady) {
+    remember();
+    state.noteEditReady = true;
+  }
+  const height = noteHeightFor(value, shape.w);
+  for (const slide of state.slides) {
+    for (const item of slide.shapes) {
+      if (item.type !== "note" || item.id !== shape.id) continue;
+      item.text = value;
+      item.h = height;
+    }
+  }
+  node.style.height = `${height}px`;
+  scheduleSave();
+}
+
+/** Keep the same note, on every slide it was copied to, in step with the one being edited. */
+function mirrorNotesFrom(shapes) {
+  const notes = (shapes || []).filter((shape) => shape.type === "note" && shape.id);
+  if (!notes.length) return;
+  for (const slide of state.slides) {
+    if (slide.shapes === shapes) continue;
+    let touched = false;
+    for (const source of notes) {
+      for (const shape of slide.shapes) {
+        if (shape.type !== "note" || shape.id !== source.id) continue;
+        shape.text = source.text;
+        shape.fill = source.fill;
+        shape.dx = source.dx;
+        shape.dy = source.dy;
+        shape.w = source.w;
+        shape.h = source.h;
+        touched = true;
+      }
+    }
+    if (touched) stickNotes(slide.shapes);
+  }
+}
+
+function addCardNote(card) {
+  const slide = current();
+  if (!slide || !card) return;
+  remember();
+  const index = slide.shapes.filter((shape) => {
+    if (shape.type !== "note") return false;
+    if (shape.cardId) return shape.cardId === card.id;
+    return Boolean(shape.key && shape.key === card.key);
+  }).length;
+  const box = noteBox(card, index);
+  const note = {
+    id: nid("note"),
+    type: "note",
+    key: card.key || "",
+    cardId: card.id,
+    text: "",
+    fill: NOTE_COLORS[index % NOTE_COLORS.length],
+    z: 8,
+    ...box,
+  };
+  slide.shapes.push(note);
+  state.selection.clear();
+  state.selection.add(note.id);
+  state.editingNote = note.id;
+  state.noteEditReady = false;
+  render();
+}
+
+function noteCardFor(shape) {
+  const slide = current();
+  if (!slide) return null;
+  if (shape?.type === "card") return shape;
+  if (shape?.type === "note") {
+    const linked = slide.shapes.find((item) => item.type === "card" && (item.id === shape.cardId || (shape.key && item.key === shape.key)));
+    if (linked) return linked;
+  }
+  return slide.shapes.find((item) => state.selection.has(item.id) && item.type === "card") || null;
+}
+
+function closeContextMenu() {
+  const menu = $("context-menu");
+  if (menu) menu.hidden = true;
+}
+
+function openContextMenu(card, x, y) {
+  document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open"));
+  state.noteTargetId = card.id;
+  const menu = $("context-menu");
+  menu.hidden = false;
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth - 4) menu.style.left = `${Math.max(4, x - rect.width)}px`;
+  if (rect.bottom > window.innerHeight - 4) menu.style.top = `${Math.max(4, y - rect.height)}px`;
+}
+
+function onSlideContextMenu(event) {
+  const slide = current();
+  if (!slide) return;
+  const host = event.target.closest?.("[data-id]");
+  const shape = host ? slide.shapes.find((item) => item.id === host.dataset.id) : null;
+  if (shape?.type === "card" && !state.selection.has(shape.id)) {
+    state.selection.clear();
+    selectGroup(shape, false);
+    if (shape.key) focusPerson(shape.key);
+    state.editingNote = null;
+    render();
+  }
+  const card = noteCardFor(shape);
+  if (!card) return;
+  event.preventDefault();
+  openContextMenu(card, event.clientX, event.clientY);
 }
 
 function focusPerson(key) {
@@ -930,6 +1124,8 @@ function localPoint(event) {
 
 function startPointer(event, shape) {
   event.stopPropagation();
+  if (event.button !== 0) return;
+  if (state.editingNote && state.editingNote !== shape?.id) state.editingNote = null;
   if (state.tool === "select") {
     beginMarquee(event, shape);
     return;
@@ -948,7 +1144,7 @@ function startPointer(event, shape) {
   pointer.shape = shape;
   pointer.scale = null;
   if (shape && !state.selection.has(shape.id)) selectGroup(shape, event.shiftKey);
-  if (shape?.type === "card" && shape.key) focusPerson(shape.key);
+  if ((shape?.type === "card" || shape?.type === "note") && shape.key) focusPerson(shape.key);
   else if (shape && event.shiftKey) {
     state.selection.delete(shape.id);
     pointer.shape = null;
@@ -1009,6 +1205,7 @@ function beginScale(event, mode) {
 }
 
 function onHolderPointerDown(event) {
+  if (event.button !== 0) return;
   if (event.target.closest?.(".shape, .scale-handle, .wires line")) return;
   if (state.tool === "scale") return;
   beginMarquee(event, null);
@@ -1056,6 +1253,8 @@ function applyScaleGesture(point) {
     }
     paintShape(shape);
   });
+  anchorNotes(current().shapes, new Set(gesture.live.map((shape) => shape.id)));
+  for (const shape of current().shapes) if (shape.type === "note") paintShape(shape);
   const frame = $("slide").querySelector(".selection-frame");
   const bounds = selectionBounds(gesture.live);
   if (frame && bounds) {
@@ -1096,9 +1295,11 @@ function onPointerMove(event) {
   const slide = current();
   const moving = slide.shapes.filter((shape) => state.selection.has(shape.id));
   for (const shape of moving) moveShape(shape, dx, dy);
+  anchorNotes(slide.shapes, new Set(moving.map((shape) => shape.id)));
   pointer.x = point.x;
   pointer.y = point.y;
   for (const shape of moving) paintShape(shape);
+  for (const shape of slide.shapes) if (shape.type === "note") paintShape(shape);
   const frame = $("slide").querySelector(".selection-frame");
   const bounds = selectionBounds(moving);
   if (frame && bounds) {
@@ -1125,6 +1326,7 @@ function marqueeRect() {
 
 function onPointerUp(event) {
   if (pointer.id !== event.pointerId) return;
+  const moved = pointer.moved;
   if (pointer.marquee) {
     if (pointer.moved) {
       const rect = marqueeRect();
@@ -1144,6 +1346,7 @@ function onPointerUp(event) {
     } else if (!pointer.marqueeAdditive) {
       state.selection.clear();
     }
+    if (state.editingNote && !state.selection.has(state.editingNote)) state.editingNote = null;
     pointer.marquee.remove();
     pointer.marquee = null;
     pointer.marqueeShape = null;
@@ -1151,7 +1354,10 @@ function onPointerUp(event) {
   } else if (pointer.scale) {
     pointer.scale = null;
     render();
+  } else if (!moved && pointer.shape?.type === "note" && state.editingNote !== pointer.shape.id && state.tool === "move") {
+    beginNoteEdit(pointer.shape);
   }
+  if (moved) mirrorNotesFrom(current()?.shapes || []);
   pointer.id = null;
   pointer.shape = null;
 }
@@ -1703,6 +1909,11 @@ function onKey(event) {
     event.preventDefault();
     arrange("delete");
   } else if (event.key === "Escape") {
+    if (!$("context-menu").hidden) {
+      closeContextMenu();
+      return;
+    }
+    state.editingNote = null;
     state.selection.clear();
     render();
   } else if (event.key === "ArrowLeft") nudge(event.shiftKey ? -10 : -1, 0);
@@ -1761,7 +1972,17 @@ function bind() {
   $("reports-more").addEventListener("click", (event) => toggleMenu("menu-reports", event));
   $("elements-main").addEventListener("click", (event) => toggleMenu("menu-elements", event));
   $("arrange-main").addEventListener("click", (event) => toggleMenu("menu-arrange", event));
-  document.addEventListener("click", () => document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open")));
+  document.addEventListener("click", () => {
+    document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open"));
+    closeContextMenu();
+  });
+  $("context-add-note").addEventListener("click", (event) => {
+    event.stopPropagation();
+    const card = current()?.shapes.find((shape) => shape.id === state.noteTargetId && shape.type === "card");
+    closeContextMenu();
+    if (card) addCardNote(card);
+  });
+  $("slide").addEventListener("contextmenu", onSlideContextMenu);
   $("sheet").addEventListener("change", () => {
     const sheet = sheetByName($("sheet").value);
     if (!sheet) return;

@@ -2039,6 +2039,177 @@ function cardNotes(person, card) {
   return notes;
 }
 
+/** Sticky-note colors. The first one is the orange used for a new note. */
+const NOTE_COLORS = ["#E8891A", "#F6C445", "#F29CA3", "#8FCB9B", "#E7B15A"];
+const NOTE_MIN_H = 28;
+
+/**
+ * A note sits on the card's lower edge and hangs to the right, like a sticky.
+ * Another note on the same card stacks under the previous one.
+ */
+function noteBox(card, index = 0) {
+  const cardW = Number(card?.w) || 0;
+  const cardH = Number(card?.h) || 0;
+  const w = Math.max(cardW, 110);
+  const h = NOTE_MIN_H;
+  const dx = Math.round((cardW || w) * 0.18);
+  const dy = cardH - 10 + index * (h + 4);
+  return { w, h, dx, dy, x: (Number(card?.x) || 0) + dx, y: (Number(card?.y) || 0) + dy };
+}
+
+/** Height of a note for its text, so a second line still fits inside the rectangle. */
+function noteHeightFor(text, width) {
+  const inner = Math.max(20, (Number(width) || 110) - 12);
+  const perLine = Math.max(6, Math.floor(inner / 6.4));
+  const lines = String(text ?? "").split("\n").reduce((count, line) => count + Math.max(1, Math.ceil(line.length / perLine) || 1), 0);
+  return Math.min(120, Math.max(NOTE_MIN_H, (lines || 1) * 14 + 8));
+}
+
+function cardsByKey(shapes) {
+  const map = new Map();
+  for (const shape of shapes || []) {
+    if (shape.type !== "card" || !shape.key) continue;
+    if (!map.has(shape.key)) map.set(shape.key, []);
+    map.get(shape.key).push(shape);
+  }
+  return map;
+}
+
+function cardForNote(cards, note) {
+  const list = cards.get(note.key) || [];
+  if (!list.length) return null;
+  if (note.cardId) {
+    const exact = list.find((card) => card.id === note.cardId);
+    if (exact) return exact;
+  }
+  if (list.length === 1) return list[0];
+  const ax = note.x - (Number.isFinite(note.dx) ? note.dx : 0);
+  const ay = note.y - (Number.isFinite(note.dy) ? note.dy : 0);
+  let best = list[0];
+  let bestDist = Infinity;
+  for (const card of list) {
+    const dist = Math.hypot(card.x - ax, card.y - ay);
+    if (dist < bestDist) {
+      best = card;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+/** Put each note back on its card using the offset stored when it was added or dragged. */
+function stickNotes(shapes) {
+  const cards = cardsByKey(shapes);
+  for (const shape of shapes || []) {
+    if (shape.type !== "note" || !shape.key) continue;
+    const card = cardForNote(cards, shape);
+    if (!card || !Number.isFinite(shape.dx) || !Number.isFinite(shape.dy)) continue;
+    shape.x = card.x + shape.dx;
+    shape.y = card.y + shape.dy;
+    shape.cardId = card.id;
+  }
+}
+
+/**
+ * While a card is dragged or scaled, its notes follow.
+ * A note that is itself being dragged keeps the new offset from its card.
+ */
+function anchorNotes(shapes, movingIds) {
+  const cards = cardsByKey(shapes);
+  for (const shape of shapes || []) {
+    if (shape.type !== "note" || !shape.key) continue;
+    const card = cardForNote(cards, shape);
+    if (!card) continue;
+    if (movingIds.has(shape.id)) {
+      shape.dx = shape.x - card.x;
+      shape.dy = shape.y - card.y;
+      shape.cardId = card.id;
+    } else if (movingIds.has(card.id) && Number.isFinite(shape.dx) && Number.isFinite(shape.dy)) {
+      shape.x = card.x + shape.dx;
+      shape.y = card.y + shape.dy;
+      shape.cardId = card.id;
+    }
+  }
+}
+
+/**
+ * Notes already on the deck, one record per id.
+ * The preferred slide wins, so an edit on the slide you are looking at is what the next chart uses.
+ */
+function cardNoteRecords(slides, preferIndex = 0) {
+  const byId = new Map();
+  const take = (slide) => {
+    for (const shape of slide?.shapes || []) {
+      if (shape?.type !== "note" || !shape.key || !shape.id) continue;
+      byId.set(shape.id, {
+        id: shape.id,
+        key: shape.key,
+        cardId: shape.cardId || "",
+        text: shape.text || "",
+        fill: shape.fill || NOTE_COLORS[0],
+        dx: Number.isFinite(shape.dx) ? shape.dx : 0,
+        dy: Number.isFinite(shape.dy) ? shape.dy : 0,
+        w: shape.w,
+        h: shape.h,
+      });
+    }
+  };
+  (slides || []).forEach((slide, index) => {
+    if (index !== preferIndex) take(slide);
+  });
+  take((slides || [])[preferIndex]);
+  const byKey = new Map();
+  for (const note of byId.values()) {
+    if (!byKey.has(note.key)) byKey.set(note.key, []);
+    byKey.get(note.key).push(note);
+  }
+  return byKey;
+}
+
+/** Stamp saved notes onto the cards of a newly generated slide. The same note id is not added twice. */
+function placeCardNotes(shapes, records) {
+  const present = new Set();
+  for (const shape of shapes || []) {
+    if (shape.type === "note" && shape.id) present.add(shape.id);
+  }
+  const cards = cardsByKey(shapes);
+  for (const [key, list] of cards) {
+    const card = list[0];
+    for (const note of records?.get(key) || []) {
+      if (present.has(note.id)) continue;
+      present.add(note.id);
+      shapes.push({
+        id: note.id,
+        type: "note",
+        key,
+        cardId: card.id,
+        text: note.text || "",
+        fill: note.fill || NOTE_COLORS[0],
+        dx: note.dx,
+        dy: note.dy,
+        w: note.w,
+        h: note.h,
+        x: card.x + note.dx,
+        y: card.y + note.dy,
+        z: 8,
+      });
+    }
+  }
+}
+
+function userNoteTexts(shapes, key) {
+  const seen = new Set();
+  const texts = [];
+  for (const shape of shapes) {
+    if (shape.type !== "note" || shape.key !== key) continue;
+    const text = String(shape.text || "").trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    texts.push(text);
+  }
+  return texts;
+}
+
 /**
  * The slide as Markdown: title, statistics, the reporting tree as a nested list, and a table with the
  * data behind every card. Built from the cards' own copies of the people, so it matches the slide.
@@ -2077,7 +2248,7 @@ function slideMarkdown(org, shapes, meta = {}) {
       const facts = [];
       if (person.location) facts.push(person.location);
       if ((person.stats?.subordinates || 0) > 1) facts.push(`team of ${person.stats.subordinates}`);
-      facts.push(...cardNotes(person, card));
+      facts.push(...cardNotes(person, card), ...userNoteTexts(shapes, person.key));
       const tail = facts.length ? ` _(${facts.join("; ")})_` : "";
       return `${"  ".repeat(depth)}- **${name}**${job ? ` — ${job}` : ""}${tail}`;
     };
@@ -2108,7 +2279,7 @@ function slideMarkdown(org, shapes, meta = {}) {
       const name = person.tbh ? "To be hired" : `${moderated(person.surname)} ${moderated(person.name)}`;
       const reports = card.managerType === "Dotted" ? person.dottedName : person.solidName;
       out.push(
-        `| ${[name, moderated(person.job), person.department, person.location, reports, person.stats?.subordinates || 1, cardNotes(person, card).join("; ")].map(mdCell).join(" | ")} |`,
+        `| ${[name, moderated(person.job), person.department, person.location, reports, person.stats?.subordinates || 1, [...cardNotes(person, card), ...userNoteTexts(shapes, person.key)].join("; ")].map(mdCell).join(" | ")} |`,
       );
     }
   }
@@ -2309,6 +2480,21 @@ function drawShape(ctx, org, shape) {
     ctx.fillText(text, shape.x, shape.y + shape.h / 2);
     const width = ctx.measureText(text).width;
     ctx.fillRect(shape.x, shape.y + shape.h / 2 + 6, width, 0.8);
+    ctx.textBaseline = "alphabetic";
+    return;
+  }
+  if (shape.type === "note") {
+    ctx.fillStyle = shape.fill || "#E8891A";
+    ctx.fillRect(shape.x, shape.y, shape.w, shape.h);
+    ctx.fillStyle = "#1A1A1A";
+    ctx.font = "bold 11px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const lines = wrapLines(ctx, shape.text || "", Math.max(8, shape.w - 10), Math.max(1, Math.floor((shape.h - 6) / 13)));
+    const step = 13;
+    const top = shape.y + shape.h / 2 - ((lines.length - 1) * step) / 2;
+    lines.forEach((line, index) => ctx.fillText(line, shape.x + shape.w / 2, top + index * step));
+    ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     return;
   }
@@ -2745,6 +2931,24 @@ async function deckToPptx(org, slides, fileName) {
         });
         continue;
       }
+      if (shape.type === "note") {
+        slide.addText(shape.text || "", {
+          x: inches(shape.x),
+          y: inches(shape.y),
+          w: inches(Math.max(shape.w, 8)),
+          h: inches(Math.max(shape.h, 8)),
+          fontFace: "Arial",
+          fontSize: 11,
+          bold: true,
+          color: "1A1A1A",
+          fill: { color: String(shape.fill || "#E8891A").replace("#", "") },
+          align: "center",
+          valign: "middle",
+          wrap: true,
+          margin: 2,
+        });
+        continue;
+      }
       if (shape.type === "link" || shape.type === "nav" || shape.type === "bubble" || shape.type === "comment") {
         const link = shape.type === "link";
         slide.addText(shape.text || "", {
@@ -2900,6 +3104,9 @@ const state = {
   fileBytes: null,
   saveLabel: "",
   hydrating: false,
+  editingNote: null,
+  noteEditReady: false,
+  noteTargetId: "",
 };
 
 function blankSlide() {
@@ -3097,13 +3304,16 @@ function metrics() {
 function createDeck(mode) {
   if (!requireOrg()) return;
   const key = $("employee").value || state.org.ceo;
+  const records = cardNoteRecords(state.slides, state.active);
   remember();
   const fresh = buildSlides(state.org, key, mode);
+  for (const slide of fresh) placeCardNotes(slide.shapes, records);
   const deck = { id: nid("deck"), mode, rootKey: key };
   for (const slide of fresh) slide.deck = deck;
   state.slides = prependCharts(state.slides, fresh);
   state.active = 0;
   state.selection.clear();
+  state.editingNote = null;
   state.renaming = null;
   if (state.costCenters) showCostCenterStamps(state.org, state.slides, nid);
   const hidden = hiddenTeams(state.slides[0]);
@@ -3135,6 +3345,7 @@ function placeCard(head) {
   const x = head ? SLIDE.width / 2 - cardMetrics.w / 2 : 48 + (slide.shapes.length % 5) * 20;
   const y = head ? 96 : 120 + (slide.shapes.length % 4) * 16;
   slide.shapes.push(...layoutSingleCard(state.org, key, cardMetrics, { head, x, y }));
+  stickNotes(slide.shapes);
   if (head && !slide.shapes.some((shape) => shape.type === "title")) {
     slide.shapes.unshift(titleFor(key));
     slide.shapes.push(
@@ -3193,6 +3404,7 @@ function placeBranch(mode) {
   remember();
   const slide = current();
   slide.shapes = slide.shapes.filter((shape) => {
+    if (shape.type === "note") return true;
     if (["title", "legend", "nav", "stats", "hiddenlist"].includes(shape.type)) return true;
     if (shape.key === key && (shape.type === "card" || shape.type === "bubble" || shape.type === "comment")) return true;
     return false;
@@ -3215,6 +3427,7 @@ function placeBranch(mode) {
     slide.shapes.push(shape);
   }
   freezeCards(state.org, slide.shapes);
+  stickNotes(slide.shapes);
   render();
 }
 
@@ -3418,9 +3631,17 @@ function arrange(kind) {
   if (kind === "delete") {
     if (state.selection.size === 0) return;
     remember();
-    const slide = current();
-    slide.shapes = slide.shapes.filter((shape) => !state.selection.has(shape.id));
+    const noteIds = new Set(selectedShapes().filter((shape) => shape.type === "note").map((shape) => shape.id));
+    const slideNow = current();
+    for (const slide of state.slides) {
+      slide.shapes = slide.shapes.filter((shape) => {
+        if (slide === slideNow && state.selection.has(shape.id)) return false;
+        if (shape.type === "note" && noteIds.has(shape.id)) return false;
+        return true;
+      });
+    }
     state.selection.clear();
+    if (noteIds.has(state.editingNote)) state.editingNote = null;
     render();
     return;
   }
@@ -3450,6 +3671,8 @@ function arrange(kind) {
       shape.y = first + step * index;
     });
   }
+  anchorNotes(current().shapes, new Set(boxes.map((shape) => shape.id)));
+  mirrorNotesFrom(current().shapes);
   render();
 }
 
@@ -3458,6 +3681,8 @@ function nudge(dx, dy) {
   if (!shapes.length) return;
   remember();
   for (const shape of shapes) moveShape(shape, dx, dy);
+  anchorNotes(current().shapes, new Set(shapes.map((shape) => shape.id)));
+  mirrorNotesFrom(current().shapes);
   render();
 }
 
@@ -3632,8 +3857,9 @@ function selectionFrame(bounds) {
 }
 
 function renderShape(shape) {
-  const node = document.createElement("button");
-  node.type = "button";
+  const editing = shape.type === "note" && state.editingNote === shape.id;
+  const node = editing ? document.createElement("div") : document.createElement("button");
+  if (!editing) node.type = "button";
   node.className = `shape ${shape.type}`;
   node.dataset.id = shape.id;
   node.style.left = `${viewX(shape.x)}px`;
@@ -3696,6 +3922,49 @@ function renderShape(shape) {
       node.style.background = LINK_STYLE.fill;
       node.style.color = LINK_STYLE.color;
     }
+  } else if (shape.type === "note") {
+    node.style.background = shape.fill || NOTE_COLORS[0];
+    if (editing) {
+      const input = document.createElement("textarea");
+      input.className = "note-input";
+      input.value = shape.text || "";
+      input.placeholder = "Note";
+      input.setAttribute("aria-label", "Note");
+      input.addEventListener("pointerdown", (event) => event.stopPropagation());
+      input.addEventListener("input", () => onNoteInput(shape, input.value, node));
+      input.addEventListener("blur", () => {
+        if (state.editingNote !== shape.id) return;
+        state.editingNote = null;
+        // Rebuild after the click that left the note, unless that click is still dragging.
+        setTimeout(() => {
+          if (pointer.id != null || state.editingNote) return;
+          render();
+        }, 0);
+      });
+      input.addEventListener("keydown", (event) => {
+        event.stopPropagation();
+        if (event.key === "Escape") {
+          event.preventDefault();
+          state.editingNote = null;
+          render();
+        }
+      });
+      node.appendChild(input);
+      queueMicrotask(() => {
+        input.focus();
+        const end = input.value.length;
+        input.setSelectionRange(end, end);
+      });
+    } else {
+      node.textContent = shape.text || "Note";
+      node.classList.toggle("empty", !shape.text);
+      node.setAttribute("aria-label", shape.text ? `Note: ${shape.text}` : "Empty note");
+      node.addEventListener("dblclick", (event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        beginNoteEdit(shape);
+      });
+    }
   }
 
   node.addEventListener("pointerdown", (event) => startPointer(event, shape));
@@ -3713,6 +3982,128 @@ function renderShape(shape) {
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+}
+
+function beginNoteEdit(shape) {
+  state.editingNote = shape.id;
+  state.noteEditReady = false;
+  state.selection.clear();
+  state.selection.add(shape.id);
+  render();
+}
+
+function onNoteInput(shape, value, node) {
+  if (!state.noteEditReady) {
+    remember();
+    state.noteEditReady = true;
+  }
+  const height = noteHeightFor(value, shape.w);
+  for (const slide of state.slides) {
+    for (const item of slide.shapes) {
+      if (item.type !== "note" || item.id !== shape.id) continue;
+      item.text = value;
+      item.h = height;
+    }
+  }
+  node.style.height = `${height}px`;
+  scheduleSave();
+}
+
+/** Keep the same note, on every slide it was copied to, in step with the one being edited. */
+function mirrorNotesFrom(shapes) {
+  const notes = (shapes || []).filter((shape) => shape.type === "note" && shape.id);
+  if (!notes.length) return;
+  for (const slide of state.slides) {
+    if (slide.shapes === shapes) continue;
+    let touched = false;
+    for (const source of notes) {
+      for (const shape of slide.shapes) {
+        if (shape.type !== "note" || shape.id !== source.id) continue;
+        shape.text = source.text;
+        shape.fill = source.fill;
+        shape.dx = source.dx;
+        shape.dy = source.dy;
+        shape.w = source.w;
+        shape.h = source.h;
+        touched = true;
+      }
+    }
+    if (touched) stickNotes(slide.shapes);
+  }
+}
+
+function addCardNote(card) {
+  const slide = current();
+  if (!slide || !card) return;
+  remember();
+  const index = slide.shapes.filter((shape) => {
+    if (shape.type !== "note") return false;
+    if (shape.cardId) return shape.cardId === card.id;
+    return Boolean(shape.key && shape.key === card.key);
+  }).length;
+  const box = noteBox(card, index);
+  const note = {
+    id: nid("note"),
+    type: "note",
+    key: card.key || "",
+    cardId: card.id,
+    text: "",
+    fill: NOTE_COLORS[index % NOTE_COLORS.length],
+    z: 8,
+    ...box,
+  };
+  slide.shapes.push(note);
+  state.selection.clear();
+  state.selection.add(note.id);
+  state.editingNote = note.id;
+  state.noteEditReady = false;
+  render();
+}
+
+function noteCardFor(shape) {
+  const slide = current();
+  if (!slide) return null;
+  if (shape?.type === "card") return shape;
+  if (shape?.type === "note") {
+    const linked = slide.shapes.find((item) => item.type === "card" && (item.id === shape.cardId || (shape.key && item.key === shape.key)));
+    if (linked) return linked;
+  }
+  return slide.shapes.find((item) => state.selection.has(item.id) && item.type === "card") || null;
+}
+
+function closeContextMenu() {
+  const menu = $("context-menu");
+  if (menu) menu.hidden = true;
+}
+
+function openContextMenu(card, x, y) {
+  document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open"));
+  state.noteTargetId = card.id;
+  const menu = $("context-menu");
+  menu.hidden = false;
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth - 4) menu.style.left = `${Math.max(4, x - rect.width)}px`;
+  if (rect.bottom > window.innerHeight - 4) menu.style.top = `${Math.max(4, y - rect.height)}px`;
+}
+
+function onSlideContextMenu(event) {
+  const slide = current();
+  if (!slide) return;
+  const host = event.target.closest?.("[data-id]");
+  const shape = host ? slide.shapes.find((item) => item.id === host.dataset.id) : null;
+  if (shape?.type === "card" && !state.selection.has(shape.id)) {
+    state.selection.clear();
+    selectGroup(shape, false);
+    if (shape.key) focusPerson(shape.key);
+    state.editingNote = null;
+    render();
+  }
+  const card = noteCardFor(shape);
+  if (!card) return;
+  event.preventDefault();
+  openContextMenu(card, event.clientX, event.clientY);
 }
 
 function focusPerson(key) {
@@ -3738,6 +4129,8 @@ function localPoint(event) {
 
 function startPointer(event, shape) {
   event.stopPropagation();
+  if (event.button !== 0) return;
+  if (state.editingNote && state.editingNote !== shape?.id) state.editingNote = null;
   if (state.tool === "select") {
     beginMarquee(event, shape);
     return;
@@ -3756,7 +4149,7 @@ function startPointer(event, shape) {
   pointer.shape = shape;
   pointer.scale = null;
   if (shape && !state.selection.has(shape.id)) selectGroup(shape, event.shiftKey);
-  if (shape?.type === "card" && shape.key) focusPerson(shape.key);
+  if ((shape?.type === "card" || shape?.type === "note") && shape.key) focusPerson(shape.key);
   else if (shape && event.shiftKey) {
     state.selection.delete(shape.id);
     pointer.shape = null;
@@ -3817,6 +4210,7 @@ function beginScale(event, mode) {
 }
 
 function onHolderPointerDown(event) {
+  if (event.button !== 0) return;
   if (event.target.closest?.(".shape, .scale-handle, .wires line")) return;
   if (state.tool === "scale") return;
   beginMarquee(event, null);
@@ -3864,6 +4258,8 @@ function applyScaleGesture(point) {
     }
     paintShape(shape);
   });
+  anchorNotes(current().shapes, new Set(gesture.live.map((shape) => shape.id)));
+  for (const shape of current().shapes) if (shape.type === "note") paintShape(shape);
   const frame = $("slide").querySelector(".selection-frame");
   const bounds = selectionBounds(gesture.live);
   if (frame && bounds) {
@@ -3904,9 +4300,11 @@ function onPointerMove(event) {
   const slide = current();
   const moving = slide.shapes.filter((shape) => state.selection.has(shape.id));
   for (const shape of moving) moveShape(shape, dx, dy);
+  anchorNotes(slide.shapes, new Set(moving.map((shape) => shape.id)));
   pointer.x = point.x;
   pointer.y = point.y;
   for (const shape of moving) paintShape(shape);
+  for (const shape of slide.shapes) if (shape.type === "note") paintShape(shape);
   const frame = $("slide").querySelector(".selection-frame");
   const bounds = selectionBounds(moving);
   if (frame && bounds) {
@@ -3933,6 +4331,7 @@ function marqueeRect() {
 
 function onPointerUp(event) {
   if (pointer.id !== event.pointerId) return;
+  const moved = pointer.moved;
   if (pointer.marquee) {
     if (pointer.moved) {
       const rect = marqueeRect();
@@ -3952,6 +4351,7 @@ function onPointerUp(event) {
     } else if (!pointer.marqueeAdditive) {
       state.selection.clear();
     }
+    if (state.editingNote && !state.selection.has(state.editingNote)) state.editingNote = null;
     pointer.marquee.remove();
     pointer.marquee = null;
     pointer.marqueeShape = null;
@@ -3959,7 +4359,10 @@ function onPointerUp(event) {
   } else if (pointer.scale) {
     pointer.scale = null;
     render();
+  } else if (!moved && pointer.shape?.type === "note" && state.editingNote !== pointer.shape.id && state.tool === "move") {
+    beginNoteEdit(pointer.shape);
   }
+  if (moved) mirrorNotesFrom(current()?.shapes || []);
   pointer.id = null;
   pointer.shape = null;
 }
@@ -4511,6 +4914,11 @@ function onKey(event) {
     event.preventDefault();
     arrange("delete");
   } else if (event.key === "Escape") {
+    if (!$("context-menu").hidden) {
+      closeContextMenu();
+      return;
+    }
+    state.editingNote = null;
     state.selection.clear();
     render();
   } else if (event.key === "ArrowLeft") nudge(event.shiftKey ? -10 : -1, 0);
@@ -4569,7 +4977,17 @@ function bind() {
   $("reports-more").addEventListener("click", (event) => toggleMenu("menu-reports", event));
   $("elements-main").addEventListener("click", (event) => toggleMenu("menu-elements", event));
   $("arrange-main").addEventListener("click", (event) => toggleMenu("menu-arrange", event));
-  document.addEventListener("click", () => document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open")));
+  document.addEventListener("click", () => {
+    document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open"));
+    closeContextMenu();
+  });
+  $("context-add-note").addEventListener("click", (event) => {
+    event.stopPropagation();
+    const card = current()?.shapes.find((shape) => shape.id === state.noteTargetId && shape.type === "card");
+    closeContextMenu();
+    if (card) addCardNote(card);
+  });
+  $("slide").addEventListener("contextmenu", onSlideContextMenu);
   $("sheet").addEventListener("change", () => {
     const sheet = sheetByName($("sheet").value);
     if (!sheet) return;

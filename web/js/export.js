@@ -191,6 +191,21 @@ function drawShape(ctx, org, shape) {
     ctx.textBaseline = "alphabetic";
     return;
   }
+  if (shape.type === "note") {
+    ctx.fillStyle = shape.fill || "#E8891A";
+    ctx.fillRect(shape.x, shape.y, shape.w, shape.h);
+    ctx.fillStyle = "#1A1A1A";
+    ctx.font = "bold 11px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const lines = wrapLines(ctx, shape.text || "", Math.max(8, shape.w - 10), Math.max(1, Math.floor((shape.h - 6) / 13)));
+    const step = 13;
+    const top = shape.y + shape.h / 2 - ((lines.length - 1) * step) / 2;
+    lines.forEach((line, index) => ctx.fillText(line, shape.x + shape.w / 2, top + index * step));
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    return;
+  }
   if (shape.type === "bubble" || shape.type === "comment") {
     ctx.fillStyle = "#ffffff";
     ctx.strokeStyle = shape.dotted ? "#00123F" : "#8a8175";
@@ -621,6 +636,24 @@ export async function deckToPptx(org, slides, fileName) {
           color: "083008",
           fill: { color: "00FF00" },
           margin: 0,
+        });
+        continue;
+      }
+      if (shape.type === "note") {
+        slide.addText(shape.text || "", {
+          x: inches(shape.x),
+          y: inches(shape.y),
+          w: inches(Math.max(shape.w, 8)),
+          h: inches(Math.max(shape.h, 8)),
+          fontFace: "Arial",
+          fontSize: 11,
+          bold: true,
+          color: "1A1A1A",
+          fill: { color: String(shape.fill || "#E8891A").replace("#", "") },
+          align: "center",
+          valign: "middle",
+          wrap: true,
+          margin: 2,
         });
         continue;
       }
