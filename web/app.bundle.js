@@ -2041,28 +2041,38 @@ function cardNotes(person, card) {
 
 /** Sticky-note colors. The first one is the orange used for a new note. */
 const NOTE_COLORS = ["#E8891A", "#F6C445", "#F29CA3", "#8FCB9B", "#E7B15A"];
-const NOTE_MIN_H = 28;
+
+/** The note uses the same type size as the name on its card, including after that card is scaled. */
+function noteTypeSize(card) {
+  const spec = CARDS[card?.size] || CARDS.Medium;
+  const scale = spec.h && Number(card?.h) ? Number(card.h) / spec.h : 1;
+  return spec.name * scale;
+}
 
 /**
  * A note sits on the card's lower edge and hangs to the right, like a sticky.
  * Another note on the same card stacks under the previous one.
+ * The rectangle is one line of the card's own name size.
  */
 function noteBox(card, index = 0) {
   const cardW = Number(card?.w) || 0;
   const cardH = Number(card?.h) || 0;
-  const w = Math.max(cardW, 110);
-  const h = NOTE_MIN_H;
+  const fs = noteTypeSize(card);
+  const w = Math.max(cardW, Math.round(fs * 10));
+  const h = Math.ceil(fs + 5);
   const dx = Math.round((cardW || w) * 0.18);
-  const dy = cardH - 10 + index * (h + 4);
-  return { w, h, dx, dy, x: (Number(card?.x) || 0) + dx, y: (Number(card?.y) || 0) + dy };
+  const dy = cardH - Math.round(h * 0.45) + index * (h + 3);
+  return { w, h, dx, dy, fs, x: (Number(card?.x) || 0) + dx, y: (Number(card?.y) || 0) + dy };
 }
 
 /** Height of a note for its text, so a second line still fits inside the rectangle. */
-function noteHeightFor(text, width) {
-  const inner = Math.max(20, (Number(width) || 110) - 12);
-  const perLine = Math.max(6, Math.floor(inner / 6.4));
+function noteHeightFor(text, width, fontSize = noteTypeSize(null)) {
+  const fs = Math.max(4.5, Number(fontSize) || noteTypeSize(null));
+  const inner = Math.max(12, (Number(width) || 80) - 8);
+  const perLine = Math.max(4, Math.floor(inner / (fs * 0.62)));
   const lines = String(text ?? "").split("\n").reduce((count, line) => count + Math.max(1, Math.ceil(line.length / perLine) || 1), 0);
-  return Math.min(120, Math.max(NOTE_MIN_H, (lines || 1) * 14 + 8));
+  const lineH = fs * 1.2;
+  return Math.min(fs * 8, Math.max(Math.ceil(fs + 5), (lines || 1) * lineH + 2));
 }
 
 function cardsByKey(shapes) {
@@ -2107,6 +2117,7 @@ function stickNotes(shapes) {
     shape.x = card.x + shape.dx;
     shape.y = card.y + shape.dy;
     shape.cardId = card.id;
+    shape.fs = noteTypeSize(card);
   }
 }
 
@@ -2189,6 +2200,7 @@ function placeCardNotes(shapes, records) {
         dy: note.dy,
         w: note.w,
         h: note.h,
+        fs: noteTypeSize(card),
         x: card.x + note.dx,
         y: card.y + note.dy,
         z: 8,
@@ -2484,14 +2496,15 @@ function drawShape(ctx, org, shape) {
     return;
   }
   if (shape.type === "note") {
+    const fs = Number(shape.fs) > 0 ? shape.fs : 9;
     ctx.fillStyle = shape.fill || "#E8891A";
     ctx.fillRect(shape.x, shape.y, shape.w, shape.h);
     ctx.fillStyle = "#1A1A1A";
-    ctx.font = "bold 11px Arial";
+    ctx.font = `bold ${fs}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    const lines = wrapLines(ctx, shape.text || "", Math.max(8, shape.w - 10), Math.max(1, Math.floor((shape.h - 6) / 13)));
-    const step = 13;
+    const step = fs * 1.2;
+    const lines = wrapLines(ctx, shape.text || "", Math.max(8, shape.w - 8), Math.max(1, Math.floor((shape.h - 4) / step)));
     const top = shape.y + shape.h / 2 - ((lines.length - 1) * step) / 2;
     lines.forEach((line, index) => ctx.fillText(line, shape.x + shape.w / 2, top + index * step));
     ctx.textAlign = "left";
@@ -2938,7 +2951,7 @@ async function deckToPptx(org, slides, fileName) {
           w: inches(Math.max(shape.w, 8)),
           h: inches(Math.max(shape.h, 8)),
           fontFace: "Arial",
-          fontSize: 11,
+          fontSize: Number(shape.fs) > 0 ? Math.round(shape.fs * 10) / 10 : 9,
           bold: true,
           color: "1A1A1A",
           fill: { color: String(shape.fill || "#E8891A").replace("#", "") },
@@ -3107,6 +3120,7 @@ const state = {
   editingNote: null,
   noteEditReady: false,
   noteTargetId: "",
+  deleteNoteId: "",
 };
 
 function blankSlide() {
@@ -3923,6 +3937,10 @@ function renderShape(shape) {
       node.style.color = LINK_STYLE.color;
     }
   } else if (shape.type === "note") {
+    const card = cardForNoteShape(shape);
+    const fs = noteTypeSize(card);
+    shape.fs = fs;
+    node.style.fontSize = `${fs}px`;
     node.style.background = shape.fill || NOTE_COLORS[0];
     if (editing) {
       const input = document.createElement("textarea");
@@ -3997,7 +4015,7 @@ function onNoteInput(shape, value, node) {
     remember();
     state.noteEditReady = true;
   }
-  const height = noteHeightFor(value, shape.w);
+  const height = noteHeightFor(value, shape.w, shape.fs || noteTypeSize(cardForNoteShape(shape)));
   for (const slide of state.slides) {
     for (const item of slide.shapes) {
       if (item.type !== "note" || item.id !== shape.id) continue;
@@ -4025,6 +4043,7 @@ function mirrorNotesFrom(shapes) {
         shape.dy = source.dy;
         shape.w = source.w;
         shape.h = source.h;
+        shape.fs = source.fs;
         touched = true;
       }
     }
@@ -4060,6 +4079,16 @@ function addCardNote(card) {
   render();
 }
 
+function cardForNoteShape(shape) {
+  const slide = current();
+  if (!slide || shape?.type !== "note") return null;
+  if (shape.cardId) {
+    const exact = slide.shapes.find((item) => item.type === "card" && item.id === shape.cardId);
+    if (exact) return exact;
+  }
+  return slide.shapes.find((item) => item.type === "card" && shape.key && item.key === shape.key) || null;
+}
+
 function noteCardFor(shape) {
   const slide = current();
   if (!slide) return null;
@@ -4076,9 +4105,15 @@ function closeContextMenu() {
   if (menu) menu.hidden = true;
 }
 
-function openContextMenu(card, x, y) {
+function openContextMenu(card, note, x, y) {
+  const add = $("context-add-note");
+  const remove = $("context-delete-note");
+  add.hidden = !card;
+  remove.hidden = !note;
+  if (add.hidden && remove.hidden) return;
   document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open"));
-  state.noteTargetId = card.id;
+  state.noteTargetId = card?.id || "";
+  state.deleteNoteId = note?.id || "";
   const menu = $("context-menu");
   menu.hidden = false;
   menu.style.left = `${x}px`;
@@ -4093,17 +4128,28 @@ function onSlideContextMenu(event) {
   if (!slide) return;
   const host = event.target.closest?.("[data-id]");
   const shape = host ? slide.shapes.find((item) => item.id === host.dataset.id) : null;
-  if (shape?.type === "card" && !state.selection.has(shape.id)) {
+  if (shape?.type === "note") {
+    state.selection.clear();
+    state.selection.add(shape.id);
+    state.editingNote = null;
+    if (shape.key) focusPerson(shape.key);
+    render();
+  } else if (shape?.type === "card" && !state.selection.has(shape.id)) {
     state.selection.clear();
     selectGroup(shape, false);
     if (shape.key) focusPerson(shape.key);
     state.editingNote = null;
     render();
   }
+  const note = shape?.type === "note"
+    ? shape
+    : shape
+      ? null
+      : slide.shapes.find((item) => state.selection.has(item.id) && item.type === "note") || null;
   const card = noteCardFor(shape);
-  if (!card) return;
+  if (!card && !note) return;
   event.preventDefault();
-  openContextMenu(card, event.clientX, event.clientY);
+  openContextMenu(card, note, event.clientX, event.clientY);
 }
 
 function focusPerson(key) {
@@ -4986,6 +5032,16 @@ function bind() {
     const card = current()?.shapes.find((shape) => shape.id === state.noteTargetId && shape.type === "card");
     closeContextMenu();
     if (card) addCardNote(card);
+  });
+  $("context-delete-note").addEventListener("click", (event) => {
+    event.stopPropagation();
+    const id = state.deleteNoteId;
+    closeContextMenu();
+    if (!id) return;
+    state.editingNote = null;
+    state.selection.clear();
+    state.selection.add(id);
+    arrange("delete");
   });
   $("slide").addEventListener("contextmenu", onSlideContextMenu);
   $("sheet").addEventListener("change", () => {

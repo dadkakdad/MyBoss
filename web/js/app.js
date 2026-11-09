@@ -42,6 +42,7 @@ import {
   hideCostCenterStamps,
   noteBox,
   noteHeightFor,
+  noteTypeSize,
   NOTE_COLORS,
   offsetSlideTargets,
   placeCardNotes,
@@ -102,6 +103,7 @@ const state = {
   editingNote: null,
   noteEditReady: false,
   noteTargetId: "",
+  deleteNoteId: "",
 };
 
 function blankSlide() {
@@ -918,6 +920,10 @@ function renderShape(shape) {
       node.style.color = LINK_STYLE.color;
     }
   } else if (shape.type === "note") {
+    const card = cardForNoteShape(shape);
+    const fs = noteTypeSize(card);
+    shape.fs = fs;
+    node.style.fontSize = `${fs}px`;
     node.style.background = shape.fill || NOTE_COLORS[0];
     if (editing) {
       const input = document.createElement("textarea");
@@ -992,7 +998,7 @@ function onNoteInput(shape, value, node) {
     remember();
     state.noteEditReady = true;
   }
-  const height = noteHeightFor(value, shape.w);
+  const height = noteHeightFor(value, shape.w, shape.fs || noteTypeSize(cardForNoteShape(shape)));
   for (const slide of state.slides) {
     for (const item of slide.shapes) {
       if (item.type !== "note" || item.id !== shape.id) continue;
@@ -1020,6 +1026,7 @@ function mirrorNotesFrom(shapes) {
         shape.dy = source.dy;
         shape.w = source.w;
         shape.h = source.h;
+        shape.fs = source.fs;
         touched = true;
       }
     }
@@ -1055,6 +1062,16 @@ function addCardNote(card) {
   render();
 }
 
+function cardForNoteShape(shape) {
+  const slide = current();
+  if (!slide || shape?.type !== "note") return null;
+  if (shape.cardId) {
+    const exact = slide.shapes.find((item) => item.type === "card" && item.id === shape.cardId);
+    if (exact) return exact;
+  }
+  return slide.shapes.find((item) => item.type === "card" && shape.key && item.key === shape.key) || null;
+}
+
 function noteCardFor(shape) {
   const slide = current();
   if (!slide) return null;
@@ -1071,9 +1088,15 @@ function closeContextMenu() {
   if (menu) menu.hidden = true;
 }
 
-function openContextMenu(card, x, y) {
+function openContextMenu(card, note, x, y) {
+  const add = $("context-add-note");
+  const remove = $("context-delete-note");
+  add.hidden = !card;
+  remove.hidden = !note;
+  if (add.hidden && remove.hidden) return;
   document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open"));
-  state.noteTargetId = card.id;
+  state.noteTargetId = card?.id || "";
+  state.deleteNoteId = note?.id || "";
   const menu = $("context-menu");
   menu.hidden = false;
   menu.style.left = `${x}px`;
@@ -1088,17 +1111,28 @@ function onSlideContextMenu(event) {
   if (!slide) return;
   const host = event.target.closest?.("[data-id]");
   const shape = host ? slide.shapes.find((item) => item.id === host.dataset.id) : null;
-  if (shape?.type === "card" && !state.selection.has(shape.id)) {
+  if (shape?.type === "note") {
+    state.selection.clear();
+    state.selection.add(shape.id);
+    state.editingNote = null;
+    if (shape.key) focusPerson(shape.key);
+    render();
+  } else if (shape?.type === "card" && !state.selection.has(shape.id)) {
     state.selection.clear();
     selectGroup(shape, false);
     if (shape.key) focusPerson(shape.key);
     state.editingNote = null;
     render();
   }
+  const note = shape?.type === "note"
+    ? shape
+    : shape
+      ? null
+      : slide.shapes.find((item) => state.selection.has(item.id) && item.type === "note") || null;
   const card = noteCardFor(shape);
-  if (!card) return;
+  if (!card && !note) return;
   event.preventDefault();
-  openContextMenu(card, event.clientX, event.clientY);
+  openContextMenu(card, note, event.clientX, event.clientY);
 }
 
 function focusPerson(key) {
@@ -1981,6 +2015,16 @@ function bind() {
     const card = current()?.shapes.find((shape) => shape.id === state.noteTargetId && shape.type === "card");
     closeContextMenu();
     if (card) addCardNote(card);
+  });
+  $("context-delete-note").addEventListener("click", (event) => {
+    event.stopPropagation();
+    const id = state.deleteNoteId;
+    closeContextMenu();
+    if (!id) return;
+    state.editingNote = null;
+    state.selection.clear();
+    state.selection.add(id);
+    arrange("delete");
   });
   $("slide").addEventListener("contextmenu", onSlideContextMenu);
   $("sheet").addEventListener("change", () => {

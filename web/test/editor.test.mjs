@@ -11,6 +11,7 @@ import {
   hideCostCenterStamps,
   noteBox,
   noteHeightFor,
+  noteTypeSize,
   NOTE_COLORS,
   offsetSlideTargets,
   placeCardNotes,
@@ -206,18 +207,22 @@ test("a slide copies as Markdown: title, statistics, nested structure, data tabl
 });
 
 test("a note is an orange rectangle on the card, and a second one stacks under it", () => {
-  const card = { id: "c1", type: "card", key: "ada", x: 100, y: 40, w: 80, h: 40 };
+  const card = { id: "c1", type: "card", key: "ada", size: "Medium", x: 100, y: 40, w: 80, h: 42.3 };
   const first = noteBox(card, 0);
   const second = noteBox(card, 1);
   assert.equal(NOTE_COLORS[0], "#E8891A");
+  assert.equal(noteTypeSize(card), 9);
+  assert.equal(noteTypeSize({ size: "Small", h: 35.5 }), 7);
+  assert.equal(noteTypeSize({ size: "Large", h: 54.5 }), 11);
+  assert.equal(first.fs, 9);
+  assert.ok(first.h < 20, "the rectangle is one line of the card name");
   assert.ok(first.w >= card.w);
   assert.ok(first.y < card.y + card.h, "overlaps the card");
   assert.ok(first.y + first.h > card.y + card.h, "hangs below the card");
   assert.ok(first.x + first.w > card.x + card.w, "hangs to the right");
   assert.equal(second.x, first.x);
   assert.ok(second.y >= first.y + first.h);
-  assert.ok(noteHeightFor("one line", first.w) >= 28);
-  assert.ok(noteHeightFor("one\ntwo\nthree\nfour", first.w) > noteHeightFor("one", first.w));
+  assert.ok(noteHeightFor("one\ntwo\nthree", first.w, first.fs) > noteHeightFor("one", first.w, first.fs));
 });
 
 test("notes follow their card, and a dragged note keeps its new offset", () => {

@@ -339,12 +339,12 @@ body[data-tool="scale"] .shape { cursor: nwse-resize; }
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 3px 6px;
+  padding: 1px 4px;
   overflow: hidden;
   color: #1a1a1a;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.15;
   text-align: center;
   white-space: pre-wrap;
   word-break: break-word;
@@ -362,8 +362,8 @@ body[data-tool="scale"] .shape { cursor: nwse-resize; }
   background: transparent;
   color: #1a1a1a;
   font: inherit;
-  font-weight: 700;
-  line-height: 1.2;
+  font-weight: inherit;
+  line-height: inherit;
   text-align: center;
   outline: none;
   cursor: text;
@@ -382,6 +382,7 @@ body[data-tool="scale"] .shape { cursor: nwse-resize; }
   box-shadow: 0 8px 24px rgba(40, 32, 20, 0.18);
 }
 .context-menu[hidden] { display: none; }
+.context-menu button[hidden] { display: none; }
 .context-menu button {
   display: block;
   width: 100%;

@@ -3,7 +3,7 @@
  * These stay free of the DOM so the ribbon and the filmstrip can share them.
  */
 
-import { SLIDE } from "./layout.js";
+import { CARDS, SLIDE } from "./layout.js";
 import { moderated, shapePerson } from "./org.js";
 
 export function shapeBox(shape) {
@@ -233,28 +233,38 @@ function cardNotes(person, card) {
 
 /** Sticky-note colors. The first one is the orange used for a new note. */
 export const NOTE_COLORS = ["#E8891A", "#F6C445", "#F29CA3", "#8FCB9B", "#E7B15A"];
-export const NOTE_MIN_H = 28;
+
+/** The note uses the same type size as the name on its card, including after that card is scaled. */
+export function noteTypeSize(card) {
+  const spec = CARDS[card?.size] || CARDS.Medium;
+  const scale = spec.h && Number(card?.h) ? Number(card.h) / spec.h : 1;
+  return spec.name * scale;
+}
 
 /**
  * A note sits on the card's lower edge and hangs to the right, like a sticky.
  * Another note on the same card stacks under the previous one.
+ * The rectangle is one line of the card's own name size.
  */
 export function noteBox(card, index = 0) {
   const cardW = Number(card?.w) || 0;
   const cardH = Number(card?.h) || 0;
-  const w = Math.max(cardW, 110);
-  const h = NOTE_MIN_H;
+  const fs = noteTypeSize(card);
+  const w = Math.max(cardW, Math.round(fs * 10));
+  const h = Math.ceil(fs + 5);
   const dx = Math.round((cardW || w) * 0.18);
-  const dy = cardH - 10 + index * (h + 4);
-  return { w, h, dx, dy, x: (Number(card?.x) || 0) + dx, y: (Number(card?.y) || 0) + dy };
+  const dy = cardH - Math.round(h * 0.45) + index * (h + 3);
+  return { w, h, dx, dy, fs, x: (Number(card?.x) || 0) + dx, y: (Number(card?.y) || 0) + dy };
 }
 
 /** Height of a note for its text, so a second line still fits inside the rectangle. */
-export function noteHeightFor(text, width) {
-  const inner = Math.max(20, (Number(width) || 110) - 12);
-  const perLine = Math.max(6, Math.floor(inner / 6.4));
+export function noteHeightFor(text, width, fontSize = noteTypeSize(null)) {
+  const fs = Math.max(4.5, Number(fontSize) || noteTypeSize(null));
+  const inner = Math.max(12, (Number(width) || 80) - 8);
+  const perLine = Math.max(4, Math.floor(inner / (fs * 0.62)));
   const lines = String(text ?? "").split("\n").reduce((count, line) => count + Math.max(1, Math.ceil(line.length / perLine) || 1), 0);
-  return Math.min(120, Math.max(NOTE_MIN_H, (lines || 1) * 14 + 8));
+  const lineH = fs * 1.2;
+  return Math.min(fs * 8, Math.max(Math.ceil(fs + 5), (lines || 1) * lineH + 2));
 }
 
 function cardsByKey(shapes) {
@@ -299,6 +309,7 @@ export function stickNotes(shapes) {
     shape.x = card.x + shape.dx;
     shape.y = card.y + shape.dy;
     shape.cardId = card.id;
+    shape.fs = noteTypeSize(card);
   }
 }
 
@@ -381,6 +392,7 @@ export function placeCardNotes(shapes, records) {
         dy: note.dy,
         w: note.w,
         h: note.h,
+        fs: noteTypeSize(card),
         x: card.x + note.dx,
         y: card.y + note.dy,
         z: 8,
