@@ -87,6 +87,11 @@ const state = {
   costCenters: false,
   renaming: null,
   frame: { x: 0, y: 0, w: SLIDE.width, h: SLIDE.height },
+  account: null,
+  workId: null,
+  fileBytes: null,
+  saveLabel: "",
+  hydrating: false,
 };
 
 function blankSlide() {
@@ -109,6 +114,7 @@ function remember() {
   state.undo.push(JSON.stringify({ slides: state.slides, active: state.active }));
   if (state.undo.length > 40) state.undo.shift();
   state.redo.length = 0;
+  scheduleSave();
 }
 
 function restore(stack, other) {
@@ -1284,9 +1290,12 @@ function renderStatus() {
   const fitText = fit ? `${fit.size} · tick ${Math.round(fit.gap)} pt` : "";
   const missing = missingFromSlides();
   const left = $("status-left");
+  const saved = state.account && state.saveLabel && state.fileName ? ` · ${state.saveLabel}` : "";
   left.textContent = state.org
-    ? `${state.fileName || "Workbook"} · ${state.sheetName} · ${state.org.companySize} people${fitText ? ` · ${fitText}` : ""}${missing ? ` · ${missing} not on any slide` : ""}`
-    : "No workbook yet.";
+    ? `${state.fileName || "Workbook"} · ${state.sheetName} · ${state.org.companySize} people${fitText ? ` · ${fitText}` : ""}${missing ? ` · ${missing} not on any slide` : ""}${saved}`
+    : state.fileName
+      ? `${state.fileName}${saved}`
+      : "No workbook yet.";
   left.classList.toggle("warn", missing > 0);
   $("zoom-label").textContent = `${Math.round(baseScale() * state.zoom * 100)}%`;
 }
@@ -1628,6 +1637,8 @@ function applySheetEdits() {
       : "";
     toast(`Data applied, ${size}.${note}`);
   }
+  rewriteFileBytes();
+  enqueueSave(() => saveWork({ file: true, deck: true })).catch((error) => toast(error.message || "Could not save."));
 }
 
 function downloadSheetXlsx() {
@@ -1674,7 +1685,7 @@ function bindSheetEditor() {
 }
 
 function onKey(event) {
-  if (document.body.classList.contains("sheet-open")) return;
+  if (document.body.classList.contains("sheet-open") || document.body.classList.contains("account-open")) return;
   const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName);
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
     event.preventDefault();
@@ -1722,7 +1733,12 @@ function bind() {
     const file = $("file").files[0];
     if (!file) return;
     try {
-      readWorkbook(await file.arrayBuffer(), file.name);
+      const bytes = await file.arrayBuffer();
+      state.fileBytes = bytes;
+      state.workId = null;
+      state.saveLabel = "";
+      readWorkbook(bytes, file.name);
+      enqueueSave(() => saveWork({ file: true })).catch((error) => toast(error.message || "Could not save."));
     } catch (error) {
       toast(`Could not read ${file.name}: ${error.message || "not an Excel file"}.`);
     } finally {
@@ -1837,6 +1853,14 @@ function bind() {
     state.zoom = 1;
     applyScale();
   });
+  $("account").addEventListener("click", () => openAccount());
+  $("account-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitAccount("/api/login");
+  });
+  $("account-register").addEventListener("click", () => submitAccount("/api/register"));
+  $("account-logout").addEventListener("click", logoutAccount);
+  $("account-close").addEventListener("click", closeAccount);
   $("holder").addEventListener("pointerdown", onHolderPointerDown);
   window.addEventListener("pointermove", onPointerMove);
   window.addEventListener("pointerup", onPointerUp);
@@ -1844,6 +1868,216 @@ function bind() {
   window.addEventListener("resize", applyScale);
 }
 
+function bytesToBase64(bytes) {
+  const view = bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : new Uint8Array(bytes);
+  let binary = "";
+  const size = 0x8000;
+  for (let index = 0; index < view.length; index += size) {
+    binary += String.fromCharCode(...view.subarray(index, index + size));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(value) {
+  const binary = atob(value);
+  const out = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) out[index] = binary.charCodeAt(index);
+  return out;
+}
+
+function rewriteFileBytes() {
+  if (!window.XLSX || !state.workbookSheets?.length) return;
+  const workbook = window.XLSX.utils.book_new();
+  for (const sheet of state.workbookSheets) {
+    window.XLSX.utils.book_append_sheet(
+      workbook,
+      window.XLSX.utils.aoa_to_sheet(sheet.matrix, { cellDates: true }),
+      sheet.name || "Sheet",
+    );
+  }
+  state.fileBytes = window.XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+}
+
+let saveChain = Promise.resolve();
+
+function enqueueSave(job) {
+  saveChain = saveChain.then(job, job);
+  return saveChain;
+}
+
+function scheduleSave() {
+  if (state.hydrating || !state.account) return;
+  clearTimeout(scheduleSave.timer);
+  scheduleSave.timer = setTimeout(() => {
+    enqueueSave(() => saveWork({ deck: true })).catch((error) => toast(error.message || "Could not save."));
+  }, 800);
+}
+
+async function saveWork({ file = false, deck = false } = {}) {
+  if (!state.account || state.hydrating) return;
+  if (!state.fileBytes && !state.workId) return;
+  const body = {};
+  if (file || !state.workId) {
+    if (!state.fileBytes) return;
+    body.name = state.fileName || "workbook.xlsx";
+    body.dataBase64 = bytesToBase64(state.fileBytes);
+  }
+  if (deck || !state.workId) {
+    body.sheetName = state.sheetName || "";
+    body.slides = state.slides;
+    body.active = state.active;
+  }
+  state.saveLabel = "saving";
+  renderStatus();
+  const path = state.workId ? `/api/works/${state.workId}` : "/api/works";
+  const response = await fetch(path, {
+    method: state.workId ? "PUT" : "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (response.status === 401) {
+    state.account = null;
+    state.saveLabel = "";
+    paintAccount();
+    throw new Error("Log in again to keep this file.");
+  }
+  if (!response.ok) throw new Error(payload.error || "Could not save.");
+  state.workId = payload.id || state.workId;
+  state.saveLabel = "saved";
+  renderStatus();
+}
+
+function paintAccount() {
+  const button = $("account");
+  if (button) button.textContent = state.account ? state.account.email : "Log in";
+}
+
+function closeAccount() {
+  $("account-dialog").hidden = true;
+  document.body.classList.remove("account-open");
+}
+
+async function openAccount() {
+  $("account-dialog").hidden = false;
+  document.body.classList.add("account-open");
+  const loggedIn = Boolean(state.account);
+  $("account-form").hidden = loggedIn;
+  $("account-home").hidden = !loggedIn;
+  if (!loggedIn) {
+    $("account-email").focus();
+    return;
+  }
+  $("account-who").textContent = state.account.email;
+  await refreshWorkList();
+}
+
+async function refreshWorkList() {
+  const list = $("account-files");
+  list.replaceChildren();
+  const response = await fetch("/api/works", { credentials: "same-origin" });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    toast(payload.error || "Could not load saved files.");
+    return;
+  }
+  if (!payload.works?.length) {
+    const item = document.createElement("li");
+    item.className = "account-empty";
+    item.textContent = "No saved files yet. Import a workbook while you are logged in.";
+    list.appendChild(item);
+    return;
+  }
+  for (const work of payload.works) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = work.sheetName ? `${work.name} · ${work.sheetName}` : work.name;
+    button.addEventListener("click", () => openWork(work.id));
+    item.appendChild(button);
+    list.appendChild(item);
+  }
+}
+
+async function openWork(id) {
+  const response = await fetch(`/api/works/${id}`, { credentials: "same-origin" });
+  const work = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    toast(work.error || "Could not open that file.");
+    return;
+  }
+  state.hydrating = true;
+  state.fileBytes = base64ToBytes(work.dataBase64);
+  state.workId = work.id;
+  state.saveLabel = "saved";
+  try {
+    readWorkbook(state.fileBytes, work.name);
+    const sheet = state.workbookSheets?.find((item) => item.name === work.sheetName && !item.problem);
+    if (sheet) importSheet(sheet.name);
+    if (Array.isArray(work.slides) && work.slides.length) {
+      state.slides = work.slides;
+      state.active = Math.min(Math.max(work.active || 0, 0), work.slides.length - 1);
+      state.selection.clear();
+    }
+  } finally {
+    state.hydrating = false;
+  }
+  closeAccount();
+  render();
+  toast(`Opened ${work.name}`);
+}
+
+async function submitAccount(path) {
+  const response = await fetch(path, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      email: $("account-email").value,
+      password: $("account-password").value,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    toast(payload.error || "Could not log in.");
+    return;
+  }
+  state.account = { email: payload.email };
+  $("account-password").value = "";
+  paintAccount();
+  try {
+    if (state.fileBytes) await enqueueSave(() => saveWork({ file: true, deck: Boolean(state.slides?.some((slide) => slide.shapes?.length)) }));
+  } catch (error) {
+    toast(error.message || "Could not save.");
+  }
+  await openAccount();
+  toast(path.endsWith("register") ? `Account created for ${payload.email}` : `Logged in as ${payload.email}`);
+}
+
+async function logoutAccount() {
+  await fetch("/api/logout", { method: "POST", credentials: "same-origin" });
+  state.account = null;
+  state.workId = null;
+  state.saveLabel = "";
+  paintAccount();
+  closeAccount();
+  renderStatus();
+}
+
+async function restoreAccount() {
+  try {
+    const response = await fetch("/api/me", { credentials: "same-origin" });
+    if (!response.ok) return;
+    const me = await response.json();
+    state.account = { email: me.email };
+    paintAccount();
+  } catch {
+    // Opening the page from disk has no account server.
+  }
+}
+
 bindSheetEditor();
 bind();
 render();
+restoreAccount();

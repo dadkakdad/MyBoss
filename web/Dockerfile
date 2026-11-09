@@ -1,27 +1,21 @@
-FROM node:22-alpine AS deps
+FROM node:22-alpine
 
 WORKDIR /app
 
-# Copied before npm ci so a new deploy timestamp invalidates the dependency layer.
-COPY package.json package-lock.json .cachebust ./
-RUN echo "Cache bust: $(cat .cachebust)" && npm ci --omit=dev
+COPY package.json package-lock.json ./
+# The database client is installed in the image. The browser lockfile does not list it.
+RUN npm ci --omit=dev && npm install --omit=dev pg@8.13.1
 
-FROM nginx:1.27-alpine
-
-COPY nginx/default.conf /etc/nginx/conf.d/default.conf
-
-# Cache bust: a new .cachebust invalidates every COPY below (CapRover may reuse layers).
+# A new deploy timestamp invalidates the source copy below.
 COPY .cachebust /tmp/.cachebust
 RUN echo "Cache bust: $(cat /tmp/.cachebust)"
 
-COPY index.html app.bundle.js /usr/share/nginx/html/
-COPY css /usr/share/nginx/html/css
-COPY js /usr/share/nginx/html/js
-COPY icons /usr/share/nginx/html/icons
-COPY --from=deps /app/node_modules/xlsx/dist/xlsx.full.min.js /usr/share/nginx/html/node_modules/xlsx/dist/xlsx.full.min.js
-COPY --from=deps /app/node_modules/pptxgenjs/dist/pptxgen.bundle.js /usr/share/nginx/html/node_modules/pptxgenjs/dist/pptxgen.bundle.js
+COPY . .
 
+ENV PORT=80
 EXPOSE 80
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -qO- http://127.0.0.1/ >/dev/null || exit 1
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||80)).then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["node", "server.mjs"]

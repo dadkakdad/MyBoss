@@ -5,9 +5,11 @@
   "description": "Browser version of MyBoss, the PowerPoint org-chart tool.",
   "scripts": {
     "build": "node build.mjs",
+    "start": "node server.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
+    "pg": "^8.13.1",
     "pptxgenjs": "^4.0.1",
     "xlsx": "^0.18.5"
   }

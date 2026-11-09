@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MyBoss — org charts in the browser</title>
-  <link rel="stylesheet" href="css/app.css?v=cdabbddb">
+  <link rel="stylesheet" href="css/app.css?v=2c34830b">
 </head>
 <body data-stage="empty">
   <header class="ribbon">
@@ -202,6 +202,7 @@
           <button class="mini" id="png" type="button">PNG</button>
           <button class="mini" id="pptx" type="button">PowerPoint</button>
           <button class="mini" id="json" type="button">Project</button>
+          <button class="mini" id="account" type="button">Log in</button>
         </span>
         <span class="zoom">
           <button class="mini" id="zoom-out" type="button">−</button>
@@ -240,10 +241,34 @@
       </footer>
     </div>
   </div>
+  <div class="sheet-dialog account-dialog" id="account-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="account-title">
+    <div class="sheet-panel account-panel">
+      <header class="sheet-head">
+        <h2 id="account-title">Account</h2>
+        <span class="spacer"></span>
+        <button type="button" id="account-close">Close</button>
+      </header>
+      <form id="account-form">
+        <label>Email <input id="account-email" type="email" autocomplete="username" required></label>
+        <label>Password <input id="account-password" type="password" autocomplete="current-password" required minlength="8"></label>
+        <div class="account-actions">
+          <button type="submit">Log in</button>
+          <button type="button" id="account-register">Create account</button>
+        </div>
+        <p class="account-note">Your email and a password. Imported workbooks and slides stay on this account.</p>
+      </form>
+      <div id="account-home" hidden>
+        <p id="account-who"></p>
+        <button type="button" id="account-logout">Log out</button>
+        <h3>Saved files</h3>
+        <ul id="account-files"></ul>
+      </div>
+    </div>
+  </div>
   <div class="toast" id="toast" role="status"></div>
 
   <script src="node_modules/xlsx/dist/xlsx.full.min.js"></script>
   <script src="node_modules/pptxgenjs/dist/pptxgen.bundle.js"></script>
-  <script src="app.bundle.js?v=a9834ba0"></script>
+  <script src="app.bundle.js?v=f7fad59b"></script>
 </body>
 </html>
