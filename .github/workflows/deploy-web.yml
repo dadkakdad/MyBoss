@@ -1,0 +1,135 @@
+name: Deploy MyBoss web
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'web/**'
+      - '.github/workflows/deploy-web.yml'
+      - 'scripts/deploy/web.sh'
+  workflow_dispatch:
+    inputs:
+      branch_name:
+        description: 'Git branch to deploy (default master)'
+        required: false
+        default: 'master'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.branch_name || 'master' }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Test and confirm the browser bundle is current
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm ci
+          npm test
+          npm run build
+          git diff --exit-code -- app.bundle.js index.html
+
+      - name: Verify CapRover secrets are non-empty
+        env:
+          CAPROVER_URL: ${{ secrets.CAPROVER_URL }}
+          CAPROVER_MYBOSS_APP_TOKEN: ${{ secrets.CAPROVER_MYBOSS_APP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CAPROVER_MYBOSS_APP_TOKEN}" ]; then
+            echo "CAPROVER_MYBOSS_APP_TOKEN secret is missing or empty."
+            exit 1
+          fi
+          if [ -n "${CAPROVER_URL}" ]; then
+            echo "CAPROVER_URL length: ${#CAPROVER_URL}"
+          else
+            echo "CAPROVER_URL secret is empty; using the public captain host."
+          fi
+          echo "CAPROVER_MYBOSS_APP_TOKEN length: ${#CAPROVER_MYBOSS_APP_TOKEN}"
+
+      - name: Install CapRover CLI
+        run: npm install -g caprover@2.3.1
+
+      - name: Package web tarball
+        run: |
+          set -euo pipefail
+          if [ ! -d "web" ]; then
+            echo "web/ directory not found"
+            exit 1
+          fi
+          TEMP_DIR="$(mktemp -d)"
+          cp -a web/. "$TEMP_DIR/"
+          date +%s > "$TEMP_DIR/.cachebust"
+          echo "Cache bust: $(cat "$TEMP_DIR/.cachebust")"
+          if [ ! -f "$TEMP_DIR/captain-definition" ]; then
+            echo "captain-definition missing from package root"
+            exit 1
+          fi
+          tar --exclude='node_modules' \
+              --exclude='test' \
+              --exclude='.git' \
+              -cf /tmp/myboss-web-deploy.tar \
+              -C "$TEMP_DIR" .
+          echo "Tarball size: $(du -h /tmp/myboss-web-deploy.tar | cut -f1)"
+          tar -tf /tmp/myboss-web-deploy.tar | sed -n '1,40p' || true
+          rm -rf "$TEMP_DIR"
+
+      - name: Deploy myboss to CapRover
+        env:
+          CI: true
+          CAPROVER_URL_SECRET: ${{ secrets.CAPROVER_URL }}
+          CAPROVER_MYBOSS_APP_TOKEN: ${{ secrets.CAPROVER_MYBOSS_APP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${CAPROVER_URL_SECRET}" ]; then
+            CAPROVER_URL="${CAPROVER_URL_SECRET}"
+          else
+            CAPROVER_URL="https://captain.captain.dadkakdad.ru"
+          fi
+          MAX_RETRIES=6
+          ATTEMPT=1
+
+          while true; do
+            echo "Deploy attempt ${ATTEMPT}/${MAX_RETRIES}..."
+            set +e
+            DEPLOY_OUTPUT="$(caprover deploy \
+              --caproverUrl "${CAPROVER_URL}" \
+              --appToken "${CAPROVER_MYBOSS_APP_TOKEN}" \
+              --appName myboss \
+              --tarFile /tmp/myboss-web-deploy.tar 2>&1)"
+            DEPLOY_EXIT=$?
+            set -e
+
+            echo "${DEPLOY_OUTPUT}"
+
+            if [ "${DEPLOY_EXIT}" -eq 0 ]; then
+              echo "Deploy succeeded (CapRover accepted the upload)."
+              echo "Note: app-token deploys do not stream build logs; check CapRover app logs if the site looks wrong."
+              break
+            fi
+
+            if echo "${DEPLOY_OUTPUT}" | grep -qiE "429|Another operation still in progress"; then
+              if [ "${ATTEMPT}" -ge "${MAX_RETRIES}" ]; then
+                echo "CapRover is still busy after ${MAX_RETRIES} attempts."
+                exit "${DEPLOY_EXIT}"
+              fi
+              SLEEP_SECONDS=$((ATTEMPT * 15))
+              echo "CapRover reports another operation in progress. Waiting ${SLEEP_SECONDS}s and retrying..."
+              sleep "${SLEEP_SECONDS}"
+              ATTEMPT=$((ATTEMPT + 1))
+              continue
+            fi
+
+            echo "Deploy failed with a non-retryable error."
+            exit "${DEPLOY_EXIT}"
+          done
