@@ -119,6 +119,10 @@ test("the ribbon exposes slide tools and cost centers", () => {
   assert.match(html, /id="tool-select"/);
   assert.match(html, /id="tool-scale"/);
   assert.match(html, /id="filmstrip"/);
+  const ribbon = html.slice(html.indexOf('<header class="ribbon">'), html.indexOf("</header>"));
+  assert.match(ribbon, /id="account"[^>]*>Log in</);
+  const status = html.slice(html.indexOf('<div class="status">'), html.indexOf('<div class="sheet-dialog"'));
+  assert.equal(status.includes('id="account"'), false);
 });
 
 test("cost-center stamps sit on the card corner and toggle off", () => {
