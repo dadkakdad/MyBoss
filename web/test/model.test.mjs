@@ -13,7 +13,7 @@ import {
   solidTree,
   statisticsLines,
 } from "../js/org.js";
-import { CARDS, GUIDE, LINK_STYLE, SLIDE, allVisible, buildSlides, chooseFit, departmentShadeAction, dottedDash, layoutLeaves, layoutSubordinates, makeMetrics } from "../js/layout.js";
+import { CARDS, GUIDE, LINK_STYLE, SLIDE, allVisible, buildSlides, chooseFit, departmentShadeAction, dottedDash, hiddenListShape, layoutLeaves, layoutSubordinates, makeMetrics } from "../js/layout.js";
 
 const samplePath = new URL("../../MyBoss-Sample data.xlsx", import.meta.url);
 
@@ -96,7 +96,7 @@ test("duplicate names that manage someone are rejected", () => {
   assert.match(org.issues.map((issue) => issue.message).join(" "), /unique/);
 });
 
-test("headcount skips people still to be hired and counts external staff", () => {
+test("headcount counts people still to be hired and intern staff", () => {
   const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
   const org = buildOrg([
     header,
@@ -107,14 +107,14 @@ test("headcount skips people still to be hired and counts external staff", () =>
   ]);
   assert.equal(org.fatal, false, org.issues.map((i) => i.message).join(" | "));
   const grace = [...org.people.values()].find((person) => person.surname === "Grace");
-  assert.equal(grace.stats.subordinates, 2);
-  assert.equal(grace.stats.outsource, 1);
+  assert.equal(grace.stats.subordinates, 3);
+  assert.equal(grace.stats.intern, 1);
   assert.equal(grace.stats.cards, 3);
   assert.equal(displayName([...org.people.values()].find((person) => person.tbh)), "One");
-  assert.equal(headcountLabel(grace), "2 (1)");
+  assert.equal(headcountLabel(grace), "3 (1)");
 });
 
-test("a person who is both important and external is counted twice and drawn as a split card", () => {
+test("a person who is both important and intern is counted twice and drawn as a split card", () => {
   const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
   const org = buildOrg([
     header,
@@ -126,10 +126,10 @@ test("a person who is both important and external is counted twice and drawn as 
   const ada = org.people.get(org.ceo);
   assert.equal(cardStyle(grace), "split");
   assert.equal(grace.stats.important, 1);
-  assert.equal(grace.stats.outsource, 1);
+  assert.equal(grace.stats.intern, 1);
   assert.equal(grace.stats.ordinary, 0);
   assert.equal(ada.stats.important, 1);
-  assert.equal(ada.stats.outsource, 1);
+  assert.equal(ada.stats.intern, 1);
   assert.equal(ada.stats.ordinary, 1);
 });
 
@@ -205,7 +205,7 @@ test("the generated head is Large and drops 15 points", () => {
   assert.ok(drop, "15 point head tick");
 });
 
-test("the pill above a card names the dotted-line manager on every copy", () => {
+test("the pill above a card names the other manager: Ada on the solid copy under Grace, Grace on the dotted copy under Ada", () => {
   const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
   const org = buildOrg([
     header,
@@ -236,7 +236,7 @@ test("the pill above a card names the dotted-line manager on every copy", () => 
   assert.equal(underDotted.length, 1);
   for (const pair of [...underSolid, ...underDotted]) {
     assert.ok(pair.bubble, `${pair.card.managerType} copy has a pill`);
-    assert.equal(pair.bubble.text, "Ada");
+    assert.equal(pair.bubble.text, pair.card.managerType === "Dotted" ? "Grace" : "Ada");
     assert.equal(pair.bubble.dotted, true);
   }
 });
@@ -386,7 +386,7 @@ test("Advanced statistics and Larsen’s departments match the template", () => 
     "Team Size – 51 people",
     "46 ordinary employees",
     "2 non-ordinary employees",
-    "3 outsourcers",
+    "3 interns",
   ]);
   const slides = buildSlides(org, org.ceo, "infinity");
   const larsen = slides.find((slide) => org.people.get(slide.rootKey).surname === "Larsen");
@@ -583,4 +583,331 @@ test("slide links use the palette green bar and black type", () => {
   assert.match(block, /color:\s*#000/);
   const exp = readFileSync(new URL("../js/export.js", import.meta.url), "utf8");
   assert.match(exp, /LINK_STYLE/);
+});
+
+test("leaf cards run top to bottom: ordinary, important, interns, then to be hired", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("A", "Intern", "Eng", "Lab", "Ada", "Lovelace", "", "", "", "", "1"),
+    row("B", "Key", "Eng", "Lab", "Ada", "Lovelace", "", "", "", "", "", "1"),
+    row("C", "Plain", "Eng", "Lab", "Ada", "Lovelace"),
+    row("D", "Both", "Eng", "Lab", "Ada", "Lovelace", "", "", "", "", "1", "1"),
+    row("E", "Plain", "Eng", "Lab", "Ada", "Lovelace"),
+    row("TBH_F", "Open", "Eng", "Lab", "Ada", "Lovelace", "", "", "", "", "", "1"),
+  ]);
+  assert.equal(org.fatal, false, org.issues.map((i) => i.message).join(" | "));
+  const keys = org.reports.get(org.ceo);
+  const box = layoutLeaves(org, keys, org.ceo, makeMetrics("Medium"), "1");
+  const names = box.items
+    .filter((item) => item.type === "card")
+    .sort((a, b) => a.y - b.y)
+    .map((card) => org.people.get(card.key).surname);
+  assert.deepEqual(names, ["C", "E", "B", "A", "D", "TBH_F"]);
+});
+
+test("giving two employees one department groups them in one branch with one shade", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("A1", "x", "Eng", "Q", "Ada", "Lovelace"),
+    row("A2", "x", "Eng", "X", "Ada", "Lovelace"),
+    row("B1", "x", "Eng", "q", "Ada", "Lovelace"),
+    row("B2", "x", "Eng", "Y", "Ada", "Lovelace"),
+  ]);
+  assert.equal(org.fatal, false, org.issues.map((i) => i.message).join(" | "));
+  const [slide] = buildSlides(org, org.ceo, "clever");
+  const at = (name) => slide.shapes.find((shape) => shape.type === "card" && org.people.get(shape.key)?.surname === name);
+  assert.equal(at("A1").x, at("B1").x, "A1 and B1 share a column");
+  assert.ok(Math.abs(at("A1").y - at("B1").y) > 0, "stacked, not side by side");
+  const shades = slide.shapes.filter((shape) => shape.type === "shade");
+  assert.equal(shades.length, 3);
+  const q = shades.find((shade) => shade.text === "Q");
+  for (const name of ["A1", "B1"]) {
+    const card = at(name);
+    assert.ok(q.x <= card.x && q.x + q.w >= card.x + card.w && q.y <= card.y && q.y + q.h >= card.y + card.h);
+  }
+  for (const name of ["A2", "B2"]) {
+    const card = at(name);
+    assert.ok(card.x >= q.x + q.w || card.x + card.w <= q.x, `${name} sits outside the Q shade`);
+  }
+});
+
+test("a department shade around two people stays a column when everyone else has no department", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const rows = [
+    header,
+    row("Ada", "Lovelace", "CEO", "", "", ""),
+    row("M1", "m", "mgr", "", "Ada", "Lovelace"),
+    row("M2", "m", "mgr", "", "Ada", "Lovelace"),
+    row("W1", "x", "eng", "GPS", "M1", "m"),
+    row("W2", "x", "eng", "GPS", "M1", "m"),
+  ];
+  for (let i = 1; i <= 4; i += 1) rows.push(row(`V${i}`, "x", "eng", "", "M1", "m"));
+  for (let i = 1; i <= 3; i += 1) rows.push(row(`N${i}`, "x", "eng", "", "M2", "m"));
+  const org = buildOrg(rows);
+  assert.equal(org.fatal, false, org.issues.map((i) => i.message).join(" | "));
+  const [slide] = buildSlides(org, org.ceo, "clever");
+  const shades = slide.shapes.filter((shape) => shape.type === "shade");
+  assert.equal(shades.length, 1);
+  const [shade] = shades;
+  const card = (name) => slide.shapes.find((s) => s.type === "card" && org.people.get(s.key)?.surname === name);
+  for (const name of ["W1", "W2"]) {
+    assert.ok(card(name).x >= shade.x && card(name).x + card(name).w <= shade.x + shade.w, `${name} is inside`);
+  }
+  for (const name of ["V1", "N1", "M2"]) {
+    const c = card(name);
+    assert.ok(c.x >= shade.x + shade.w || c.x + c.w <= shade.x, `${name} is not covered by the shade`);
+  }
+  assert.ok(shade.w < 400, "a column, not the whole slide");
+});
+
+function hiddenRow(...cells) {
+  const base = row(...cells);
+  base.push("", "1");
+  return base;
+}
+
+test("hidden employees are checked on upload but left off slides and counts, and tallied apart", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c", "h"];
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("Grace", "Hopper", "Eng", "Lab", "Ada", "Lovelace"),
+    row("Ken", "Thompson", "Eng", "Lab", "Grace", "Hopper"),
+    hiddenRow("Hid", "Den", "Eng", "Lab", "Grace", "Hopper"),
+    hiddenRow("Hid", "Intern", "Eng", "Lab", "Grace", "Hopper", "", "", "", "", "1"),
+  ]);
+  assert.equal(org.fatal, false, org.issues.map((i) => i.message).join(" | "));
+  const grace = [...org.people.values()].find((person) => person.surname === "Grace");
+  assert.equal(grace.stats.subordinates, 2, "Grace and Ken only");
+  assert.equal(grace.stats.hidden, 2);
+  assert.equal(grace.stats.hiddenOrdinary, 1);
+  assert.equal(grace.stats.hiddenIntern, 1);
+  assert.equal(org.companySize, 3);
+  assert.equal(org.order.length, 3, "hidden people are not offered in the pickers");
+  const lines = statisticsLines(grace, 1);
+  assert.equal(lines.some((line) => /hidden/i.test(line)), false, "hidden people are not in the statistics box");
+  assert.equal(lines.length, 5);
+  assert.equal(
+    hiddenListShape(org, org.ceo).text,
+    "Hidden, not counted in the statistics – 2 people (1 ordinary, 0 non-ordinary, 1 interns): Hid Den, Hid Intern",
+  );
+  const [slide] = buildSlides(org, org.ceo, "clever");
+  const surnames = slide.shapes.filter((shape) => shape.type === "card").map((card) => org.people.get(card.key).surname);
+  assert.equal(surnames.includes("Hid"), false);
+  assert.equal(surnames.length, 3);
+});
+
+test("a hidden employee still has to reach the CEO", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c", "h"];
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    hiddenRow("Hid", "Den", "Eng", "Lab", "Nobody", "Here"),
+  ]);
+  assert.equal(org.fatal, true);
+});
+
+test("a hidden manager must not have visible reports, and the CEO cannot be hidden", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c", "h"];
+  const visibleUnderHidden = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    hiddenRow("Hid", "Den", "Mgr", "Lab", "Ada", "Lovelace"),
+    row("Ken", "Thompson", "Eng", "Lab", "Hid", "Den"),
+  ]);
+  assert.equal(visibleUnderHidden.fatal, true);
+  assert.match(visibleUnderHidden.issues[0].message, /hidden/);
+  const allHidden = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    hiddenRow("Hid", "Den", "Mgr", "Lab", "Ada", "Lovelace"),
+    hiddenRow("Ken", "Thompson", "Eng", "Lab", "Hid", "Den"),
+  ]);
+  assert.equal(allHidden.fatal, false, allHidden.issues.map((i) => i.message).join(" | "));
+  assert.equal(allHidden.companySize, 1);
+  const hiddenCeo = buildOrg([header, hiddenRow("Ada", "Lovelace", "CEO", "Office", "", "")]);
+  assert.equal(hiddenCeo.fatal, true);
+});
+
+test("the head card tick is as thick as the bar it lands on and stops at that bar", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const rows = [header, row("Ada", "Lovelace", "CEO", "Office", "", "")];
+  for (let m = 1; m <= 12; m += 1) {
+    rows.push(row(`M${m}`, "m", "mgr", `D${m}`, "Ada", "Lovelace"));
+    for (let i = 1; i <= 3; i += 1) rows.push(row(`M${m}t${i}`, "x", "eng", `D${m}`, `M${m}`, "m"));
+  }
+  const org = buildOrg(rows);
+  assert.equal(org.fatal, false, org.issues.map((i) => i.message).join(" | "));
+  for (const mode of ["clever", "infinity"]) {
+    for (const slide of buildSlides(org, org.ceo, mode)) {
+      const wires = slide.shapes.filter((shape) => shape.type === "wire");
+      const tick = wires.find((w) => w.x1 === SLIDE.width / 2 && w.x2 === SLIDE.width / 2 && w.y2 - w.y1 === 15);
+      if (!tick) continue;
+      const bar = wires.find((w) => w.y1 === w.y2 && Math.abs(w.y1 - tick.y2) < 0.01 && Math.min(w.x1, w.x2) <= tick.x1 && Math.max(w.x1, w.x2) >= tick.x1);
+      if (!bar) continue;
+      assert.equal(tick.weight, bar.weight, "same thickness, so the tick does not poke out below the bar");
+    }
+  }
+});
+
+test("hidden people are named in a small grey note along the bottom of the slide", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c", "h"];
+  const none = buildOrg([header, row("Ada", "Lovelace", "CEO", "Office", "", ""), row("Grace", "Hopper", "Eng", "Lab", "Ada", "Lovelace")]);
+  assert.equal(hiddenListShape(none, none.ceo), null);
+  assert.equal(buildSlides(none, none.ceo, "clever")[0].shapes.some((shape) => shape.type === "hiddenlist"), false);
+
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("Grace", "Hopper", "Eng", "Lab", "Ada", "Lovelace"),
+    hiddenRow("Zed", "Last", "Eng", "Lab", "Grace", "Hopper"),
+    hiddenRow("Alan", "Turing", "Eng", "Lab", "Grace", "Hopper"),
+  ]);
+  assert.equal(org.fatal, false, org.issues.map((i) => i.message).join(" | "));
+  const [slide] = buildSlides(org, org.ceo, "clever");
+  const note = slide.shapes.find((shape) => shape.type === "hiddenlist");
+  assert.equal(note.text, "Hidden, not counted in the statistics – 2 people (2 ordinary, 0 non-ordinary, 0 interns): Alan Turing, Zed Last");
+  assert.ok(note.y + note.h <= SLIDE.height, "inside the slide");
+  assert.ok(note.y > 480, "along the bottom edge");
+});
+
+test("hidden people get no card in any slide of a multi-slide chart", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c", "h"];
+  const rows = [header, row("Ada", "Lovelace", "CEO", "Office", "", "")];
+  for (let m = 1; m <= 12; m += 1) {
+    rows.push(row(`M${m}`, "m", "mgr", `D${m}`, "Ada", "Lovelace"));
+    for (let i = 1; i <= 3; i += 1) rows.push(row(`M${m}t${i}`, "x", "eng", `D${m}`, `M${m}`, "m"));
+  }
+  rows.push(hiddenRow("Hid", "Den", "eng", "D1", "M1", "m"));
+  rows.push(hiddenRow("Hid", "Top", "eng", "D1", "Ada", "Lovelace"));
+  const org = buildOrg(rows);
+  assert.equal(org.fatal, false, org.issues.map((i) => i.message).join(" | "));
+  for (const mode of ["clever", "infinity"]) {
+    for (const slide of buildSlides(org, org.ceo, mode)) {
+      const surnames = slide.shapes.filter((shape) => shape.type === "card").map((card) => org.people.get(card.key).surname);
+      assert.equal(surnames.includes("Hid"), false, `${mode}: no card for a hidden person`);
+    }
+  }
+});
+
+test("the newcomer flag is read from column P and does not change any count", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c", "h", "x"];
+  const withFlag = (...cells) => {
+    const r = row(...cells);
+    r.push("", "", "1");
+    return r;
+  };
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    withFlag("Grace", "Hopper", "Eng", "Lab", "Ada", "Lovelace"),
+    row("Ken", "Thompson", "Eng", "Lab", "Ada", "Lovelace"),
+  ]);
+  assert.equal(org.fatal, false, org.issues.map((i) => i.message).join(" | "));
+  const byName = (surname) => [...org.people.values()].find((person) => person.surname === surname);
+  assert.equal(byName("Grace").newcomer, true);
+  assert.equal(byName("Ken").newcomer, false);
+  assert.equal(byName("Ada").newcomer, false);
+  assert.equal(byName("Ada").stats.subordinates, 3);
+});
+
+test("a 16-column sheet puts HR ID in N, hide in O and newcomer in P", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c", "hr", "h", "x"];
+  const org = buildOrg([
+    header,
+    [...row("Ada", "Lovelace", "CEO", "Office", "", ""), "42", "", ""],
+    [...row("Grace", "Hopper", "Eng", "Lab", "Ada", "Lovelace"), "7", "", "1"],
+    [...row("Ken", "Thompson", "Eng", "Lab", "Ada", "Lovelace"), "8", "1", ""],
+  ]);
+  assert.equal(org.fatal, false, org.issues.map((i) => i.message).join(" | "));
+  const byName = (surname) => [...org.people.values()].find((person) => person.surname === surname);
+  assert.equal(byName("Grace").hrId, "7");
+  assert.equal(byName("Grace").newcomer, true);
+  assert.equal(byName("Ken").hidden, true);
+  assert.equal(byName("Ada").stats.subordinates, 2);
+});
+
+test("the newcomer date in column Q is kept in compact day.month form", async () => {
+  const { compactDate } = await import("../js/org.js");
+  assert.equal(compactDate("16.11.2026"), "16.11");
+  assert.equal(compactDate("5/3/2026"), "05.03");
+  assert.equal(compactDate("2026-11-16"), "16.11");
+  assert.equal(compactDate(new Date(Date.UTC(2026, 10, 16))), "16.11");
+  assert.equal(compactDate(46342), "16.11");
+  assert.equal(compactDate(""), "");
+  const header = Array(17).fill("x");
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    [...row("Grace", "Hopper", "Eng", "Lab", "Ada", "Lovelace"), "", "", "1", "16.11.2026"],
+  ]);
+  assert.equal(org.fatal, false, org.issues.map((i) => i.message).join(" | "));
+  assert.equal(org.people.get("gracehopper").newcomerDate, "16.11");
+});
+
+test("vacancies get their own picker category and a readable label", async () => {
+  const { categories, pickerLabel, VACANCIES } = await import("../js/org.js");
+  const org = buildOrg([
+    ["s", "n", "j", "d", "ms", "mn"],
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("TBH_Asyat", "TBH_Asyat", "Eng", "Lab", "Ada", "Lovelace"),
+  ]);
+  assert.equal(org.fatal, false);
+  assert.ok(categories(org).includes(VACANCIES));
+  assert.equal(categories(org).includes("T"), false);
+  const [key] = peopleInCategory(org, VACANCIES);
+  assert.equal(pickerLabel(org.people.get(key)), "Asyat (vacancy)");
+  assert.equal(peopleInCategory(org, "T").length, 0);
+});
+
+test("Cyrillic surnames get their own letter category, so clicking their card finds them", async () => {
+  const { categories } = await import("../js/org.js");
+  const org = buildOrg([
+    ["s", "n", "j", "d", "ms", "mn"],
+    row("Толстой", "Никита", "CEO", "Office", "", ""),
+    row("Апонасенко", "Юлия", "Analyst", "Lab", "Толстой", "Никита"),
+    row("Ada", "Lovelace", "Eng", "Lab", "Толстой", "Никита"),
+  ]);
+  assert.equal(org.fatal, false);
+  const list = categories(org);
+  assert.ok(list.includes("А") && list.includes("Т") && list.includes("A"), list.join(","));
+  assert.deepEqual(peopleInCategory(org, "А"), ["апонасенкоюлия"]);
+});
+
+test("cards keep their own copy of the person, so a later import cannot change a slide", async () => {
+  const { shapePerson } = await import("../js/org.js");
+  const rows = (job) => [
+    ["s", "n", "j", "d", "ms", "mn"],
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("Grace", "Hopper", job, "Lab", "Ada", "Lovelace"),
+  ];
+  const first = buildOrg(rows("Engineer"));
+  const [slide] = buildSlides(first, first.ceo, "clever");
+  const other = buildOrg(rows("Janitor"));
+  const card = slide.shapes.find((shape) => shape.type === "card" && shape.key === "gracehopper");
+  assert.equal(shapePerson(other, card).job, "Engineer", "the later sheet does not leak in");
+  assert.equal(shapePerson(buildOrg([["s"]]), card).surname, "Grace", "and a sheet without this person does not blank it");
+  assert.equal(slide.rootLabel, "Ada Lovelace");
+});
+
+test("the pill over a two-manager card names the other manager, whichever line the card hangs under", () => {
+  const org = buildOrg([
+    ["s", "n", "j", "d", "ms", "mn", "ds", "dn"],
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("Mike", "Boss", "Mgr", "Lab", "Ada", "Lovelace"),
+    row("Sem", "Dotted", "Mgr", "Lab", "Ada", "Lovelace"),
+    row("Ust", "Person", "Eng", "Lab", "Mike", "Boss", "Sem", "Dotted"),
+  ]);
+  assert.equal(org.fatal, false, org.issues.map((i) => i.message).join(" | "));
+  const ust = org.people.get("ustperson");
+  const metrics = makeMetrics("Medium", 10);
+  const pill = (parent) =>
+    layoutLeaves(org, ["ustperson"], parent, metrics, "1").items.find((item) => item.type === "bubble").text;
+  assert.equal(pill("mikeboss"), "Sem", "under the solid-line manager: the dotted-line one");
+  assert.equal(pill("semdotted"), "Mike", "under the dotted-line manager: the solid-line one");
+  assert.equal(ust.solidKey, "mikeboss");
 });

@@ -1,14 +1,20 @@
 import {
+  COLUMN_LABELS,
   buildOrg,
   cardStyle,
   categories,
   displayName,
   headcountLabel,
   isManager,
+  visibleReports,
   moderated,
   peopleInCategory,
+  pickerLabel,
+  VACANCIES,
   personFullName,
   statisticsLines,
+  freezeCards,
+  shapePerson,
 } from "./org.js";
 import {
   CARDS,
@@ -24,6 +30,8 @@ import {
   layoutSingleCard,
   makeMetrics,
   slideLinkTop,
+  hiddenListShape,
+  statsBoxHeight,
 } from "./layout.js";
 import { deckToPptx, slideToCanvas } from "./export.js";
 import {
@@ -35,9 +43,23 @@ import {
   removeSlide,
   scaleShapes,
   selectionBounds,
+  slideMarkdown,
   shapeBox,
   showCostCenterStamps,
 } from "./editor.js";
+import {
+  blankDraftRow,
+  cellText,
+  checkSheet,
+  draftFromMatrix,
+  flagValue,
+  isFlagOn,
+  pickSheet,
+  problemRows,
+  sheetProblem,
+  trimTrailingBlankRows,
+  vacancyDraftRow,
+} from "./sheet.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -128,43 +150,84 @@ function readWorkbook(buffer, fileName) {
     name,
     matrix: window.XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: "", raw: true }),
   }));
-  const preferred = state.workbookSheets.findIndex((sheet) => /advanced/i.test(sheet.name));
-  fillSheets(preferred >= 0 ? preferred : 0);
+  autoImport();
 }
 
-function fillSheets(index) {
-  const select = $("sheet");
-  select.innerHTML = "";
-  for (const sheet of state.workbookSheets) {
-    const option = document.createElement("option");
-    option.value = sheet.name;
-    option.textContent = sheet.name;
-    select.appendChild(option);
+/** Run the checks on every tab, so the pickers can say which ones are usable. */
+function checkSheets() {
+  for (const sheet of state.workbookSheets || []) Object.assign(sheet, checkSheet(sheet.matrix));
+}
+
+/** Import the first tab that passes the checks (`prefer` first, if it still does). Nothing usable: stay blocked and say why. */
+function autoImport(prefer = "") {
+  checkSheets();
+  const sheets = state.workbookSheets || [];
+  const { usable, shown } = pickSheet(sheets, prefer);
+  if (usable) {
+    importSheet(usable.name, { checked: true });
+    return;
   }
-  select.selectedIndex = index;
-  state.sheetName = select.value;
+  state.sheetName = shown?.name || "";
+  state.matrix = shown?.matrix || null;
+  state.org = shown?.org || null;
+  state.imported = false;
+  state.category = "CEO";
+  state.personKey = "";
+  fillPeople();
+  fillSheetPickers();
+  showImportProblem();
+  document.body.dataset.stage = "file";
+  render();
+  toast(
+    !sheets.length
+      ? "This file has no sheets."
+      : sheets.length > 1
+        ? "None of the tabs in this file passes the checks. Pick another file, or fix the rows."
+        : "This file does not pass the checks. Pick another file, or fix the rows.",
+  );
+}
+
+/** Both pickers list every tab. Choosing a broken one in the ribbon opens it in Edit data instead of importing it. */
+function fillSheetPickers() {
+  const fill = (select, brokenLabel) => {
+    select.innerHTML = "";
+    for (const sheet of state.workbookSheets || []) {
+      const option = document.createElement("option");
+      option.value = sheet.name;
+      option.textContent = sheet.problem ? `${sheet.name} (${brokenLabel})` : sheet.name;
+      option.title = sheet.problem || "";
+      select.appendChild(option);
+    }
+    select.value = state.sheetName;
+  };
+  fill($("sheet"), "has errors, opens Edit data");
+  fill($("sheet-fix"), "has errors");
   const name = $("file-name");
   if (name) name.value = state.fileName || "";
-  document.body.dataset.stage = "file";
 }
 
-function importSheet() {
-  const sheet = state.workbookSheets?.find((item) => item.name === $("sheet").value);
+/** `checked`: autoImport just ran the checks on every tab, so they are not run again. */
+function importSheet(name = state.sheetName, { checked = false } = {}) {
+  const sheet = state.workbookSheets?.find((item) => item.name === name);
   if (!sheet) {
     toast("Choose an Excel file first.");
     return;
   }
+  // The matrix may have changed in Edit data, so every tab's label is refreshed too.
+  if (!checked) checkSheets();
   state.sheetName = sheet.name;
   state.matrix = sheet.matrix;
-  state.org = buildOrg(sheet.matrix, { hasTitles: $("titles").checked });
+  state.org = sheet.org;
   state.category = "CEO";
   state.personKey = state.org.ceo || state.org.order[0] || "";
   fillPeople();
+  fillSheetPickers();
+  showImportProblem();
   if (state.org.fatal) {
     state.imported = false;
     document.body.dataset.stage = "file";
     render();
-    toast("Import found problems. The chart stays blocked until they are fixed.");
+    toast("This sheet has problems. The chart stays blocked until they are fixed.");
     return;
   }
   state.imported = true;
@@ -172,6 +235,19 @@ function importSheet() {
   render();
   const size = state.org.companySize === 1 ? "1 person" : `${state.org.companySize} people`;
   toast(`Imported ${state.sheetName}. CEO ${personFullName(state.org.people.get(state.org.ceo))}, ${size}.`);
+}
+
+/** A failed import is explained next to the sheet picker, where the next move (other sheet, other file, edit rows) is. */
+function showImportProblem() {
+  const box = $("import-problem");
+  const fix = $("edit-data-fix");
+  const problem = sheetProblem(state.org);
+  box.hidden = !problem;
+  const noneUsable = (state.workbookSheets?.length || 0) > 1 && state.workbookSheets.every((sheet) => sheet.problem);
+  box.textContent = problem
+    ? `${state.sheetName}: ${problem} ${noneUsable ? "No tab in this file passes the checks. " : ""}Pick another file, or fix the rows.`
+    : "";
+  fix.hidden = !problem || !sheetByName(state.sheetName);
 }
 
 function fillPeople() {
@@ -193,7 +269,7 @@ function fillPeople() {
   for (const key of keys) {
     const option = document.createElement("option");
     option.value = key;
-    option.textContent = displayName(org.people.get(key));
+    option.textContent = pickerLabel(org.people.get(key));
     employee.appendChild(option);
   }
   if (!keys.includes(state.personKey)) state.personKey = keys[0] || "";
@@ -209,6 +285,8 @@ function createDeck(mode) {
   const key = $("employee").value || state.org.ceo;
   remember();
   const fresh = buildSlides(state.org, key, mode);
+  const deck = { id: nid("deck"), mode, rootKey: key };
+  for (const slide of fresh) slide.deck = deck;
   state.slides = prependCharts(state.slides, fresh);
   state.active = 0;
   state.selection.clear();
@@ -253,20 +331,26 @@ function placeCard(head) {
         x: 742,
         y: 10,
         w: 204,
-        h: 96,
+        h: statsBoxHeight(statisticsLines(state.org.people.get(key), visibleReports(state.org, key).length)),
         z: 5,
         heading: "Department statistics",
-        lines: statisticsLines(state.org.people.get(key), (state.org.reports.get(key) || []).length),
+        lines: statisticsLines(state.org.people.get(key), visibleReports(state.org, key).length),
       },
     );
+    const hiddenList = hiddenListShape(state.org, key);
+    if (hiddenList) slide.shapes.push({ ...hiddenList, id: nid("hiddenlist") });
   }
-  slide.rootKey = slide.rootKey || key;
+  freezeCards(state.org, slide.shapes);
+  if (!slide.rootKey) {
+    slide.rootKey = key;
+    slide.rootLabel = displayName(state.org.people.get(key));
+  }
   render();
 }
 
 function titleFor(key) {
   const person = state.org.people.get(key);
-  const direct = (state.org.reports.get(key) || []).length;
+  const direct = visibleReports(state.org, key).length;
   return {
     id: nid("title"),
     type: "title",
@@ -288,14 +372,14 @@ function placeBranch(mode) {
   const key = selectedPersonKey();
   const person = state.org.people.get(key);
   if (!person) return;
-  if ((state.org.reports.get(key) || []).length === 0) {
+  if (visibleReports(state.org, key).length === 0) {
     toast(`${personFullName(person)} has no direct reports.`);
     return;
   }
   remember();
   const slide = current();
   slide.shapes = slide.shapes.filter((shape) => {
-    if (shape.type === "title" || shape.type === "legend" || shape.type === "nav" || shape.type === "stats") return true;
+    if (["title", "legend", "nav", "stats", "hiddenlist"].includes(shape.type)) return true;
     if (shape.key === key && (shape.type === "card" || shape.type === "bubble" || shape.type === "comment")) return true;
     return false;
   });
@@ -316,6 +400,7 @@ function placeBranch(mode) {
     }
     slide.shapes.push(shape);
   }
+  freezeCards(state.org, slide.shapes);
   render();
 }
 
@@ -460,7 +545,7 @@ function addDecoration(kind) {
     slide.shapes.push({ id: nid("frame"), type: "frame", x: 70, y: 160, w: 180, h: 240, z: 4 });
   } else if (kind === "card") {
     const card = CARDS[$("size").value];
-    ["ordinary", "important", "outsource", "tbh"].forEach((placeholder, index) => {
+    ["ordinary", "important", "intern", "tbh"].forEach((placeholder, index) => {
       slide.shapes.push({
         id: nid("card"),
         type: "card",
@@ -619,7 +704,6 @@ function render() {
   state.frame = contentFrame(current()?.shapes || []);
   renderSlide();
   renderFilmstrip();
-  renderInspector();
   renderStatus();
   applyScale();
   syncChrome();
@@ -682,7 +766,7 @@ function renderSlide() {
     empty.className = "empty-slide";
     empty.innerHTML = state.imported
       ? "<div><strong>Empty slide</strong>Choose a person, then Create org chart.</div>"
-      : "<div><strong>Empty slide</strong>Select an Excel file, import the sheet, then create the chart.</div>";
+      : "<div><strong>Empty slide</strong>Select an Excel file, then create the chart.</div>";
     root.appendChild(empty);
   }
 
@@ -742,28 +826,33 @@ function renderShape(shape) {
   node.style.top = `${viewY(shape.y)}px`;
   node.style.width = `${shape.w}px`;
   node.style.height = `${shape.h}px`;
-  node.style.zIndex = String(shape.z || 2);
+  node.style.zIndex = String(shape.z ?? 2);
   if (state.selection.has(shape.id)) node.classList.add("selected");
 
   if (shape.type === "card") {
-    const person = shape.key ? state.org?.people.get(shape.key) : null;
+    const person = shapePerson(state.org, shape);
     const kind = person ? cardStyle(person) : shape.placeholder || "ordinary";
     node.classList.add(kind);
+    if (person?.tbh || (!person && kind === "tbh")) node.classList.add("vacant");
     const lines = person
       ? person.tbh
-        ? ["To be hired", moderated(person.job)]
+        ? shape.h >= 32
+          ? ["To be hired", "", moderated(person.job)]
+          : ["To be hired", moderated(person.job)]
         : [moderated(person.surname), moderated(person.name), moderated(person.job)]
       : shape.lines || [];
     const spec = CARDS[shape.size] || CARDS.Medium;
     const fontScale = spec.h ? shape.h / spec.h : 1;
     node.style.fontSize = `${spec.name * fontScale}px`;
+    node.style.setProperty("--padx", `${(spec.name * fontScale * 0.65).toFixed(1)}px`);
     const badge = person ? headcountLabel(person) : "";
     const footer = person?.location || "";
+    node.classList.toggle("no-loc", !footer);
     const badgeHtml = badge ? `<span class="hc">${escapeHtml(badge)}</span>` : "";
     node.innerHTML = `<span class="who">${escapeHtml(lines[0] || "")}</span>
       <span class="who">${escapeHtml(lines[1] || "")}</span>
       ${shape.h >= 32 && lines[2] ? `<span class="job" style="font-size:${spec.title * fontScale}px">${escapeHtml(lines[2])}</span>` : ""}
-      ${footer ? `<span class="loc"><span class="loc-text">${escapeHtml(footer)}</span>${badgeHtml}</span>` : badgeHtml}`;
+      ${footer ? `<span class="loc"><span class="loc-text">${escapeHtml(footer)}</span>${badgeHtml}</span>` : badge ? `<span class="hc corner">${escapeHtml(badge)}</span>` : ""}${person?.newcomer ? `<span class="new-badge" title="Newcomer${person.newcomerDate ? ` from ${escapeHtml(person.newcomerDate)}` : ""}">New${person.newcomerDate ? `<small>${escapeHtml(person.newcomerDate)}</small>` : ""}</span>` : ""}`;
     node.setAttribute("aria-label", person ? personFullName(person) : "Empty card");
     node.addEventListener("dblclick", (event) => {
       event.stopPropagation();
@@ -773,7 +862,9 @@ function renderShape(shape) {
     node.innerHTML = `<div class="name">${escapeHtml(shape.name || "")}</div>
       <div class="dept">${escapeHtml(shape.department || "Organisation")}</div>`;
   } else if (shape.type === "legend") {
-    node.innerHTML = `<div class="legend"><div class="legend-title">Indicators</div><div><i class="ordinary"></i>Ordinary employee</div><div><i class="important"></i>Important employee</div><div><i class="outsource"></i>Outsourcer</div></div>`;
+    node.innerHTML = `<div class="legend"><div class="legend-title">Indicators</div><div><i class="ordinary"></i>Ordinary employee</div><div><i class="important"></i>Important employee</div><div><i class="intern"></i>Intern</div></div>`;
+  } else if (shape.type === "hiddenlist") {
+    node.textContent = shape.text || "";
   } else if (shape.type === "stats") {
     node.innerHTML = `<div class="stats-title">${escapeHtml(shape.heading || "Department statistics")}</div><ul>${(shape.lines || []).map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>`;
   } else if (shape.type === "shade") {
@@ -784,7 +875,7 @@ function renderShape(shape) {
     if (shape.dotted) node.classList.add("dotted");
   } else if (shape.type === "cc") {
     node.textContent = shape.text || "?";
-    node.style.fontSize = `${Math.max(6, (shape.h || 30) * (10 / 30))}px`;
+    node.style.fontSize = `${shape.fs || Math.max(5, (shape.h || 11) * 0.64)}px`;
   } else if (shape.type === "comment" || shape.type === "link" || shape.type === "nav") {
     node.textContent = shape.text || "";
     if (shape.type === "link") {
@@ -813,7 +904,9 @@ function escapeHtml(value) {
 function focusPerson(key) {
   if (!key || !state.org?.people.has(key)) return;
   state.personKey = key;
-  state.category = key.slice(0, 1).toUpperCase();
+  const wanted = state.org.people.get(key).tbh ? VACANCIES : key.slice(0, 1).toUpperCase();
+  // A letter with no category of its own (a digit, say) still lands on the person, under All, A–Z.
+  state.category = categories(state.org).includes(wanted) ? wanted : "AZ";
   fillPeople();
   $("employee").value = key;
 }
@@ -876,7 +969,6 @@ function beginMarquee(event, shape) {
   pointer.marquee.className = "marquee";
   $("slide").appendChild(pointer.marquee);
   $("slide").setPointerCapture?.(event.pointerId);
-  if (!shape) renderInspector();
 }
 
 function beginScale(event, mode) {
@@ -1059,11 +1151,10 @@ function onPointerUp(event) {
 }
 
 function slideCaption(slide, index) {
-  const person = slide.rootKey && state.org ? state.org.people.get(slide.rootKey) : null;
   const cards = slide.shapes.filter((shape) => shape.type === "card").length;
   return {
     title: slide.title || `Slide ${index + 1}`,
-    detail: person ? displayName(person) : cards ? `${cards} cards` : "Empty",
+    detail: slide.rootLabel || (cards ? `${cards} cards` : "Empty"),
   };
 }
 
@@ -1177,67 +1268,26 @@ function renderFilmstrip() {
   });
 }
 
-function renderInspector() {
-  const summary = $("sheet-summary");
-  const issues = $("issues");
-  const personNode = $("person");
-  personNode.innerHTML = "";
-  if (!state.org) {
-    summary.innerHTML = "<p>One row per person. The CEO is the only row with an empty solid-line manager. Everyone else names the person they report to.</p>";
-    issues.innerHTML = "<p class='ok'>Nothing imported yet.</p>";
-    return;
-  }
-  const ceo = state.org.ceo ? state.org.people.get(state.org.ceo) : null;
-  summary.innerHTML = `<p><b>${escapeHtml(state.sheetName)}</b> · ${state.org.companySize} people${ceo ? ` · CEO ${escapeHtml(personFullName(ceo))}` : ""}.</p>`;
+/** People the slides leave out, once there is more than one slide (a single slide may fold teams on purpose). */
+function missingFromSlides() {
+  if (!state.org || state.org.fatal || state.slides.length < 2) return 0;
   const drawn = new Set();
   for (const slide of state.slides) {
     for (const shape of slide.shapes) if (shape.type === "card" && shape.key) drawn.add(shape.key);
   }
-  const missing = [...state.org.people.keys()].filter((key) => !drawn.has(key));
-  const coverage = !drawn.size
-    ? ""
-    : !missing.length
-      ? `<p class="ok">Every person is on a slide.</p>`
-      : state.slides.length > 1
-        ? `<p class="issue">The chart left out ${missing.length} ${missing.length === 1 ? "person" : "people"}.</p>`
-        : "";
-  if (state.org.issues.length === 0) issues.innerHTML = `<p class='ok'>Reporting lines reach the CEO.</p>${coverage}`;
-  else {
-    issues.innerHTML = `<ul>${state.org.issues
-      .map((issue) => `<li class="${issue.level === "error" ? "issue" : ""}">${escapeHtml(issue.message)}</li>`)
-      .join("")}</ul>`;
-  }
-  const key = [...state.selection]
-    .map((id) => current().shapes.find((shape) => shape.id === id)?.key)
-    .find((id) => id && state.org.people.has(id));
-  const person = key ? state.org.people.get(key) : null;
-  if (!person) {
-    personNode.innerHTML = "<p>Select a card.</p>";
-    return;
-  }
-  const solid = state.org.people.get(person.solidKey);
-  const dotted = state.org.people.get(person.dottedKey);
-  const rows = [
-    ["Name", personFullName(person)],
-    ["Job", person.job || "—"],
-    ["Department", person.department || "—"],
-    ["Location", person.location || "—"],
-    ["Reports to", solid ? personFullName(solid) : "—"],
-    ["Dotted line", dotted ? personFullName(dotted) : "—"],
-    ["Team", headcountLabel(person) || "1"],
-    ["Excel row", String(person.row)],
-    ["Flags", [person.important ? "Key" : "", person.outsource ? "External" : "", person.tbh ? "To be hired" : ""].filter(Boolean).join(", ") || "Staff"],
-    ["Cost center", person.costCenter || "—"],
-  ];
-  personNode.innerHTML = rows.map(([label, value]) => `<dt>${label}</dt><dd>${escapeHtml(value)}</dd>`).join("");
+  if (!drawn.size) return 0;
+  return [...state.org.people.keys()].filter((key) => !drawn.has(key) && !state.org.people.get(key).hidden).length;
 }
 
 function renderStatus() {
   const fit = current()?.fit;
   const fitText = fit ? `${fit.size} · tick ${Math.round(fit.gap)} pt` : "";
-  $("status-left").textContent = state.org
-    ? `${state.fileName || "Workbook"} · ${state.sheetName} · ${state.org.companySize} people${fitText ? ` · ${fitText}` : ""}`
+  const missing = missingFromSlides();
+  const left = $("status-left");
+  left.textContent = state.org
+    ? `${state.fileName || "Workbook"} · ${state.sheetName} · ${state.org.companySize} people${fitText ? ` · ${fitText}` : ""}${missing ? ` · ${missing} not on any slide` : ""}`
     : "No workbook yet.";
+  left.classList.toggle("warn", missing > 0);
   $("zoom-label").textContent = `${Math.round(baseScale() * state.zoom * 100)}%`;
 }
 
@@ -1295,6 +1345,28 @@ function downloadBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
+/** Copy the selected shapes' text, or the whole slide's when nothing is selected. */
+async function copySlideText() {
+  const shapes = state.selection.size ? selectedShapes() : current().shapes;
+  const text = slideMarkdown(state.org, shapes, { number: state.active + 1, total: state.slides.length });
+  if (!text) {
+    toast("Nothing to copy on this slide.");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.style.cssText = "position:fixed;opacity:0";
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+  }
+  toast(`Copied the ${state.selection.size ? "selection" : "slide"} as Markdown.`);
+}
+
 function exportPng() {
   const canvas = slideToCanvas(state.org || { people: new Map() }, current());
   canvas.toBlob((blob) => {
@@ -1321,12 +1393,298 @@ function exportJson() {
   downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), "myboss-project.json");
 }
 
+// ---- Sheet editor -------------------------------------------------------
+
+const sheetEdit = { sheetName: "", draft: [], firstRow: 1, hasTitles: true, dirty: false, org: null, timer: 0, sort: null };
+const FLAG_COLUMNS = new Set([10, 11, 14, 15]);
+
+function sheetByName(name) {
+  return state.workbookSheets?.find((item) => item.name === name);
+}
+
+/** Edit any tab, including one that does not pass the checks yet. Defaults to the imported one. */
+function openSheetEditor(name = state.sheetName) {
+  const sheet = sheetByName(typeof name === "string" ? name : state.sheetName);
+  if (!sheet) {
+    toast("Import a sheet first.");
+    return;
+  }
+  sheetEdit.sheetName = sheet.name;
+  sheetEdit.hasTitles = sheet.hasTitles !== false;
+  sheetEdit.firstRow = sheetEdit.hasTitles ? 1 : 0;
+  sheetEdit.draft = trimTrailingBlankRows(draftFromMatrix(sheet.matrix), sheetEdit.firstRow);
+  if (sheetEdit.hasTitles && !sheetEdit.draft.length) sheetEdit.draft.push(COLUMN_LABELS.slice());
+  sheetEdit.dirty = false;
+  sheetEdit.sort = null;
+  syncSortControls();
+  $("sheet-filter").value = "";
+  $("sheet-sub").textContent = `${state.fileName || "Workbook"} · ${sheet.name}`;
+  $("sheet-dialog").hidden = false;
+  document.body.classList.add("sheet-open");
+  renderSheetGrid();
+  validateSheet();
+}
+
+function closeSheetEditor() {
+  clearTimeout(sheetEdit.timer);
+  $("sheet").value = state.sheetName; // a broken tab picked in the ribbon only opened the editor
+  $("sheet-dialog").hidden = true;
+  document.body.classList.remove("sheet-open");
+}
+
+function renderSheetGrid() {
+  const grid = $("sheet-grid");
+  const sort = sheetEdit.sort;
+  const head = `<thead><tr><th class="num">#</th>${COLUMN_LABELS.map((label, c) => {
+    const dir = sort && sort.col === c ? sort.dir : "";
+    const arrow = dir === "asc" ? "▲" : dir === "desc" ? "▼" : "⇅";
+    const hint = dir === "asc" ? "Click for Z–A" : dir === "desc" ? "Click to restore sheet order" : "Click to sort A–Z";
+    return `<th class="sortable" data-sort="${c}" tabindex="0" role="button" aria-sort="${dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none"}" title="Column ${String.fromCharCode(65 + c)}: ${escapeHtml(label)}. ${hint}">${escapeHtml(label)}<span class="sort-ind${dir ? " on" : ""}">${arrow}</span></th>`;
+  }).join("")}<th></th></tr></thead>`;
+  const rows = [];
+  for (const r of sheetRowOrder()) {
+    const row = sheetEdit.draft[r];
+    const cells = COLUMN_LABELS.map((label, c) => {
+      if (FLAG_COLUMNS.has(c)) {
+        return `<td class="flag"><input type="checkbox" data-c="${c}" aria-label="${escapeHtml(label)}"${isFlagOn(row[c]) ? " checked" : ""}></td>`;
+      }
+      return `<td><input type="text" data-c="${c}" aria-label="${escapeHtml(label)}" value="${escapeHtml(cellText(row[c]))}"></td>`;
+    }).join("");
+    rows.push(
+      `<tr data-r="${r}"><td class="num">${r + 1}</td>${cells}<td class="del"><button type="button" class="row-del" aria-label="Delete row ${r + 1}" title="Delete row">×</button></td></tr>`,
+    );
+  }
+  grid.innerHTML = `${head}<tbody>${rows.join("")}</tbody>`;
+  applySheetFilter();
+}
+
+/** Draft row indexes in display order. Sorting is a view only: the sheet order and row numbers do not change. */
+function sheetRowOrder() {
+  const order = [];
+  for (let r = sheetEdit.firstRow; r < sheetEdit.draft.length; r += 1) order.push(r);
+  const sort = sheetEdit.sort;
+  if (!sort) return order;
+  const value = (r) => {
+    const cell = sheetEdit.draft[r][sort.col];
+    return FLAG_COLUMNS.has(sort.col) ? (isFlagOn(cell) ? "1" : "0") : cellText(cell).trim();
+  };
+  const sign = sort.dir === "asc" ? 1 : -1;
+  // Array.prototype.sort is stable, so equal cells keep their sheet order. Blanks stay at the bottom both ways.
+  return order.sort((a, b) => {
+    const left = value(a);
+    const right = value(b);
+    if (!left && !right) return 0;
+    if (!left) return 1;
+    if (!right) return -1;
+    return sign * left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+  });
+}
+
+function cycleSheetSort(col) {
+  const sort = sheetEdit.sort;
+  if (!sort || sort.col !== col) setSheetSort(col, "asc");
+  else if (sort.dir === "asc") setSheetSort(col, "desc");
+  else setSheetSort(null);
+}
+
+/** col null = back to the order in the sheet. */
+function setSheetSort(col, dir) {
+  sheetEdit.sort = col == null ? null : { col, dir };
+  syncSortControls();
+  const wrap = $("sheet-wrap");
+  const left = wrap.scrollLeft;
+  renderSheetGrid();
+  validateSheet();
+  wrap.scrollLeft = left;
+  wrap.scrollTop = 0;
+}
+
+function syncSortControls() {
+  const sort = sheetEdit.sort;
+  $("sheet-sort-col").value = sort ? String(sort.col) : "";
+  $("sheet-sort-asc").classList.toggle("on", sort?.dir === "asc");
+  $("sheet-sort-desc").classList.toggle("on", sort?.dir === "desc");
+  $("sheet-sort-reset").disabled = !sort;
+}
+
+function applySheetFilter() {
+  const needle = $("sheet-filter").value.trim().toLowerCase();
+  for (const tr of $("sheet-grid").tBodies[0]?.rows || []) {
+    const row = sheetEdit.draft[Number(tr.dataset.r)] || [];
+    tr.hidden = !!needle && !row.some((cell) => cellText(cell).toLowerCase().includes(needle));
+  }
+}
+
+function validateSheet() {
+  const org = buildOrg(sheetEdit.draft, { hasTitles: sheetEdit.hasTitles });
+  sheetEdit.org = org;
+  const bad = problemRows(org);
+  for (const tr of $("sheet-grid").tBodies[0]?.rows || []) {
+    const messages = bad.get(Number(tr.dataset.r) + 1);
+    tr.classList.toggle("bad", !!messages);
+    if (messages) tr.title = messages.join(" ");
+    else tr.removeAttribute("title");
+  }
+  const box = $("sheet-issues");
+  if (org.fatal) {
+    box.innerHTML = `<ul>${org.issues.map((issue) => `<li class="issue">${escapeHtml(issue.message)}</li>`).join("")}</ul>`;
+  } else {
+    const ceo = org.people.get(org.ceo);
+    const notes = org.issues.map((issue) => `<li>${escapeHtml(issue.message)}</li>`).join("");
+    box.innerHTML = `<p class="ok">${org.companySize} people${ceo ? ` · CEO ${escapeHtml(personFullName(ceo))}` : ""}. Ready to apply.</p>${notes ? `<ul>${notes}</ul>` : ""}`;
+  }
+  $("sheet-apply").disabled = org.fatal;
+}
+
+function scheduleSheetValidation() {
+  sheetEdit.dirty = true;
+  clearTimeout(sheetEdit.timer);
+  sheetEdit.timer = setTimeout(validateSheet, 250);
+}
+
+function addSheetRow(row) {
+  sheetEdit.draft.push(row);
+  $("sheet-filter").value = "";
+  renderSheetGrid();
+  validateSheet();
+  sheetEdit.dirty = true;
+  const last = $("sheet-grid").tBodies[0].querySelector(`tr[data-r="${sheetEdit.draft.length - 1}"]`);
+  last?.scrollIntoView({ block: "nearest" });
+  const input = last?.querySelector('input[data-c="0"]');
+  if (input) {
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+}
+
+function onSheetInput(event) {
+  const input = event.target;
+  const tr = input.closest("tr[data-r]");
+  if (!tr || input.dataset.c === undefined) return;
+  const c = Number(input.dataset.c);
+  sheetEdit.draft[Number(tr.dataset.r)][c] = input.type === "checkbox" ? flagValue(input.checked) : input.value;
+  scheduleSheetValidation();
+}
+
+function onSheetClick(event) {
+  const header = event.target.closest("th[data-sort]");
+  if (header) {
+    cycleSheetSort(Number(header.dataset.sort));
+    return;
+  }
+  const button = event.target.closest(".row-del");
+  if (!button) return;
+  const r = Number(button.closest("tr").dataset.r);
+  const wrap = $("sheet-wrap");
+  const top = wrap.scrollTop;
+  sheetEdit.draft.splice(r, 1);
+  renderSheetGrid();
+  validateSheet();
+  sheetEdit.dirty = true;
+  wrap.scrollTop = top;
+}
+
+function onSheetKeydown(event) {
+  if ((event.key === "Enter" || event.key === " ") && event.target.matches?.("th[data-sort]")) {
+    event.preventDefault();
+    cycleSheetSort(Number(event.target.dataset.sort));
+    return;
+  }
+  if (event.key === "Escape") {
+    event.stopPropagation();
+    if (sheetEdit.dirty) toast("You have unsaved edits. Use Apply or Cancel.");
+    else closeSheetEditor();
+    return;
+  }
+  if (event.key !== "Enter" || event.target.type !== "text") return;
+  event.preventDefault();
+  const c = event.target.dataset.c;
+  const step = event.shiftKey ? "previousElementSibling" : "nextElementSibling";
+  let tr = event.target.closest("tr")[step];
+  while (tr && tr.hidden) tr = tr[step];
+  tr?.querySelector(`input[data-c="${c}"]`)?.focus();
+}
+
+function applySheetEdits() {
+  validateSheet();
+  if (sheetEdit.org.fatal) return;
+  const sheet = sheetByName(sheetEdit.sheetName);
+  if (!sheet) return;
+  sheet.matrix = trimTrailingBlankRows(sheetEdit.draft, sheetEdit.firstRow);
+  const sameSheet = sheet.name === state.sheetName;
+  const keep = { category: state.category, personKey: state.personKey };
+  closeSheetEditor();
+  importSheet(sheet.name);
+  if (state.org && !state.org.fatal) {
+    if (sameSheet) {
+      state.category = keep.category;
+      state.personKey = keep.personKey;
+      fillPeople();
+    }
+    render();
+    const size = state.org.companySize === 1 ? "1 person" : `${state.org.companySize} people`;
+    const note = state.slides.some((slide) => slide.shapes.some((shape) => shape.type === "card"))
+      ? " Existing slides are unchanged: click Create org chart for new ones."
+      : "";
+    toast(`Data applied, ${size}.${note}`);
+  }
+}
+
+function downloadSheetXlsx() {
+  const XLSX = window.XLSX;
+  const workbook = XLSX.utils.book_new();
+  for (const sheet of state.workbookSheets || []) {
+    const rows =
+      sheet.name === sheetEdit.sheetName ? trimTrailingBlankRows(sheetEdit.draft, sheetEdit.firstRow) : sheet.matrix;
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows, { cellDates: true }), sheet.name);
+  }
+  const base = (state.fileName || "MyBoss-data").replace(/\.(xlsx|xls|xlsm)$/i, "");
+  XLSX.writeFile(workbook, `${base}-edited.xlsx`);
+}
+
+function bindSheetEditor() {
+  $("edit-data").addEventListener("click", openSheetEditor);
+  $("sheet-cancel").addEventListener("click", closeSheetEditor);
+  $("sheet-apply").addEventListener("click", applySheetEdits);
+  $("sheet-download").addEventListener("click", downloadSheetXlsx);
+  $("sheet-add").addEventListener("click", () => addSheetRow(blankDraftRow()));
+  $("sheet-add-tbh").addEventListener("click", () => addSheetRow(vacancyDraftRow()));
+  $("sheet-filter").addEventListener("input", applySheetFilter);
+  const sortSelect = $("sheet-sort-col");
+  sortSelect.innerHTML =
+    '<option value="">(sheet order)</option>' +
+    COLUMN_LABELS.map((label, c) => `<option value="${c}">${String.fromCharCode(65 + c)} · ${escapeHtml(label)}</option>`).join("");
+  const sortFromControls = (dir) => {
+    const picked = sortSelect.value;
+    if (picked === "") {
+      if (dir) toast("Pick a column to sort by.");
+      return;
+    }
+    setSheetSort(Number(picked), dir || sheetEdit.sort?.dir || "asc");
+  };
+  sortSelect.addEventListener("change", () => (sortSelect.value === "" ? setSheetSort(null) : sortFromControls()));
+  $("sheet-sort-asc").addEventListener("click", () => sortFromControls("asc"));
+  $("sheet-sort-desc").addEventListener("click", () => sortFromControls("desc"));
+  $("sheet-sort-reset").addEventListener("click", () => setSheetSort(null));
+  const grid = $("sheet-grid");
+  grid.addEventListener("input", onSheetInput);
+  grid.addEventListener("change", onSheetInput);
+  grid.addEventListener("click", onSheetClick);
+  $("sheet-dialog").addEventListener("keydown", onSheetKeydown);
+}
+
 function onKey(event) {
+  if (document.body.classList.contains("sheet-open")) return;
   const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName);
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
     event.preventDefault();
     if (event.shiftKey) restore(state.redo, state.undo);
     else restore(state.undo, state.redo);
+    return;
+  }
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c" && !typing && !window.getSelection()?.toString()) {
+    event.preventDefault();
+    copySlideText();
     return;
   }
   if (typing) return;
@@ -1363,15 +1721,23 @@ function bind() {
   $("file").addEventListener("change", async () => {
     const file = $("file").files[0];
     if (!file) return;
-    readWorkbook(await file.arrayBuffer(), file.name);
-    toast(`${file.name}: choose a sheet and import.`);
+    try {
+      readWorkbook(await file.arrayBuffer(), file.name);
+    } catch (error) {
+      toast(`Could not read ${file.name}: ${error.message || "not an Excel file"}.`);
+    } finally {
+      $("file").value = ""; // so choosing the same file again, after fixing it, still fires "change"
+    }
   });
-  $("import").addEventListener("click", importSheet);
-  $("refresh").addEventListener("click", importSheet);
+  $("refresh").addEventListener("click", () => $("file").click());
   $("pick-sheet").addEventListener("click", () => {
-    state.imported = false;
-    document.body.dataset.stage = "file";
-    toast("Choose a sheet, then Import data.");
+    const select = $("sheet");
+    select.focus();
+    try {
+      select.showPicker?.();
+    } catch {
+      // Older browsers refuse to open a <select> from script; focus is enough there.
+    }
   });
   $("refresh-more").addEventListener("click", (event) => toggleMenu("menu-refresh", event));
   $("create-main").addEventListener("click", (event) => toggleMenu("menu-create", event));
@@ -1381,8 +1747,27 @@ function bind() {
   $("arrange-main").addEventListener("click", (event) => toggleMenu("menu-arrange", event));
   document.addEventListener("click", () => document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open")));
   $("sheet").addEventListener("change", () => {
-    state.sheetName = $("sheet").value;
+    const sheet = sheetByName($("sheet").value);
+    if (!sheet) return;
+    if (sheet.problem) {
+      openSheetEditor(sheet.name);
+      toast(`${sheet.name}: ${sheet.problem} Fix it here, then Apply.`);
+      return;
+    }
+    importSheet(sheet.name);
   });
+  $("sheet-fix").addEventListener("change", () => {
+    const sheet = state.workbookSheets?.find((item) => item.name === $("sheet-fix").value);
+    if (!sheet) return;
+    state.sheetName = sheet.name;
+    state.matrix = sheet.matrix;
+    state.org = sheet.org;
+    showImportProblem();
+    render();
+  });
+
+  $("pick-other-file").addEventListener("click", () => $("file").click());
+  $("edit-data-fix").addEventListener("click", openSheetEditor);
   $("category").addEventListener("change", () => {
     state.category = $("category").value;
     state.personKey = "";
@@ -1436,6 +1821,7 @@ function bind() {
   $("dist-v").addEventListener("click", () => arrange("dist-v"));
   $("undo").addEventListener("click", () => restore(state.undo, state.redo));
   $("remove").addEventListener("click", () => arrange("delete"));
+  $("copy-text").addEventListener("click", copySlideText);
   $("png").addEventListener("click", exportPng);
   $("pptx").addEventListener("click", () => exportPptx());
   $("json").addEventListener("click", exportJson);
@@ -1458,5 +1844,6 @@ function bind() {
   window.addEventListener("resize", applyScale);
 }
 
+bindSheetEditor();
 bind();
 render();

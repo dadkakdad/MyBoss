@@ -50,7 +50,7 @@ The fit differences matter on a large sheet: which teams fold, and whether the t
 | CEO name spelling | `checkPersonExists` tries every order of the words against the report dictionary. | The CEO is the row with an empty solid-line manager. A differently ordered name is not matched. |
 | Not enough columns | Windows always reads A:M. Mac keeps a row only when `UBound(cells) >= 13`, which rejects a 0-based 13-cell row (`UBound` 12). | The sheet is rejected when no row has 13 cells. A shorter row on a wide sheet is read with empty cells. |
 | Categories | A–Z are always in the dropdown. Choosing “All, A–Z” always shows the 1000-person message. The list itself is capped at 1000. | Only letters that occur are listed. The list is capped at 1000 and no message is shown. |
-| Cost center | Integer when every character is a digit, otherwise left at 0. `showCostCenters` stamps a green box on each card. | Stored as text. Nothing draws it. |
+| Cost center | Integer when every character is a digit, otherwise left at 0. `showCostCenters` stamps a green box on each card. | Stored as text. The Cost centers button stamps a green box that grows with its text. |
 | Multiple CEOs | The message prints the array index as the line number. | The message prints the Excel row. |
 | Forgotten people | `showWhomIForgot` scans shape names for `InfoBox`, buckets missing solid-line cards by slide, and the duplicate report is commented out. It is not on the ribbon. | The inspector says how many people in the solid-line tree are absent from the slides. It does not list them by slide, and it does not report duplicate cards. |
 

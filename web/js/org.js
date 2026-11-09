@@ -2,7 +2,7 @@
  * Employee model, Excel import, and the checks MyBoss runs before it draws.
  * Column order matches the VBA template (A–M):
  * surname, name, job, department, solid-line surname, solid-line name,
- * dotted-line surname, dotted-line name, location, termination, outsourcer
+ * dotted-line surname, dotted-line name, location, termination, intern
  * flag, important flag, cost center.
  */
 
@@ -20,9 +20,13 @@ export const COLUMN_LABELS = [
   "Dotted-line name",
   "Location",
   "Termination date",
-  "Outsourcer flag",
+  "Intern flag",
   "Important flag",
   "Cost center",
+  "HR ID",
+  "Hide flag",
+  "Newcomer flag",
+  "Newcomer date",
 ];
 
 export function fullNameKey(surname, name, duplicateId = "") {
@@ -72,7 +76,23 @@ function cellString(value) {
   return String(value).replace(/\r/g, "").trim();
 }
 
-function flagOn(value) {
+/** Day and month only, "16.11", for the newcomer badge. Reads Excel dates, serials, dd.mm.yyyy, dd/mm/yyyy and yyyy-mm-dd; anything else is kept as typed. */
+export function compactDate(value) {
+  const two = (n) => String(n).padStart(2, "0");
+  const fromDate = (date) => `${two(date.getUTCDate())}.${two(date.getUTCMonth() + 1)}`;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : fromDate(value);
+  if (typeof value === "number" && value > 20000 && value < 80000) {
+    return fromDate(new Date(Date.UTC(1899, 11, 30) + Math.round(value) * 86400000));
+  }
+  const text = String(value ?? "").trim();
+  let match = text.match(/^(\d{1,2})[./-](\d{1,2})(?:[./-]\d{2,4})?$/);
+  if (match) return `${two(match[1])}.${two(match[2])}`;
+  match = text.match(/^\d{4}-(\d{1,2})-(\d{1,2})/);
+  if (match) return `${two(match[2])}.${two(match[1])}`;
+  return text;
+}
+
+export function flagOn(value) {
   if (value === true || value === 1) return true;
   const text = cellString(value).replace(",", ".");
   return text === "1" || text === "1.0";
@@ -86,7 +106,18 @@ function blankRow(row) {
 }
 
 function emptyStats() {
-  return { cards: 0, subordinates: 0, home: 0, ordinary: 0, important: 0, outsource: 0 };
+  return {
+    cards: 0,
+    subordinates: 0,
+    home: 0,
+    ordinary: 0,
+    important: 0,
+    intern: 0,
+    hidden: 0,
+    hiddenOrdinary: 0,
+    hiddenImportant: 0,
+    hiddenIntern: 0,
+  };
 }
 
 function addStats(target, extra) {
@@ -95,7 +126,11 @@ function addStats(target, extra) {
   target.home += extra.home;
   target.ordinary += extra.ordinary;
   target.important += extra.important;
-  target.outsource += extra.outsource;
+  target.intern += extra.intern;
+  target.hidden += extra.hidden;
+  target.hiddenOrdinary += extra.hiddenOrdinary;
+  target.hiddenImportant += extra.hiddenImportant;
+  target.hiddenIntern += extra.hiddenIntern;
 }
 
 /**
@@ -185,9 +220,13 @@ export function buildOrg(matrix, options = {}) {
       dottedKey: fullNameKey(dottedSurname, dottedName),
       location: cellString(row[8]),
       termination: cellString(row[9]),
-      outsource: flagOn(row[10]),
+      intern: flagOn(row[10]),
       important: flagOn(row[11]),
       costCenter: cellString(row[12]),
+      hrId: cellString(row[13]),
+      hidden: flagOn(row[14]),
+      newcomer: flagOn(row[15]),
+      newcomerDate: compactDate(row[16]),
       row: excelRow,
       tbh: personFullName({ surname, name }).startsWith("TBH_"),
       stats: emptyStats(),
@@ -262,12 +301,31 @@ export function buildOrg(matrix, options = {}) {
     }
   }
 
+  // Hidden people are still checked above. They are only left off the slides and the counts, so the
+  // visible chart must not depend on them: the CEO and anyone with a visible report stay shown.
+  const hiddenCeo = people.get(ceo);
+  if (hiddenCeo?.hidden) {
+    return halt(`Row ${hiddenCeo.row}: the CEO ${personFullName(hiddenCeo)} cannot be hidden.`, hiddenCeo.row);
+  }
+  for (const person of people.values()) {
+    if (!person.hidden) continue;
+    for (const childKey of reports.get(person.key) || []) {
+      const child = people.get(childKey);
+      if (child && !child.hidden) {
+        return halt(
+          `Row ${person.row}: ${personFullName(person)} is hidden, but ${personFullName(child)} (row ${child.row}) reports to them and is not. Hide them too or change their manager.`,
+          person.row,
+        );
+      }
+    }
+  }
+
   const fatal = issues.some((issue) => issue.level === "error");
   if (!fatal) computeStats(people, reports);
 
-  const order = [...people.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const order = [...people.keys()].filter((key) => !people.get(key).hidden).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   let companySize = 0;
-  for (const person of people.values()) if (!person.tbh) companySize += 1;
+  for (const person of people.values()) if (!person.tbh && !person.hidden) companySize += 1;
 
   return {
     people,
@@ -318,12 +376,18 @@ function computeStats(people, reports) {
       if (!child || managerType(child, key) !== "Solid") continue;
       addStats(stats, walk(childKey));
     }
-    stats.cards += 1;
-    if (!person.tbh) {
+    if (person.hidden) {
+      // Tallied on their own; nothing here reaches the visible counts.
+      stats.hidden += 1;
+      if (!(person.intern || person.important)) stats.hiddenOrdinary += 1;
+      if (person.intern) stats.hiddenIntern += 1;
+      if (person.important) stats.hiddenImportant += 1;
+    } else {
+      stats.cards += 1;
       stats.subordinates += 1;
       if (person.location === HOME_CITY) stats.home += 1;
-      if (!(person.outsource || person.important)) stats.ordinary += 1;
-      if (person.outsource) stats.outsource += 1;
+      if (!(person.intern || person.important)) stats.ordinary += 1;
+      if (person.intern) stats.intern += 1;
       if (person.important) stats.important += 1;
     }
     person.stats = stats;
@@ -333,6 +397,48 @@ function computeStats(people, reports) {
   }
 
   for (const key of people.keys()) walk(key);
+}
+
+/**
+ * What a card needs to be drawn, copied at the moment the slide is made. A slide is a picture of the
+ * data at that time: importing another sheet or file later must not change cards already on slides.
+ */
+export function snapshotPerson(person) {
+  return {
+    surname: person.surname,
+    name: person.name,
+    job: person.job,
+    department: person.department,
+    location: person.location,
+    termination: person.termination,
+    intern: person.intern,
+    important: person.important,
+    tbh: person.tbh,
+    newcomer: person.newcomer,
+    newcomerDate: person.newcomerDate,
+    costCenter: person.costCenter,
+    key: person.key,
+    solidKey: person.solidKey,
+    dottedKey: person.dottedKey,
+    solidName: personFullName({ surname: person.solidSurname, name: person.solidName }),
+    dottedName: personFullName({ surname: person.dottedSurname, name: person.dottedName }),
+    stats: { subordinates: person.stats?.subordinates ?? 0, intern: person.stats?.intern ?? 0 },
+  };
+}
+
+/** The person a card shows: its own snapshot, else (cards from older sessions) the loaded sheet. */
+export function shapePerson(org, shape) {
+  if (shape?.person) return shape.person;
+  return shape?.key ? org?.people?.get(shape.key) || null : null;
+}
+
+/** Give every person card on `shapes` its own copy of the person's data. */
+export function freezeCards(org, shapes) {
+  for (const shape of shapes) {
+    if (shape.type !== "card" || !shape.key || shape.person) continue;
+    const person = org?.people?.get(shape.key);
+    if (person) shape.person = snapshotPerson(person);
+  }
 }
 
 export function managerType(person, managerKey) {
@@ -346,8 +452,13 @@ export function hasTwoManagers(person) {
   return Boolean(person?.dottedKey);
 }
 
+/** Reports that are drawn: hidden people are left out. */
+export function visibleReports(org, key) {
+  return (org.reports.get(key) || []).filter((id) => org.people.has(id) && !org.people.get(id).hidden);
+}
+
 export function isManager(org, key) {
-  return (org.reports.get(key) || []).length > 0;
+  return visibleReports(org, key).length > 0;
 }
 
 export function comparePeople(org, a, b) {
@@ -358,7 +469,7 @@ export function comparePeople(org, a, b) {
 }
 
 export function directReports(org, key) {
-  const all = [...(org.reports.get(key) || [])].filter((id) => org.people.has(id));
+  const all = visibleReports(org, key);
   const sorted = [...all].sort((a, b) => comparePeople(org, a, b));
   const solid = [];
   const dotted = [];
@@ -395,33 +506,35 @@ export function departmentsOf(org, keys) {
   return groups;
 }
 
-/** Wording from the Department statistics shape on the template slide. */
+/** Wording from the Department statistics shape on the template slide. Hidden people are summarised in the slide footer instead. */
 export function statisticsLines(person, directCount) {
   const stats = person?.stats || {};
   const first = moderated(person?.name) || "This person";
-  return [
+  const lines = [
     `${first} has ${directCount} direct reports`,
     `Team Size – ${stats.subordinates || 0} people`,
     `${stats.ordinary || 0} ordinary employees`,
     `${stats.important || 0} non-ordinary employees`,
-    `${stats.outsource || 0} outsourcers`,
+    `${stats.intern || 0} interns`,
   ];
+  return lines;
 }
 
 export function headcountLabel(person) {
   const count = person?.stats?.subordinates ?? 0;
   if (count <= 1) return "";
-  const external = person.stats.outsource || 0;
-  return external > 0 ? `${count} (${external})` : String(count);
+  const intern = person.stats.intern || 0;
+  return intern > 0 ? `${count} (${intern})` : String(count);
 }
 
 export function cardStyle(person) {
   if (!person) return "ordinary";
-  if (person.tbh) return "tbh";
-  if (person.important && person.outsource) return "split";
+  // A vacancy takes the colors of the flags it carries. Plain white is only for a
+  // vacancy with no flag; the dashed outline (person.tbh) is what marks it as open.
+  if (person.important && person.intern) return "split";
   if (person.important) return "important";
-  if (person.outsource) return "outsource";
-  return "ordinary";
+  if (person.intern) return "intern";
+  return person.tbh ? "tbh" : "ordinary";
 }
 
 /** Everyone reached from `rootKey` by solid-line links, including the root. */
@@ -432,18 +545,33 @@ export function solidTree(org, rootKey) {
     seen.add(key);
     for (const child of org.reports.get(key) || []) {
       const person = org.people.get(child);
-      if (person && person.solidKey === key) walk(child);
+      if (person && !person.hidden && person.solidKey === key) walk(child);
     }
   };
   walk(rootKey);
   return seen;
 }
 
+export const VACANCIES = "Vacancies";
+
+/** Picker text: a vacancy is "Asyat (vacancy)", not the raw TBH_ code. */
+export function pickerLabel(person) {
+  if (!person) return "";
+  if (!person.tbh) return displayName(person);
+  const label = moderated(person.name).replace(/^TBH_/i, "").trim() || moderated(person.surname).replace(/^TBH_/i, "").trim();
+  return `${label || "Unnamed"} (vacancy)`;
+}
+
 export function categories(org) {
   const letters = new Set();
-  for (const key of org.order) letters.add(key.slice(0, 1).toUpperCase());
-  const list = [...letters].filter((letter) => /[A-Z]/.test(letter)).sort();
-  return ["CEO", "Managers", "AZ", ...list];
+  let vacancies = false;
+  for (const key of org.order) {
+    if (org.people.get(key).tbh) vacancies = true;
+    else letters.add(key.slice(0, 1).toUpperCase());
+  }
+  // Any alphabet: a Cyrillic surname gets its own letter, like a Latin one.
+  const list = [...letters].filter((letter) => /\p{L}/u.test(letter)).sort((x, y) => x.localeCompare(y));
+  return ["CEO", "Managers", "AZ", ...list, ...(vacancies ? [VACANCIES] : [])];
 }
 
 export function peopleInCategory(org, category) {
@@ -451,6 +579,7 @@ export function peopleInCategory(org, category) {
   if (category === "CEO") return org.ceo ? [org.ceo] : [];
   if (category === "Managers") return org.order.filter((key) => isManager(org, key));
   if (category === "AZ") return org.order;
+  if (category === VACANCIES) return org.order.filter((key) => org.people.get(key).tbh);
   const letter = String(category || "").toLowerCase();
-  return org.order.filter((key) => key.startsWith(letter));
+  return org.order.filter((key) => !org.people.get(key).tbh && key.startsWith(letter));
 }

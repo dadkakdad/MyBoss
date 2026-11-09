@@ -7,13 +7,15 @@
  */
 
 import {
-  comparePeople,
+  displayName,
+  freezeCards,
   departmentsOf,
   directReports,
   hasTwoManagers,
   isManager,
   managerType,
   moderated,
+  personFullName,
   statisticsLines,
 } from "./org.js";
 
@@ -26,11 +28,12 @@ export const TREE_TOP = 132;
 
 export const CARD_SIZES = ["ExtraSmall", "Small", "Medium", "Large"];
 
+/** name / title = type size in pt for the person's name and job line. A job line under 5 pt is unreadable on a slide, so Small and up keep it at 5.5 pt or more. */
 export const CARDS = {
-  ExtraSmall: { w: 70.9, h: 26.2, name: 7, title: 4, bubbleW: 52.2, bubbleH: 7.5, commentH: 6.2, line: 2 },
-  Small: { w: 70.9, h: 35.5, name: 7, title: 4, bubbleW: 52.2, bubbleH: 7.5, commentH: 6.2, line: 2 },
-  Medium: { w: 87.9, h: 42.3, name: 9, title: 5, bubbleW: 65.2, bubbleH: 9.4, commentH: 7.7, line: 3 },
-  Large: { w: 108.5, h: 54.5, name: 11, title: 6, bubbleW: 81.1, bubbleH: 11.6, commentH: 8.8, line: 4 },
+  ExtraSmall: { w: 70.9, h: 26.2, name: 7, title: 4.5, bubbleW: 52.2, bubbleH: 7.5, commentH: 6.2, line: 2 },
+  Small: { w: 70.9, h: 35.5, name: 7, title: 5.5, bubbleW: 52.2, bubbleH: 7.5, commentH: 6.2, line: 2 },
+  Medium: { w: 87.9, h: 42.3, name: 9, title: 6.5, bubbleW: 65.2, bubbleH: 9.4, commentH: 7.7, line: 3 },
+  Large: { w: 108.5, h: 54.5, name: 11, title: 7.5, bubbleW: 81.1, bubbleH: 11.6, commentH: 8.8, line: 4 },
 };
 
 export const SHADE_COLORS = ["#DEEBF7C4", "#BDD7EEC4", "#E7EEF6C4"];
@@ -117,6 +120,15 @@ function commentItem(key, x, cardBottom, metrics, text) {
   };
 }
 
+/**
+ * The pill over a two-manager card names the manager the card is NOT hanging under:
+ * under the solid-line manager it shows the dotted-line one, and under the dotted-line manager the solid-line one.
+ */
+export function otherManagerSurname(org, person, shownUnder) {
+  const other = shownUnder === "Dotted" ? person.solidKey : person.dottedKey;
+  return org.people.get(other)?.surname || "";
+}
+
 function addBubble(items, org, person, key, centerX, cardY, metrics, shownUnder, offsetTick) {
   const gap = bubbleGap(metrics);
   // Upward ticks are 5 points apart. The second tick uses the other line style,
@@ -133,7 +145,7 @@ function addBubble(items, org, person, key, centerX, cardY, metrics, shownUnder,
     h: metrics.bubbleH,
     z: 4,
     dotted: true,
-    text: org.people.get(person.dottedKey)?.surname || "",
+    text: otherManagerSurname(org, person, shownUnder),
   });
 }
 
@@ -324,7 +336,19 @@ function rowsLayout(org, people, parentKey, metrics, perRow) {
   };
 }
 
-export function layoutLeaves(org, people, parentKey, metrics, mode = "auto") {
+/** Ordinary staff, then important employees, then interns, then vacancies. Someone who is both important and an intern sorts as an intern; a vacancy always goes last. */
+function leafRank(person) {
+  if (person?.tbh) return 3;
+  if (person?.intern) return 2;
+  if (person?.important) return 1;
+  return 0;
+}
+
+export function layoutLeaves(org, unsortedPeople, parentKey, metrics, mode = "auto") {
+  // Array.prototype.sort is stable, so the existing order holds inside each group.
+  const people = [...unsortedPeople].sort(
+    (a, b) => leafRank(org.people.get(a)) - leafRank(org.people.get(b)),
+  );
   const count = people.length;
   if (count === 0) return { w: 0, h: 0, anchorX: 0, items: [] };
   // branch_auto draws one person as a card with the tick pointing up.
@@ -458,7 +482,7 @@ function peelOuterTick(box) {
   const starters = box.items.filter(
     (item) => item.type === "wire" && Math.abs(item.x1 - item.x2) < 0.8 && Math.min(item.y1, item.y2) <= 0.5,
   );
-  if (!starters.length) return { box, drop: 0, solid: false, dotted: false };
+  if (!starters.length) return { box, drop: 0, solid: false, dotted: false, weight: null };
   const drop = Math.max(...starters.map((item) => Math.abs(item.y2 - item.y1)));
   const remove = new Set(starters);
   return {
@@ -468,6 +492,8 @@ function peelOuterTick(box) {
       items: translate(box.items.filter((item) => !remove.has(item)), 0, -drop),
     },
     drop,
+    // The head card's tick has to be as thick as the bar it lands on, or it pokes out below it.
+    weight: Math.max(...starters.map((item) => item.weight || 0)) || null,
     solid: starters.some((item) => !item.dotted),
     dotted: starters.some((item) => item.dotted),
   };
@@ -746,7 +772,7 @@ function sid(prefix) {
 
 /** Shift the drawing so cards and lines stay inside the slide. Title, legend, and navigation stay put. */
 export function containOnSlide(shapes) {
-  const fixed = new Set(["title", "legend", "nav", "stats"]);
+  const fixed = new Set(["title", "legend", "nav", "stats", "hiddenlist"]);
   let minX = Infinity;
   let maxX = -Infinity;
   for (const shape of shapes) {
@@ -803,20 +829,76 @@ function legendShape() {
   return { id: sid("legend"), type: "legend", x: 18, y: 66, w: 210, h: 58, z: 5 };
 }
 
+/** Full names of hidden people in the team under `rootKey` (solid lines), A to Z. */
+export function hiddenNames(org, rootKey) {
+  const names = [];
+  const seen = new Set();
+  const walk = (key) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    for (const childKey of org.reports.get(key) || []) {
+      const child = org.people.get(childKey);
+      if (!child || child.solidKey !== key) continue;
+      if (child.hidden) names.push(personFullName(child));
+      walk(childKey);
+    }
+  };
+  walk(rootKey);
+  return names.sort((a, b) => a.localeCompare(b));
+}
+
+const HIDDEN_LIST = { x: 18, w: 924, bottom: SLIDE.height - 6, lineH: 10, charsPerLine: 200, maxLines: 4 };
+
+/** Small grey line along the bottom of the slide naming everyone hidden from this chart. Null when nobody is. */
+export function hiddenListShape(org, rootKey) {
+  const names = hiddenNames(org, rootKey);
+  if (!names.length) return null;
+  const limit = HIDDEN_LIST.charsPerLine * HIDDEN_LIST.maxLines;
+  const stats = org.people.get(rootKey)?.stats || {};
+  const count = names.length;
+  const mix = `${stats.hiddenOrdinary || 0} ordinary, ${stats.hiddenImportant || 0} non-ordinary, ${stats.hiddenIntern || 0} interns`;
+  const head = `Hidden, not counted in the statistics – ${count} ${count === 1 ? "person" : "people"} (${mix}): `;
+  let text = `${head}${names.join(", ")}`;
+  if (text.length > limit) {
+    let shown = names.length;
+    while (shown > 1 && `${head}${names.slice(0, shown).join(", ")} and ${names.length - shown} more`.length > limit) shown -= 1;
+    text = `${head}${names.slice(0, shown).join(", ")} and ${names.length - shown} more`;
+  }
+  const lines = Math.ceil(text.length / HIDDEN_LIST.charsPerLine);
+  const h = lines * HIDDEN_LIST.lineH + 2;
+  return {
+    id: sid("hiddenlist"),
+    type: "hiddenlist",
+    x: HIDDEN_LIST.x,
+    y: HIDDEN_LIST.bottom - h,
+    w: HIDDEN_LIST.w,
+    h,
+    z: 5,
+    key: rootKey,
+    text,
+  };
+}
+
+/** The box grows by one text line (12 pt) for every line past the usual five. */
+export function statsBoxHeight(lines) {
+  return 96 + 12 * Math.max(0, (lines?.length || 0) - 5);
+}
+
 function statsShape(org, rootKey) {
   const person = org.people.get(rootKey);
   const direct = directReports(org, rootKey).all.length;
+  const lines = statisticsLines(person, direct);
   return {
     id: sid("stats"),
     type: "stats",
     x: 742,
     y: 10,
     w: 204,
-    h: 96,
+    h: statsBoxHeight(lines),
     z: 5,
     key: rootKey,
     heading: "Department statistics",
-    lines: statisticsLines(person, direct),
+    lines,
   };
 }
 
@@ -864,12 +946,18 @@ export function layoutDepartmentShades(org, cards) {
   for (const card of cards) {
     if (card.head || card.managerType === "Dotted" || card.y <= SHADE_GUIDE.top) continue;
     const person = org.people.get(card.key);
-    if (!person?.department) continue;
+    if (!person) continue;
     members.push({ card, person, box: boxOf(card) });
   }
   const groups = new Map();
   for (const member of members) {
-    const bucket = groups.get(member.person.departmentKey) || { name: member.person.department, boxes: [] };
+    // Cards with no department get no shade, but they still stop a neighbour's shade from running over them.
+    if (!member.person.department) continue;
+    const bucket = groups.get(member.person.departmentKey) || {
+      key: member.person.departmentKey,
+      name: member.person.department,
+      boxes: [],
+    };
     bucket.boxes.push(member.box);
     groups.set(member.person.departmentKey, bucket);
   }
@@ -883,7 +971,7 @@ export function layoutDepartmentShades(org, cards) {
     };
     const stretched = { ...SHADE_GUIDE };
     for (const other of members) {
-      if (other.person.department === bucket.name) continue;
+      if (other.person.departmentKey === bucket.key) continue; // same department: part of the shade, not a wall
       const side = sideOf(other.box, shade);
       if (side === "top" && other.box.bottom > stretched.top) stretched.top = other.box.bottom;
       if (side === "bottom" && other.box.top < stretched.bottom) stretched.bottom = other.box.top;
@@ -947,11 +1035,12 @@ function headCard(org, rootKey, peeled) {
     });
   }
   const tickTop = y + metrics.h + comment;
+  const weight = peeled?.weight || metrics.line;
   if (peeled?.solid) {
-    items.push({ type: "wire", x1: SLIDE.width / 2, y1: tickTop, x2: SLIDE.width / 2, y2: tickTop + 15, dotted: false, weight: metrics.line });
+    items.push({ type: "wire", x1: SLIDE.width / 2, y1: tickTop, x2: SLIDE.width / 2, y2: tickTop + 15, dotted: false, weight });
   }
   if (peeled?.dotted) {
-    items.push({ type: "wire", x1: SLIDE.width / 2, y1: tickTop, x2: SLIDE.width / 2, y2: tickTop + 15, dotted: true, weight: metrics.line });
+    items.push({ type: "wire", x1: SLIDE.width / 2, y1: tickTop, x2: SLIDE.width / 2, y2: tickTop + 15, dotted: true, weight });
   }
   return paint(items, 0, 0);
 }
@@ -978,6 +1067,7 @@ export function buildSlides(org, rootKey, mode = "clever") {
       titleShape(org, key),
       legendShape(),
       statsShape(org, key),
+      ...[hiddenListShape(org, key)].filter(Boolean),
       ...shadeShapes(org, body.filter((item) => item.type === "card")),
       ...headCard(org, key, peeled),
       ...body,
@@ -1011,7 +1101,8 @@ export function buildSlides(org, rootKey, mode = "clever") {
   build(rootKey, null);
 
   if (mode === "infinity") {
-    const required = new Set(org.people.keys());
+    // Hidden people never get a card, not even a loose one.
+    const required = new Set([...org.people.keys()].filter((key) => !org.people.get(key).hidden));
     const drawnKeys = () => {
       const placed = new Set();
       for (const slide of slides) {
@@ -1040,7 +1131,11 @@ export function buildSlides(org, rootKey, mode = "clever") {
     }
   }
 
-  for (const slide of slides) containOnSlide(slide.shapes);
+  for (const slide of slides) {
+    containOnSlide(slide.shapes);
+    freezeCards(org, slide.shapes);
+    slide.rootLabel = displayName(org.people.get(slide.rootKey));
+  }
 
   for (const slide of slides) {
     for (const shape of [...slide.shapes]) {

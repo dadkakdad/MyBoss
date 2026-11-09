@@ -13,6 +13,7 @@ import {
   scaleShapes,
   selectionBounds,
   showCostCenterStamps,
+  stampSize,
 } from "../js/editor.js";
 
 function slide(shapes, title = "") {
@@ -139,11 +140,58 @@ test("cost-center stamps sit on the card corner and toggle off", () => {
   assert.deepEqual(
     stamps.map((shape) => [shape.text, shape.x, shape.y, shape.w, shape.h]),
     [
-      ["420", 140, 100, 50, 30],
-      ["?", 30, 20, 50, 30],
+      ["420", 164, 109, 26, 11],
+      ["?", 54, 29, 26, 11],
     ],
   );
+  const long = stampSize("СТАЖЕР", 70);
+  assert.ok(long.w > 26 && long.w <= 70, "grows with the text");
+  assert.equal(stampSize("0", 70).w, 26, "short text keeps the usual size");
+  const tight = stampSize("ПРОЕКТНЫЙ ОФИС", 50);
+  assert.equal(tight.w, 50);
+  assert.ok(tight.fs < 7.04 && tight.fs >= 4.5, "type shrinks when the card is too narrow");
   hideCostCenterStamps(slides);
   assert.equal(slides[0].shapes.some((shape) => shape.type === "cc"), false);
   assert.equal(slides[0].shapes.some((shape) => shape.type === "card"), true);
+});
+
+test("slide text is copied in reading order, one line per shape", async () => {
+  const { shapesText } = await import("../js/editor.js");
+  const people = new Map([
+    ["ada", { surname: "Ada [x]", name: "Lovelace", job: "CEO", location: "London" }],
+    ["tbd", { surname: "TBH_a", name: "TBH_a", job: "Analyst", tbh: true }],
+  ]);
+  const text = shapesText({ people }, [
+    { type: "card", key: "tbd", x: 200, y: 100, w: 80, h: 40 },
+    { type: "card", key: "ada", x: 10, y: 100, w: 80, h: 40 },
+    { type: "title", name: "Ada Lovelace", department: "Office", x: 0, y: 0, w: 10, h: 10 },
+    { type: "wire", x1: 0, y1: 0, x2: 5, y2: 5 },
+    { type: "comment", text: "Works until 1 May", x: 10, y: 150, w: 50, h: 10 },
+  ]);
+  assert.equal(text, "Ada Lovelace\nOffice\nAda Lovelace — CEO — London\nTo be hired — Analyst\nWorks until 1 May");
+});
+
+test("a slide copies as Markdown: title, statistics, nested structure, data table", async () => {
+  const { slideMarkdown } = await import("../js/editor.js");
+  const person = (key, surname, name, job, extra = {}) => ({ key, surname, name, job, department: "Lab", location: "", solidKey: "", dottedKey: "", solidName: "", dottedName: "", stats: { subordinates: 1 }, ...extra });
+  const boss = person("ada", "Ada", "Lovelace", "CEO", { stats: { subordinates: 3 } });
+  const grace = person("grace", "Grace", "Hopper", "Eng", { solidKey: "ada", solidName: "Ada Lovelace", location: "London", newcomer: true, newcomerDate: "16.11" });
+  const ken = person("ken", "Ken", "Thompson", "Eng | Ops", { solidKey: "ada", solidName: "Ada Lovelace", dottedKey: "grace", dottedName: "Grace Hopper", termination: "30.12.2026" });
+  const shapes = [
+    { type: "title", name: "Ada Lovelace", department: "Office", x: 0, y: 0, w: 10, h: 10 },
+    { type: "stats", heading: "Department statistics", lines: ["Ada has 2 direct reports", "Team Size – 3 people"], x: 0, y: 0, w: 10, h: 10 },
+    { type: "card", key: "ada", person: boss, x: 100, y: 100, w: 80, h: 40, head: true, managerType: "Solid" },
+    { type: "card", key: "grace", person: grace, x: 50, y: 200, w: 80, h: 40, managerType: "Solid" },
+    { type: "card", key: "ken", person: ken, x: 150, y: 200, w: 80, h: 40, managerType: "Solid" },
+    { type: "card", key: "ken", person: ken, x: 60, y: 300, w: 80, h: 40, managerType: "Dotted" },
+    { type: "hiddenlist", text: "Hidden – 1 person: Zed Last", x: 0, y: 500, w: 100, h: 10 },
+  ];
+  const md = slideMarkdown({ people: new Map() }, shapes, { number: 1, total: 2 });
+  assert.match(md, /^# Ada Lovelace\n_Office_\n\nSlide 1 of 2/);
+  assert.match(md, /\*\*Department statistics\*\*\n\n- Ada has 2 direct reports\n- Team Size – 3 people/);
+  assert.match(md, /## Structure\n\n- \*\*Ada Lovelace\*\* — CEO _\(team of 3\)_\n  - \*\*Grace Hopper\*\* — Eng _\(London; newcomer, joins 16.11\)_\n    - \*\*Ken Thompson\*\* — Eng \| Ops _\(dotted line; works until 30.12.2026\)_\n  - \*\*Ken Thompson\*\*/);
+  assert.match(md, /\| Name \| Job \| Department \| Location \| Reports to \| Team \| Notes \|/);
+  assert.match(md, /\| Ken Thompson \| Eng \\\| Ops \| Lab \| — \| Grace Hopper \| 1 \| dotted line; works until 30.12.2026 \|/);
+  assert.match(md, /> Hidden – 1 person: Zed Last\n$/);
+  assert.equal(slideMarkdown({ people: new Map() }, [{ type: "comment", text: "Works until 1 May", x: 0, y: 0, w: 10, h: 10 }]), "Works until 1 May");
 });

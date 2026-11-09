@@ -4,6 +4,7 @@
   "type": "module",
   "description": "Browser version of MyBoss, the PowerPoint org-chart tool.",
   "scripts": {
+    "build": "node build.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {

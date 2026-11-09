@@ -3,23 +3,30 @@
  * Points on the 960×540 slide become inches at 72 pt per inch.
  */
 
-import { cardStyle, displayName, headcountLabel, moderated } from "./org.js";
-import { LINE, LINK_STYLE, SLIDE, dottedDash } from "./layout.js";
+import { cardStyle, displayName, headcountLabel, moderated, shapePerson } from "./org.js";
+import { CARDS, LINE, LINK_STYLE, SLIDE, dottedDash } from "./layout.js";
 import { contentFrame } from "./editor.js";
 
 const STYLE = {
   ordinary: { fill: "001B58", color: "FFFFFF", bar: "00123F" },
   important: { fill: "8C0000", color: "FFFFFF", bar: "5C0000" },
-  outsource: { fill: "F4F4F4", color: "1A1A1A", bar: "FFFFFF" },
+  intern: { fill: "F4F4F4", color: "1A1A1A", bar: "FFFFFF" },
   split: { fill: "F4F4F4", color: "1A1A1A", bar: "F4F4F4", accent: "8C0000" },
   tbh: { fill: "FFFFFF", color: "001B57", bar: "F7F9FC" },
 };
 
+/** Type sizes for a card, the same as the on-screen card: the size's own pair, scaled with the card's height. */
+function cardType(shape) {
+  const spec = CARDS[shape.size] || CARDS.Medium;
+  const k = spec.h ? shape.h / spec.h : 1;
+  return { name: spec.name * k, job: spec.title * k };
+}
+
 function personLines(org, shape) {
   if (!shape.key) return shape.lines || ["", "", ""];
-  const person = org.people.get(shape.key);
+  const person = shapePerson(org, shape);
   if (!person) return ["", "", ""];
-  if (person.tbh) return ["To be hired", moderated(person.job), ""];
+  if (person.tbh) return shape.h >= 32 ? ["To be hired", "", moderated(person.job)] : ["To be hired", moderated(person.job), ""];
   return [moderated(person.surname), moderated(person.name), moderated(person.job)];
 }
 
@@ -38,13 +45,47 @@ export function slideToCanvas(org, slide, scale = 2) {
   return canvas;
 }
 
+/** The text cut to `maxW` with an ellipsis, using the font currently set on ctx. */
+function fitText(ctx, text, maxW) {
+  const value = String(text ?? "");
+  if (!value || ctx.measureText(value).width <= maxW) return value;
+  let cut = value;
+  while (cut.length > 1 && ctx.measureText(`${cut}…`).width > maxW) cut = cut.slice(0, -1);
+  return `${cut.trimEnd()}…`;
+}
+
+/** Word-wrapped lines no wider than `maxW`; the last allowed line ends in an ellipsis when text is left over. */
+function wrapLines(ctx, text, maxW, maxLines) {
+  const words = String(text ?? "").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(next).width > maxW) {
+      lines.push(line);
+      line = word;
+    } else line = next;
+  }
+  if (line) lines.push(line);
+  if (lines.length > maxLines) {
+    const kept = lines.slice(0, maxLines);
+    kept[maxLines - 1] = fitText(ctx, `${kept[maxLines - 1]} ${lines.slice(maxLines).join(" ")}`, maxW);
+    return kept;
+  }
+  return lines.map((item) => fitText(ctx, item, maxW));
+}
+
 function drawShape(ctx, org, shape) {
   if (shape.type === "shade") {
     ctx.fillStyle = shape.fill || "#DEEBF7";
     ctx.fillRect(shape.x, shape.y, shape.w, shape.h);
     ctx.fillStyle = "#173C5D";
-    ctx.font = "9px Arial";
-    ctx.fillText(shape.text || "", shape.x + 6, shape.y + 12);
+    ctx.font = "11px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(fitText(ctx, shape.text || "", shape.w - 8), shape.x + shape.w / 2, shape.y + shape.h - 5);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
     return;
   }
   if (shape.type === "wire") {
@@ -92,6 +133,23 @@ function drawShape(ctx, org, shape) {
     });
     return;
   }
+  if (shape.type === "hiddenlist") {
+    ctx.fillStyle = "#8A8F98";
+    ctx.font = "8px Arial";
+    const words = String(shape.text || "").split(" ");
+    let line = "";
+    let row = 0;
+    for (const word of words) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && ctx.measureText(next).width > shape.w) {
+        ctx.fillText(line, shape.x, shape.y + 8 + row * 10);
+        row += 1;
+        line = word;
+      } else line = next;
+    }
+    if (line) ctx.fillText(line, shape.x, shape.y + 8 + row * 10);
+    return;
+  }
   if (shape.type === "legend") {
     ctx.fillStyle = "#5c6778";
     ctx.font = "bold 10px Arial";
@@ -99,7 +157,7 @@ function drawShape(ctx, org, shape) {
     const rows = [
       ["ordinary", "Ordinary employee"],
       ["important", "Important employee"],
-      ["outsource", "Outsourcer"],
+      ["intern", "Intern"],
     ];
     rows.forEach(([kind, label], index) => {
       ctx.fillStyle = `#${STYLE[kind].fill}`;
@@ -117,13 +175,24 @@ function drawShape(ctx, org, shape) {
     ctx.font = "bold 8px Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(shape.text || "", shape.x + shape.w / 2, shape.y + shape.h / 2);
+    ctx.fillText(fitText(ctx, shape.text || "", shape.w - 4), shape.x + shape.w / 2, shape.y + shape.h / 2 + 0.3);
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     return;
   }
-  if (shape.type === "bubble" || shape.type === "comment" || shape.type === "nav") {
-    ctx.fillStyle = shape.type === "nav" ? "#173C5D" : "#ffffff";
+  if (shape.type === "nav") {
+    ctx.fillStyle = "#173C5D";
+    ctx.font = "11px Arial";
+    ctx.textBaseline = "middle";
+    const text = fitText(ctx, shape.text || "", shape.w);
+    ctx.fillText(text, shape.x, shape.y + shape.h / 2);
+    const width = ctx.measureText(text).width;
+    ctx.fillRect(shape.x, shape.y + shape.h / 2 + 6, width, 0.8);
+    ctx.textBaseline = "alphabetic";
+    return;
+  }
+  if (shape.type === "bubble" || shape.type === "comment") {
+    ctx.fillStyle = "#ffffff";
     ctx.strokeStyle = shape.dotted ? "#00123F" : "#8a8175";
     ctx.lineWidth = 1;
     ctx.setLineDash(shape.dotted ? [3, 2] : []);
@@ -131,9 +200,23 @@ function drawShape(ctx, org, shape) {
     ctx.fill();
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = shape.type === "nav" ? "#ffffff" : "#1c2430";
-    ctx.font = "8px Arial";
-    ctx.fillText(shape.text || "", shape.x + 4, shape.y + shape.h - 3);
+    ctx.fillStyle = "#001B58";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const cx = shape.x + shape.w / 2;
+    if (shape.type === "comment") {
+      // Same look as on screen: bold 7 pt, wrapped inside the box, centred.
+      ctx.font = "bold 7px Arial";
+      const lines = wrapLines(ctx, shape.text, shape.w - 6, Math.max(1, Math.floor(shape.h / 8)));
+      const step = 8;
+      const top = shape.y + shape.h / 2 - ((lines.length - 1) * step) / 2;
+      lines.forEach((line, index) => ctx.fillText(line, cx, top + index * step + 0.3));
+    } else {
+      ctx.font = "bold 8px Arial";
+      ctx.fillText(fitText(ctx, shape.text || "", shape.w - 6), cx, shape.y + shape.h / 2 + 0.3);
+    }
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
     return;
   }
   if (shape.type === "cc") {
@@ -143,7 +226,7 @@ function drawShape(ctx, org, shape) {
     ctx.fillRect(shape.x, shape.y, shape.w, shape.h);
     ctx.strokeRect(shape.x, shape.y, shape.w, shape.h);
     ctx.fillStyle = "#083008";
-    ctx.font = `bold ${Math.max(6, shape.h * (10 / 30))}px Arial`;
+    ctx.font = `bold ${shape.fs || Math.max(5, shape.h * 0.64)}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(shape.text || "?", shape.x + shape.w / 2, shape.y + shape.h / 2);
@@ -152,8 +235,9 @@ function drawShape(ctx, org, shape) {
     return;
   }
   if (shape.type === "card") {
-    const kind = shape.key ? cardStyle(org.people.get(shape.key)) : shape.placeholder || "ordinary";
+    const kind = shape.key ? cardStyle(shapePerson(org, shape)) : shape.placeholder || "ordinary";
     const palette = STYLE[kind];
+    const vacant = shape.key ? !!shapePerson(org, shape)?.tbh : kind === "tbh";
     ctx.save();
     roundRect(ctx, shape.x, shape.y, shape.w, shape.h, 2);
     ctx.clip();
@@ -180,45 +264,92 @@ function drawShape(ctx, org, shape) {
       ctx.lineWidth = 1;
       ctx.strokeRect(shape.x, shape.y, shape.w, shape.h);
     }
-    ctx.strokeStyle = kind === "tbh" ? "#001B57" : "transparent";
-    ctx.lineWidth = 1;
-    if (kind === "tbh") {
-      roundRect(ctx, shape.x, shape.y, shape.w, shape.h, 2);
-      ctx.stroke();
+    if (vacant) {
+      ctx.save();
+      ctx.strokeStyle = kind === "ordinary" || kind === "important" ? "#ffffff" : "#001B57";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 2]);
+      ctx.strokeRect(shape.x + 2.5, shape.y + 2.5, shape.w - 5, shape.h - 5);
+      ctx.restore();
     }
     const lines = personLines(org, shape);
-    const person = shape.key ? org.people.get(shape.key) : null;
+    const person = shapePerson(org, shape);
     const footer = person?.location || "";
-    const nameSize = shape.h < 30 ? 7 : shape.h < 40 ? 8 : shape.h < 48 ? 10 : 12;
+    const { name: nameSize, job: jobSize } = cardType(shape);
+    const padX = Math.max(4, Math.round(nameSize * 0.65));
+    const padY = Math.round(padX * 0.75);
+    const textW = shape.w - padX * 2;
+    // Every line is cut to the card with an ellipsis and clipped to it, as the on-screen card does.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(shape.x, shape.y, shape.w, shape.h);
+    ctx.clip();
+    ctx.textBaseline = "top";
     ctx.fillStyle = `#${palette.color}`;
     ctx.font = `bold ${nameSize}px Arial`;
-    ctx.fillText(lines[0] || "", shape.x + 4, shape.y + nameSize + 2);
-    ctx.fillText(lines[1] || "", shape.x + 4, shape.y + nameSize * 2 + 3);
-    if (shape.h >= 32) {
-      ctx.font = `${Math.max(6, nameSize - 3)}px Arial`;
-      ctx.fillText(lines[2] || "", shape.x + 4, shape.y + shape.h - (footer ? 12 : 4));
+    let top = shape.y + padY;
+    for (const line of lines.slice(0, 2)) {
+      if (!line) continue; // an empty line takes no room, so a vacancy's job sits right under "To be hired"
+      ctx.fillText(fitText(ctx, line, textW), shape.x + padX, top);
+      top += nameSize * 1.05;
+    }
+    if (shape.h >= 32 && lines[2]) {
+      ctx.font = `${jobSize}px Arial`;
+      ctx.fillText(fitText(ctx, lines[2], textW), shape.x + padX, top + 1);
     }
     const badge = person ? headcountLabel(person) : "";
+    ctx.textBaseline = "middle";
     if (footer) {
       ctx.fillStyle = `#${palette.bar}`;
       ctx.fillRect(shape.x, shape.y + shape.h - 11, shape.w, 11);
       ctx.fillStyle = kind === "ordinary" || kind === "important" ? "#ffffff" : "#1c2430";
-      ctx.font = "7px Arial";
-      ctx.fillText(footer, shape.x + 4, shape.y + shape.h - 3);
+      let room = textW;
       if (badge) {
         ctx.font = "bold 7px Arial";
         ctx.textAlign = "right";
-        ctx.fillText(badge, shape.x + shape.w - 4, shape.y + shape.h - 3);
+        ctx.fillText(badge, shape.x + shape.w - padX, shape.y + shape.h - 5.5);
+        room -= ctx.measureText(badge).width + 4;
         ctx.textAlign = "left";
       }
+      ctx.font = "7px Arial";
+      ctx.fillText(fitText(ctx, footer, room), shape.x + padX, shape.y + shape.h - 5.5);
     } else if (badge) {
       ctx.font = "bold 8px Arial";
       ctx.fillStyle = kind === "split" ? "#ffffff" : `#${palette.color}`;
       ctx.textAlign = "right";
-      ctx.fillText(badge, shape.x + shape.w - 4, shape.y + 9);
+      ctx.fillText(badge, shape.x + shape.w - padX, shape.y + shape.h - 6);
       ctx.textAlign = "left";
     }
+    ctx.restore();
+    if (person?.newcomer) drawNewBadge(ctx, shape, person);
   }
+}
+
+/** Badge size follows the card's name type, like the on-screen badge (3.4 em of 0.8 of the name size; "New" and the date on two lines). */
+function newBadgeBox(shape, person) {
+  const spec = CARDS[shape.size] || CARDS.Medium;
+  const u = 0.8 * spec.name * (spec.h ? shape.h / spec.h : 1);
+  const lines = person?.newcomerDate ? 2 : 1;
+  return { u, w: u * 3.4, h: u * (0.3 + 1.15 * lines), x: shape.x + shape.w - 3 - u * 3.4, y: shape.y + 2, dated: lines === 2 };
+}
+
+function drawNewBadge(ctx, shape, person) {
+  const box = newBadgeBox(shape, person);
+  ctx.save();
+  roundRect(ctx, box.x, box.y, box.w, box.h, 2);
+  ctx.fillStyle = "#FFC61A";
+  ctx.fill();
+  ctx.fillStyle = "#3D2A00";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `bold ${box.u}px Arial`;
+  const cx = box.x + box.w / 2;
+  if (box.dated) {
+    ctx.fillText("New", cx, box.y + box.u * 0.75);
+    ctx.font = `600 ${box.u * 0.9}px Arial`;
+    ctx.fillText(person.newcomerDate, cx, box.y + box.u * 1.9);
+  } else ctx.fillText("New", cx, box.y + box.h / 2 + 0.3);
+  ctx.restore();
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -319,8 +450,22 @@ export async function deckToPptx(org, slides, fileName) {
         );
         continue;
       }
+      if (shape.type === "hiddenlist") {
+        slide.addText(shape.text || "", {
+          x: inches(shape.x),
+          y: inches(shape.y),
+          w: inches(shape.w),
+          h: inches(shape.h),
+          fontFace: "Arial",
+          fontSize: 8,
+          color: "8A8F98",
+          margin: 0,
+          valign: "top",
+        });
+        continue;
+      }
       if (shape.type === "legend") {
-        slide.addText("Indicators\nOrdinary employee\nImportant employee\nOutsourcer", {
+        slide.addText("Indicators\nOrdinary employee\nImportant employee\nIntern", {
           x: inches(shape.x),
           y: inches(shape.y),
           w: inches(shape.w),
@@ -332,19 +477,26 @@ export async function deckToPptx(org, slides, fileName) {
         continue;
       }
       if (shape.type === "card") {
-        const kind = shape.key ? cardStyle(org.people.get(shape.key)) : shape.placeholder || "ordinary";
+        const kind = shape.key ? cardStyle(shapePerson(org, shape)) : shape.placeholder || "ordinary";
         const palette = STYLE[kind];
+        const vacant = shape.key ? !!shapePerson(org, shape)?.tbh : kind === "tbh";
         const lines = personLines(org, shape);
-        const person = shape.key ? org.people.get(shape.key) : null;
+        const person = shapePerson(org, shape);
         const footer = person?.location || "";
-        const nameSize = shape.size && { ExtraSmall: 7, Small: 7, Medium: 9, Large: 11 }[shape.size];
+        const { name: nameSize, job: jobSize } = cardType(shape);
         slide.addShape("rect", {
           x: inches(shape.x),
           y: inches(shape.y),
           w: inches(shape.w),
           h: inches(shape.h),
           fill: { color: palette.fill },
-          line: kind === "tbh" ? { color: "001B57", width: 1 } : { color: palette.fill },
+          line: vacant
+            ? {
+                color: kind === "ordinary" || kind === "important" ? "FFFFFF" : "001B57",
+                width: 1,
+                dashType: "dash",
+              }
+            : { color: palette.fill },
         });
         if (kind === "split") {
           slide.addShape("custGeom", {
@@ -370,20 +522,21 @@ export async function deckToPptx(org, slides, fileName) {
           });
         }
         const badge = person ? headcountLabel(person) : "";
-        slide.addText(
-          [lines[0], lines[1], shape.h >= 32 ? lines[2] : ""].filter(Boolean).join("\n"),
-          {
-            x: inches(shape.x + 3),
-            y: inches(shape.y + 1),
-            w: inches(shape.w - 6),
-            h: inches(shape.h - (footer ? 12 : 2)),
-            fontFace: "Arial",
-            fontSize: nameSize || (shape.h < 32 ? 7 : 9),
-            color: palette.color,
-            bold: true,
-            margin: 0,
-          },
-        );
+        const textRuns = [
+          { text: lines[0] || "", options: { bold: true, fontSize: nameSize, breakLine: true } },
+          { text: lines[1] || "", options: { bold: true, fontSize: nameSize, breakLine: true } },
+        ];
+        if (shape.h >= 32 && lines[2]) textRuns.push({ text: lines[2], options: { bold: false, fontSize: jobSize } });
+        slide.addText(textRuns, {
+          x: inches(shape.x + 5),
+          y: inches(shape.y + 2),
+          w: inches(shape.w - 10),
+          h: inches(shape.h - (footer ? 12 : 2)),
+          fontFace: "Arial",
+          color: palette.color,
+          margin: 0,
+          valign: "top",
+        });
         if (footer) {
           slide.addShape("rect", {
             x: inches(shape.x),
@@ -419,15 +572,38 @@ export async function deckToPptx(org, slides, fileName) {
         } else if (badge) {
           slide.addText(badge, {
             x: inches(shape.x),
-            y: inches(shape.y),
-            w: inches(shape.w - 2),
+            y: inches(shape.y + shape.h - 11),
+            w: inches(shape.w - 4),
             h: inches(10),
             align: "right",
+            valign: "bottom",
             fontFace: "Arial",
             fontSize: 8,
             bold: true,
             color: kind === "split" ? "FFFFFF" : palette.color,
           });
+        }
+        if (person?.newcomer) {
+          const badgeBox = newBadgeBox(shape, person);
+          slide.addText(
+            person.newcomerDate
+              ? [{ text: "New\n", options: { fontSize: badgeBox.u, bold: true } }, { text: person.newcomerDate, options: { fontSize: badgeBox.u * 0.9, bold: false } }]
+              : "New",
+            {
+              x: inches(badgeBox.x),
+              y: inches(badgeBox.y),
+              w: inches(badgeBox.w),
+              h: inches(badgeBox.h),
+              fontFace: "Arial",
+              fontSize: badgeBox.u,
+              bold: true,
+              align: "center",
+              valign: "middle",
+              color: "3D2A00",
+              fill: { color: "FFC61A" },
+              margin: 0,
+            },
+          );
         }
         continue;
       }
@@ -438,7 +614,7 @@ export async function deckToPptx(org, slides, fileName) {
           w: inches(shape.w),
           h: inches(shape.h),
           fontFace: "Arial",
-          fontSize: 10,
+          fontSize: shape.fs ? Math.round(shape.fs * 10) / 10 : Math.max(5, Math.round(shape.h * 0.64)),
           bold: true,
           align: "center",
           valign: "middle",
@@ -467,8 +643,8 @@ export async function deckToPptx(org, slides, fileName) {
         });
       }
     }
-    const root = source.rootKey ? org.people.get(source.rootKey) : null;
-    const caption = source.title || (root ? `${displayName(root)} · slide ${index + 1}` : `Slide ${index + 1}`);
+    const root = source.rootLabel || (source.rootKey && org.people.get(source.rootKey) ? displayName(org.people.get(source.rootKey)) : "");
+    const caption = source.title || (root ? `${root} · slide ${index + 1}` : `Slide ${index + 1}`);
     slide.addNotes(caption);
   });
 

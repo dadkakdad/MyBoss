@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MyBoss — org charts in the browser</title>
-  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/app.css?v=cdabbddb">
 </head>
 <body data-stage="empty">
   <header class="ribbon">
@@ -17,10 +17,11 @@
       <div class="cluster needs-upload">
         <div class="upload">
           <label><span>File</span><input id="file-name" type="text" readonly tabindex="-1"></label>
-          <label><span>Sheet</span><select id="sheet"></select></label>
-          <label class="check"><input id="titles" type="checkbox" checked> Columns have titles</label>
+          <label><span>Sheet</span><select id="sheet-fix"></select></label>
         </div>
-        <button class="large" id="import" type="button"><img src="icons/upload.png" alt=""><span>Import data</span></button>
+        <button class="large" id="pick-other-file" type="button" title="Choose a different Excel file"><img src="icons/icon2.png" alt=""><span>Other file</span></button>
+        <button class="large" id="edit-data-fix" type="button" title="Fix the sheet's rows here, then import it" hidden><img src="icons/edit-data.svg" alt=""><span>Edit data</span></button>
+        <div class="import-problem" id="import-problem" role="alert" hidden></div>
       </div>
 
       <div class="cluster needs-import">
@@ -32,12 +33,14 @@
             <button type="button" id="pick-sheet"><img src="icons/icon2.png" alt="">Select another sheet</button>
           </div>
         </div>
+        <button class="large" id="edit-data" type="button" title="Edit the imported sheet without leaving MyBoss"><img src="icons/edit-data.svg" alt=""><span>Edit data</span></button>
       </div>
 
       <div class="sep needs-import" aria-hidden="true"></div>
 
       <div class="cluster needs-import fields">
         <div class="stack people">
+          <label><span>Select sheet</span><select id="sheet"></select></label>
           <label><span>Select category</span><select id="category"></select></label>
           <label><span>Select employee</span><select id="employee"></select></label>
         </div>
@@ -195,6 +198,7 @@
         <span id="status-left">No workbook yet.</span>
         <span class="export">
           <button class="mini" id="undo" type="button">Undo</button>
+          <button class="mini" id="copy-text" type="button" title="Copy the selected shapes, or the whole slide, as Markdown: title, statistics, structure and a data table (Cmd/Ctrl+C)">Copy text</button>
           <button class="mini" id="png" type="button">PNG</button>
           <button class="mini" id="pptx" type="button">PowerPoint</button>
           <button class="mini" id="json" type="button">Project</button>
@@ -207,19 +211,39 @@
         </span>
       </div>
     </div>
-    <aside class="inspector" id="inspector">
-      <h2>This sheet</h2>
-      <div id="sheet-summary"><p>Choose an Excel file that follows the MyBoss template.</p></div>
-      <h2>Selected card</h2>
-      <dl class="person" id="person"></dl>
-      <h2>Checks</h2>
-      <div id="issues"></div>
-    </aside>
+  </div>
+  <div class="sheet-dialog" id="sheet-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-panel">
+      <header class="sheet-head">
+        <h2 id="sheet-title">Edit data</h2>
+        <span class="sheet-sub" id="sheet-sub"></span>
+        <input id="sheet-filter" type="search" placeholder="Filter rows" aria-label="Filter rows">
+        <button type="button" id="sheet-add">+ Row</button>
+        <button type="button" id="sheet-add-tbh" title="Adds a row whose surname starts with TBH_">+ Vacancy</button>
+        <span class="sheet-sort" role="group" aria-label="Sort rows">
+          <label for="sheet-sort-col">Sort by</label>
+          <select id="sheet-sort-col"></select>
+          <button type="button" id="sheet-sort-asc" title="Ascending, A to Z">▲ A–Z</button>
+          <button type="button" id="sheet-sort-desc" title="Descending, Z to A">▼ Z–A</button>
+          <button type="button" id="sheet-sort-reset" title="Back to the order in the sheet">Original order</button>
+        </span>
+        <span class="spacer"></span>
+        <button type="button" id="sheet-download">Download .xlsx</button>
+      </header>
+      <div class="sheet-grid-wrap" id="sheet-wrap"><table class="sheet-grid" id="sheet-grid"></table></div>
+      <div class="sheet-issues" id="sheet-issues" aria-live="polite"></div>
+      <footer class="sheet-foot">
+        <span class="sheet-hint">Key / Intern / Hide / Newcomer: tick the box. Vacancy: surname starts with <b>TBH_</b>. Newcomer date: 16.11.2026 shows as 16.11 on the badge. Enter moves down.</span>
+        <span class="spacer"></span>
+        <button type="button" id="sheet-cancel">Cancel</button>
+        <button type="button" id="sheet-apply" class="primary">Apply to chart</button>
+      </footer>
+    </div>
   </div>
   <div class="toast" id="toast" role="status"></div>
 
   <script src="node_modules/xlsx/dist/xlsx.full.min.js"></script>
   <script src="node_modules/pptxgenjs/dist/pptxgen.bundle.js"></script>
-  <script type="module" src="js/app.js"></script>
+  <script src="app.bundle.js?v=a9834ba0"></script>
 </body>
 </html>
