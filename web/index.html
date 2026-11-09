@@ -118,6 +118,21 @@
       <div class="sep needs-import" aria-hidden="true"></div>
 
       <div class="cluster needs-import">
+        <button class="large" id="cost-centers" type="button" aria-pressed="false" title="Show or hide the green cost-center stamp on every card">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <rect x="5" y="4" width="16" height="20" rx="1.5" fill="#001b58"/>
+            <rect x="7.5" y="7.5" width="11" height="2" fill="#ffffff"/>
+            <rect x="7.5" y="11.5" width="8" height="2" fill="#9db4d8"/>
+            <rect x="13" y="16" width="15" height="12" rx="1.5" fill="#00e000" stroke="#0b6b0b" stroke-width="1"/>
+            <text x="20.5" y="24.6" text-anchor="middle" font-size="8" font-family="Arial, sans-serif" font-weight="700" fill="#083008">CC</text>
+          </svg>
+          <span>Cost centers</span>
+        </button>
+      </div>
+
+      <div class="sep needs-import" aria-hidden="true"></div>
+
+      <div class="cluster needs-import">
         <button class="large" id="add-slide" type="button"><img src="icons/newslide.png" alt=""><span>Slide</span></button>
         <div class="split">
           <button class="large" id="elements-main" type="button"><img src="icons/card.png" alt=""><span>Elements</span></button>
@@ -147,6 +162,20 @@
             <button type="button" id="remove">Delete</button>
           </div>
         </div>
+        <button class="large" id="tool-select" type="button" aria-pressed="false" title="Drag a rectangle to select several elements">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <rect x="4" y="6" width="16" height="13" fill="rgba(196,85,0,0.14)" stroke="#c45500" stroke-width="1.6" stroke-dasharray="3 2"/>
+            <path d="M15 14.5l5.2 9.2 2.1-2.2 4.6 1.2-11.9-8.2z" fill="#001b58"/>
+          </svg>
+          <span>Select</span>
+        </button>
+        <button class="large" id="tool-scale" type="button" aria-pressed="false" title="Drag a selected element to scale it. The orange handle on the selection does the same.">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <rect x="9" y="9" width="14" height="14" fill="#fff" stroke="#001b58" stroke-width="1.6"/>
+            <path d="M5 16h5.2M7.2 13.4L4.2 16l3 2.6M21.8 16H27M24.8 13.4L27.8 16l-3 2.6M16 5v5.2M13.4 7.2L16 4.2l2.6 3M16 21.8V27M13.4 24.8L16 27.8l2.6-3" stroke="#c45500" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>Scale</span>
+        </button>
       </div>
     </div>
   </header>
@@ -155,7 +184,10 @@
     <div class="stage-wrap">
       <div class="stage" id="stage">
         <div class="holder" id="holder">
-          <div class="slide" id="slide"></div>
+          <div class="scaler" id="scaler">
+            <div class="page" id="page"></div>
+            <div class="slide" id="slide"></div>
+          </div>
         </div>
       </div>
       <div class="filmstrip" id="filmstrip"></div>

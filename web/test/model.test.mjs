@@ -13,7 +13,7 @@ import {
   solidTree,
   statisticsLines,
 } from "../js/org.js";
-import { CARDS, GUIDE, SLIDE, buildSlides, chooseFit, layoutLeaves, makeMetrics } from "../js/layout.js";
+import { CARDS, GUIDE, LINK_STYLE, SLIDE, allVisible, buildSlides, chooseFit, departmentShadeAction, dottedDash, layoutLeaves, layoutSubordinates, makeMetrics } from "../js/layout.js";
 
 const samplePath = new URL("../../MyBoss-Sample data.xlsx", import.meta.url);
 
@@ -203,6 +203,89 @@ test("the generated head is Large and drops 15 points", () => {
       Math.abs(Math.abs(shape.y2 - shape.y1) - 15) < 0.6,
   );
   assert.ok(drop, "15 point head tick");
+});
+
+test("the pill above a card names the dotted-line manager on every copy", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("Grace", "Hopper", "Eng", "Lab", "Ada", "Lovelace"),
+    row("Ken", "Thompson", "Eng", "Lab", "Grace", "Hopper", "Ada", "Lovelace"),
+  ]);
+  const ken = [...org.people.values()].find((person) => person.surname === "Ken").key;
+  const metrics = makeMetrics("Medium");
+
+  function cardsOf(managerSurname) {
+    const manager = [...org.people.values()].find((person) => person.surname === managerSurname);
+    const box = layoutSubordinates(org, manager.key, metrics, allVisible(org, manager.key));
+    const cards = box.items.filter((shape) => shape.type === "card" && shape.key === ken);
+    const bubbles = box.items.filter((shape) => shape.type === "bubble" && shape.key === ken);
+    assert.ok(cards.length > 0, managerSurname);
+    return cards.map((card) => {
+      const bubble = bubbles.find(
+        (shape) => Math.abs(shape.x + shape.w / 2 - (card.x + card.w / 2)) < 2 && shape.y + shape.h <= card.y + 0.5,
+      );
+      return { card, bubble };
+    });
+  }
+
+  const underSolid = cardsOf("Grace");
+  const underDotted = cardsOf("Ada").filter((pair) => pair.card.managerType === "Dotted");
+  assert.equal(underSolid.length, 1);
+  assert.equal(underDotted.length, 1);
+  for (const pair of [...underSolid, ...underDotted]) {
+    assert.ok(pair.bubble, `${pair.card.managerType} copy has a pill`);
+    assert.equal(pair.bubble.text, "Ada");
+    assert.equal(pair.bubble.dotted, true);
+  }
+});
+
+test("solid and dotted ticks on a two-manager card do not share a path", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("Grace", "Hopper", "Eng", "Lab", "Ada", "Lovelace"),
+    row("Ken", "Thompson", "Eng", "Lab", "Grace", "Hopper", "Ada", "Lovelace"),
+  ]);
+  const ken = [...org.people.values()].find((person) => person.surname === "Ken").key;
+  const metrics = makeMetrics("Large");
+
+  function ticksTouching(managerSurname, managerType) {
+    const manager = [...org.people.values()].find((person) => person.surname === managerSurname);
+    const box = layoutSubordinates(org, manager.key, metrics, allVisible(org, manager.key));
+    const card = box.items.find((shape) => shape.type === "card" && shape.key === ken && shape.managerType === managerType);
+    assert.ok(card, `${managerSurname} ${managerType}`);
+    return box.items.filter((shape) => {
+      if (shape.type !== "wire" || Math.abs(shape.x1 - shape.x2) > 0.8) return false;
+      const top = Math.min(shape.y1, shape.y2);
+      const bottom = Math.max(shape.y1, shape.y2);
+      return bottom >= card.y - 0.6 && top <= card.y + 0.6 && Math.abs(shape.x1 - (card.x + card.w / 2)) < 20;
+    });
+  }
+
+  for (const [manager, kind] of [["Grace", "Solid"], ["Ada", "Dotted"]]) {
+    const wires = ticksTouching(manager, kind);
+    const solid = wires.filter((shape) => !shape.dotted);
+    const dotted = wires.filter((shape) => shape.dotted);
+    assert.ok(solid.length > 0 && dotted.length > 0, `${kind} shows both line styles`);
+    for (const left of solid) {
+      for (const right of dotted) {
+        const shared = Math.min(Math.max(left.y1, left.y2), Math.max(right.y1, right.y2))
+          - Math.max(Math.min(left.y1, left.y2), Math.min(right.y1, right.y2));
+        if (shared < 0.4) continue;
+        assert.equal(Math.abs(left.x1 - right.x1), 5, `${kind} ticks are 5 points apart`);
+      }
+    }
+  }
+});
+
+test("a thick dotted connector keeps a visible gap", () => {
+  for (const weight of [2, 3, 4]) {
+    const [dot, gap] = dottedDash(weight);
+    assert.ok(gap - weight > dot, `weight ${weight} gap stays open past the round caps`);
+  }
 });
 
 test("dotted-line reports hang off both managers but only expand under the solid line", () => {
@@ -447,4 +530,57 @@ test("rows share one trunk and a bar on every row", () => {
     );
     assert.ok(tick, "top tick");
   }
+});
+
+test("department shades toggle off on the next click, unless one shade is selected", () => {
+  const shapes = [
+    { id: "s1", type: "shade" },
+    { id: "c1", type: "card" },
+  ];
+  assert.equal(departmentShadeAction([], new Set()), "add");
+  assert.equal(departmentShadeAction(shapes, new Set()), "remove");
+  assert.equal(departmentShadeAction(shapes, new Set(["s1"])), "lighten");
+  assert.equal(departmentShadeAction(shapes, new Set(["s1", "c1"])), "remove");
+});
+
+test("slide links sit below the card and below an end date", () => {
+  const check = (org) => {
+    const slides = buildSlides(org, org.ceo, "infinity");
+    let links = 0;
+    for (const slide of slides) {
+      for (const link of slide.shapes.filter((shape) => shape.type === "link")) {
+        links += 1;
+        const card = slide.shapes.find((shape) => shape.type === "card" && shape.key === link.key);
+        assert.ok(card, link.text);
+        assert.ok(link.y + 0.1 >= card.y + card.h, `${link.text} overlaps its card`);
+        const note = slide.shapes.find((shape) => shape.type === "comment" && shape.key === link.key);
+        if (note) assert.ok(link.y + 0.1 >= note.y + note.h, `${link.text} overlaps ${note.text}`);
+      }
+    }
+    assert.ok(links > 0);
+  };
+
+  check(buildOrg(matrixFrom("Advanced")));
+
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const rows = [header, row("Ada", "Lovelace", "CEO", "Office", "", "")];
+  for (let team = 0; team < 10; team += 1) {
+    const lead = `Lead${team}`;
+    rows.push(row(lead, "Manager", "Director", `Dept ${team % 3}`, "Ada", "Lovelace", "", "", "USA, NY", "9 November 2018"));
+    for (let person = 0; person < 8; person += 1) {
+      rows.push(row(`P${team}_${person}`, "Member", "IC", `Dept ${team % 3}`, lead, "Manager"));
+    }
+  }
+  check(buildOrg(rows));
+});
+
+test("slide links use the palette green bar and black type", () => {
+  assert.equal(LINK_STYLE.fill.toLowerCase(), "#9bc225");
+  assert.equal(LINK_STYLE.color.toLowerCase(), "#000000");
+  const css = readFileSync(new URL("../css/app.css", import.meta.url), "utf8");
+  const block = css.slice(css.indexOf(".link {"), css.indexOf(".link {") + 500);
+  assert.match(block, /#9[Bb][Cc]225/);
+  assert.match(block, /color:\s*#000/);
+  const exp = readFileSync(new URL("../js/export.js", import.meta.url), "utf8");
+  assert.match(exp, /LINK_STYLE/);
 });

@@ -4,7 +4,8 @@
  */
 
 import { cardStyle, displayName, headcountLabel, moderated } from "./org.js";
-import { LINE, SLIDE } from "./layout.js";
+import { LINE, LINK_STYLE, SLIDE, dottedDash } from "./layout.js";
+import { contentFrame } from "./editor.js";
 
 const STYLE = {
   ordinary: { fill: "001B58", color: "FFFFFF", bar: "00123F" },
@@ -23,13 +24,15 @@ function personLines(org, shape) {
 }
 
 export function slideToCanvas(org, slide, scale = 2) {
+  const frame = contentFrame(slide.shapes || []);
   const canvas = document.createElement("canvas");
-  canvas.width = SLIDE.width * scale;
-  canvas.height = SLIDE.height * scale;
+  canvas.width = Math.max(1, Math.ceil(frame.w * scale));
+  canvas.height = Math.max(1, Math.ceil(frame.h * scale));
   const ctx = canvas.getContext("2d");
   ctx.scale(scale, scale);
+  ctx.translate(-frame.x, -frame.y);
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, SLIDE.width, SLIDE.height);
+  ctx.fillRect(frame.x, frame.y, frame.w, frame.h);
   const shapes = [...slide.shapes].sort((a, b) => (a.z || 0) - (b.z || 0));
   for (const shape of shapes) drawShape(ctx, org, shape);
   return canvas;
@@ -51,7 +54,7 @@ function drawShape(ctx, org, shape) {
     ctx.strokeStyle = shape.dotted ? LINE.dotted : LINE.solid;
     ctx.lineWidth = shape.weight || 2;
     ctx.lineCap = shape.dotted ? "round" : "square";
-    ctx.setLineDash(shape.dotted ? [0.8, 2.8] : []);
+    ctx.setLineDash(shape.dotted ? dottedDash(shape.weight || 2) : []);
     ctx.stroke();
     ctx.setLineDash([]);
     return;
@@ -107,7 +110,19 @@ function drawShape(ctx, org, shape) {
     });
     return;
   }
-  if (shape.type === "bubble" || shape.type === "comment" || shape.type === "link" || shape.type === "nav") {
+  if (shape.type === "link") {
+    ctx.fillStyle = LINK_STYLE.fill;
+    ctx.fillRect(shape.x, shape.y, shape.w, shape.h);
+    ctx.fillStyle = LINK_STYLE.color;
+    ctx.font = "bold 8px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(shape.text || "", shape.x + shape.w / 2, shape.y + shape.h / 2);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    return;
+  }
+  if (shape.type === "bubble" || shape.type === "comment" || shape.type === "nav") {
     ctx.fillStyle = shape.type === "nav" ? "#173C5D" : "#ffffff";
     ctx.strokeStyle = shape.dotted ? "#00123F" : "#8a8175";
     ctx.lineWidth = 1;
@@ -119,6 +134,21 @@ function drawShape(ctx, org, shape) {
     ctx.fillStyle = shape.type === "nav" ? "#ffffff" : "#1c2430";
     ctx.font = "8px Arial";
     ctx.fillText(shape.text || "", shape.x + 4, shape.y + shape.h - 3);
+    return;
+  }
+  if (shape.type === "cc") {
+    ctx.fillStyle = "#00ff00";
+    ctx.strokeStyle = "#0b6b0b";
+    ctx.lineWidth = 1;
+    ctx.fillRect(shape.x, shape.y, shape.w, shape.h);
+    ctx.strokeRect(shape.x, shape.y, shape.w, shape.h);
+    ctx.fillStyle = "#083008";
+    ctx.font = `bold ${Math.max(6, shape.h * (10 / 30))}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(shape.text || "?", shape.x + shape.w / 2, shape.y + shape.h / 2);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
     return;
   }
   if (shape.type === "card") {
@@ -401,7 +431,25 @@ export async function deckToPptx(org, slides, fileName) {
         }
         continue;
       }
+      if (shape.type === "cc") {
+        slide.addText(shape.text || "?", {
+          x: inches(shape.x),
+          y: inches(shape.y),
+          w: inches(shape.w),
+          h: inches(shape.h),
+          fontFace: "Arial",
+          fontSize: 10,
+          bold: true,
+          align: "center",
+          valign: "middle",
+          color: "083008",
+          fill: { color: "00FF00" },
+          margin: 0,
+        });
+        continue;
+      }
       if (shape.type === "link" || shape.type === "nav" || shape.type === "bubble" || shape.type === "comment") {
+        const link = shape.type === "link";
         slide.addText(shape.text || "", {
           x: inches(shape.x),
           y: inches(shape.y),
@@ -409,8 +457,9 @@ export async function deckToPptx(org, slides, fileName) {
           h: inches(Math.max(shape.h, 8)),
           fontFace: "Arial",
           fontSize: shape.type === "comment" ? 7 : 8,
-          color: shape.type === "nav" ? "FFFFFF" : "001B58",
-          fill: { color: shape.type === "nav" ? "173C5D" : "FFFFFF" },
+          bold: link,
+          color: link ? LINK_STYLE.color.replace("#", "") : shape.type === "nav" ? "FFFFFF" : "001B58",
+          fill: { color: link ? LINK_STYLE.fill.replace("#", "") : shape.type === "nav" ? "173C5D" : "FFFFFF" },
           align: "center",
           valign: "middle",
           wrap: shape.type === "comment",
@@ -419,7 +468,8 @@ export async function deckToPptx(org, slides, fileName) {
       }
     }
     const root = source.rootKey ? org.people.get(source.rootKey) : null;
-    slide.addNotes(root ? `${displayName(root)} · slide ${index + 1}` : `Slide ${index + 1}`);
+    const caption = source.title || (root ? `${displayName(root)} · slide ${index + 1}` : `Slide ${index + 1}`);
+    slide.addNotes(caption);
   });
 
   await pptx.writeFile({ fileName: fileName || "MyBoss-org-chart.pptx" });

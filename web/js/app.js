@@ -13,15 +13,31 @@ import {
 import {
   CARDS,
   LINE,
+  LINK_STYLE,
+  dottedDash,
   SHADE_COLORS,
+  departmentShadeAction,
   SLIDE,
   buildSlides,
   layoutDepartmentShades,
   layoutManualBranch,
   layoutSingleCard,
   makeMetrics,
+  slideLinkTop,
 } from "./layout.js";
 import { deckToPptx, slideToCanvas } from "./export.js";
+import {
+  boxesIntersect,
+  contentFrame,
+  hideCostCenterStamps,
+  offsetSlideTargets,
+  prependCharts,
+  removeSlide,
+  scaleShapes,
+  selectionBounds,
+  shapeBox,
+  showCostCenterStamps,
+} from "./editor.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -45,6 +61,10 @@ const state = {
   undo: [],
   redo: [],
   shade: 0,
+  tool: "move",
+  costCenters: false,
+  renaming: null,
+  frame: { x: 0, y: 0, w: SLIDE.width, h: SLIDE.height },
 };
 
 function blankSlide() {
@@ -188,12 +208,17 @@ function createDeck(mode) {
   if (!requireOrg()) return;
   const key = $("employee").value || state.org.ceo;
   remember();
-  state.slides = buildSlides(state.org, key, mode);
+  const fresh = buildSlides(state.org, key, mode);
+  state.slides = prependCharts(state.slides, fresh);
   state.active = 0;
   state.selection.clear();
+  state.renaming = null;
+  if (state.costCenters) showCostCenterStamps(state.org, state.slides, nid);
   const hidden = hiddenTeams(state.slides[0]);
   render();
-  toast(mode === "infinity" ? `${state.slides.length} slides.` : hidden ? `${hidden} team${hidden === 1 ? "" : "s"} folded to fit.` : "Chart fits on one slide.");
+  const placed = fresh.length === 1 ? "Added 1 slide in front." : `Added ${fresh.length} slides in front.`;
+  const fit = mode === "infinity" ? "" : hidden ? ` ${hidden} team${hidden === 1 ? "" : "s"} folded to fit.` : " Chart fits on one slide.";
+  toast(`${placed}${fit}`);
 }
 
 function hiddenTeams(slide) {
@@ -311,15 +336,26 @@ function lightenShade(fill) {
 
 function shadeDepartments() {
   if (!requireOrg()) return;
-  const selectedShade = selectedShapes().find((shape) => shape.type === "shade");
-  if (selectedShade) {
+  const slide = current();
+  const action = departmentShadeAction(slide.shapes, state.selection);
+  if (action === "lighten") {
+    const selectedShade = selectedShapes().find((shape) => shape.type === "shade");
     remember();
     selectedShade.fill = lightenShade(selectedShade.fill);
     render();
     return;
   }
+  if (action === "remove") {
+    remember();
+    slide.shapes = slide.shapes.filter((shape) => shape.type !== "shade");
+    for (const id of [...state.selection]) {
+      if (!slide.shapes.some((shape) => shape.id === id)) state.selection.delete(id);
+    }
+    render();
+    toast("Department shades removed.");
+    return;
+  }
   remember();
-  const slide = current();
   slide.shapes = slide.shapes.filter((shape) => shape.type !== "shade");
   const shades = layoutDepartmentShades(
     state.org,
@@ -367,7 +403,7 @@ function linkSlides() {
       id: nid("link"),
       type: "link",
       x: source.x,
-      y: source.y + source.h,
+      y: slideLinkTop(source, slide.shapes),
       w: source.w,
       h: 11,
       z: 3,
@@ -398,8 +434,10 @@ function addDecoration(kind) {
   remember();
   const slide = current();
   if (kind === "slide") {
-    state.slides.splice(state.active + 1, 0, blankSlide());
-    state.active += 1;
+    const at = state.active + 1;
+    state.slides.splice(at, 0, blankSlide());
+    offsetSlideTargets(state.slides, 1, at);
+    state.active = at;
     render();
     return;
   }
@@ -578,12 +616,21 @@ function applySticky(shape) {
 }
 
 function render() {
+  state.frame = contentFrame(current()?.shapes || []);
   renderSlide();
   renderFilmstrip();
   renderInspector();
   renderStatus();
   applyScale();
   syncChrome();
+}
+
+function viewX(x) {
+  return x - state.frame.x;
+}
+
+function viewY(y) {
+  return y - state.frame.y;
 }
 
 function syncChrome() {
@@ -601,15 +648,33 @@ function syncChrome() {
   if ($("ungroup")) $("ungroup").disabled = !imported || !grouped;
   const card = current()?.shapes.find((shape) => state.selection.has(shape.id) && shape.type === "card" && shape.key);
   if ($("add-link")) $("add-link").disabled = !card;
+  document.body.dataset.tool = state.tool;
+  for (const [id, tool] of [["tool-select", "select"], ["tool-scale", "scale"]]) {
+    const button = $(id);
+    if (!button) continue;
+    const on = state.tool === tool;
+    button.classList.toggle("pressed", on);
+    button.setAttribute("aria-pressed", String(on));
+  }
+  const costs = $("cost-centers");
+  if (costs) {
+    costs.classList.toggle("pressed", state.costCenters);
+    costs.setAttribute("aria-pressed", String(state.costCenters));
+  }
 }
 
 function renderSlide() {
   const slide = current();
   const root = $("slide");
   root.innerHTML = "";
+  const frame = state.frame;
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.classList.add("wires");
-  svg.setAttribute("viewBox", `0 0 ${SLIDE.width} ${SLIDE.height}`);
+  svg.setAttribute("viewBox", `${frame.x} ${frame.y} ${frame.w} ${frame.h}`);
+  svg.style.left = "0";
+  svg.style.top = "0";
+  svg.style.width = `${frame.w}px`;
+  svg.style.height = `${frame.h}px`;
   root.appendChild(svg);
 
   if (!slide.shapes.length) {
@@ -632,7 +697,7 @@ function renderSlide() {
       line.setAttribute("stroke", shape.dotted ? LINE.dotted : LINE.solid);
       line.setAttribute("stroke-width", shape.weight || 2);
       line.setAttribute("stroke-linecap", shape.dotted ? "round" : "square");
-      if (shape.dotted) line.setAttribute("stroke-dasharray", "0.8 2.8");
+      if (shape.dotted) line.setAttribute("stroke-dasharray", dottedDash(shape.weight || 2).join(" "));
       line.dataset.id = shape.id;
       line.style.cursor = "pointer";
       if (state.selection.has(shape.id)) line.setAttribute("stroke", "#c45500");
@@ -642,6 +707,30 @@ function renderSlide() {
     }
     root.appendChild(renderShape(shape));
   }
+  const bounds = selectionBounds(selectedShapes());
+  if (bounds) root.appendChild(selectionFrame(bounds));
+}
+
+function selectionFrame(bounds) {
+  const frame = document.createElement("div");
+  frame.className = "selection-frame";
+  frame.style.left = `${viewX(bounds.x)}px`;
+  frame.style.top = `${viewY(bounds.y)}px`;
+  frame.style.width = `${bounds.w}px`;
+  frame.style.height = `${bounds.h}px`;
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = "scale-handle";
+  handle.title = "Drag to scale the selection";
+  handle.setAttribute("aria-label", "Scale selection");
+  const visual = 12 / Math.max(0.4, baseScale() * state.zoom);
+  handle.style.width = `${visual}px`;
+  handle.style.height = `${visual}px`;
+  handle.style.right = `${-visual / 2}px`;
+  handle.style.bottom = `${-visual / 2}px`;
+  handle.addEventListener("pointerdown", (event) => beginScale(event, "corner"));
+  frame.appendChild(handle);
+  return frame;
 }
 
 function renderShape(shape) {
@@ -649,8 +738,8 @@ function renderShape(shape) {
   node.type = "button";
   node.className = `shape ${shape.type}`;
   node.dataset.id = shape.id;
-  node.style.left = `${shape.x}px`;
-  node.style.top = `${shape.y}px`;
+  node.style.left = `${viewX(shape.x)}px`;
+  node.style.top = `${viewY(shape.y)}px`;
   node.style.width = `${shape.w}px`;
   node.style.height = `${shape.h}px`;
   node.style.zIndex = String(shape.z || 2);
@@ -666,13 +755,14 @@ function renderShape(shape) {
         : [moderated(person.surname), moderated(person.name), moderated(person.job)]
       : shape.lines || [];
     const spec = CARDS[shape.size] || CARDS.Medium;
-    node.style.fontSize = `${spec.name}px`;
+    const fontScale = spec.h ? shape.h / spec.h : 1;
+    node.style.fontSize = `${spec.name * fontScale}px`;
     const badge = person ? headcountLabel(person) : "";
     const footer = person?.location || "";
     const badgeHtml = badge ? `<span class="hc">${escapeHtml(badge)}</span>` : "";
     node.innerHTML = `<span class="who">${escapeHtml(lines[0] || "")}</span>
       <span class="who">${escapeHtml(lines[1] || "")}</span>
-      ${shape.h >= 32 && lines[2] ? `<span class="job" style="font-size:${spec.title}px">${escapeHtml(lines[2])}</span>` : ""}
+      ${shape.h >= 32 && lines[2] ? `<span class="job" style="font-size:${spec.title * fontScale}px">${escapeHtml(lines[2])}</span>` : ""}
       ${footer ? `<span class="loc"><span class="loc-text">${escapeHtml(footer)}</span>${badgeHtml}</span>` : badgeHtml}`;
     node.setAttribute("aria-label", person ? personFullName(person) : "Empty card");
     node.addEventListener("dblclick", (event) => {
@@ -692,14 +782,21 @@ function renderShape(shape) {
   } else if (shape.type === "bubble") {
     node.textContent = shape.text || "";
     if (shape.dotted) node.classList.add("dotted");
+  } else if (shape.type === "cc") {
+    node.textContent = shape.text || "?";
+    node.style.fontSize = `${Math.max(6, (shape.h || 30) * (10 / 30))}px`;
   } else if (shape.type === "comment" || shape.type === "link" || shape.type === "nav") {
     node.textContent = shape.text || "";
+    if (shape.type === "link") {
+      node.style.background = LINK_STYLE.fill;
+      node.style.color = LINK_STYLE.color;
+    }
   }
 
   node.addEventListener("pointerdown", (event) => startPointer(event, shape));
   if (shape.target) {
     node.addEventListener("click", (event) => {
-      if (pointer.moved) return;
+      if (pointer.moved || state.tool !== "move") return;
       event.stopPropagation();
       state.active = shape.target - 1;
       state.selection.clear();
@@ -721,24 +818,36 @@ function focusPerson(key) {
   $("employee").value = key;
 }
 
-const pointer = { id: null, x: 0, y: 0, moved: false, shape: null, marquee: null };
+const pointer = { id: null, x: 0, y: 0, moved: false, shape: null, marquee: null, scale: null };
 
 function localPoint(event) {
+  const frame = state.frame;
   const rect = $("slide").getBoundingClientRect();
   return {
-    x: ((event.clientX - rect.left) / rect.width) * SLIDE.width,
-    y: ((event.clientY - rect.top) / rect.height) * SLIDE.height,
+    x: frame.x + ((event.clientX - rect.left) / rect.width) * frame.w,
+    y: frame.y + ((event.clientY - rect.top) / rect.height) * frame.h,
   };
 }
 
 function startPointer(event, shape) {
   event.stopPropagation();
+  if (state.tool === "select") {
+    beginMarquee(event, shape);
+    return;
+  }
+  if (state.tool === "scale") {
+    if (shape && !state.selection.has(shape.id)) selectGroup(shape, event.shiftKey);
+    if (shape?.type === "card" && shape.key) focusPerson(shape.key);
+    beginScale(event, "center");
+    return;
+  }
   const point = localPoint(event);
   pointer.id = event.pointerId;
   pointer.x = point.x;
   pointer.y = point.y;
   pointer.moved = false;
   pointer.shape = shape;
+  pointer.scale = null;
   if (shape && !state.selection.has(shape.id)) selectGroup(shape, event.shiftKey);
   if (shape?.type === "card" && shape.key) focusPerson(shape.key);
   else if (shape && event.shiftKey) {
@@ -750,20 +859,113 @@ function startPointer(event, shape) {
   render();
 }
 
-function onSlidePointerDown(event) {
-  if (event.target !== $("slide")) return;
+function beginMarquee(event, shape) {
+  event.stopPropagation();
   const point = localPoint(event);
   pointer.id = event.pointerId;
   pointer.x = point.x;
   pointer.y = point.y;
   pointer.moved = false;
   pointer.shape = null;
-  if (!event.shiftKey) state.selection.clear();
+  pointer.scale = null;
+  pointer.marquee?.remove();
+  pointer.marqueeShape = shape || null;
+  pointer.marqueeAdditive = event.shiftKey;
+  if (!event.shiftKey && !shape) state.selection.clear();
   pointer.marquee = document.createElement("div");
   pointer.marquee.className = "marquee";
   $("slide").appendChild(pointer.marquee);
-  $("slide").setPointerCapture(event.pointerId);
-  renderInspector();
+  $("slide").setPointerCapture?.(event.pointerId);
+  if (!shape) renderInspector();
+}
+
+function beginScale(event, mode) {
+  event.stopPropagation();
+  event.preventDefault();
+  const live = selectedShapes();
+  const bounds = selectionBounds(live);
+  if (!bounds) {
+    toast("Select elements to scale.");
+    return;
+  }
+  const point = localPoint(event);
+  const origin = mode === "center"
+    ? { x: bounds.x + bounds.w / 2, y: bounds.y + bounds.h / 2 }
+    : { x: bounds.x, y: bounds.y };
+  pointer.marquee?.remove();
+  pointer.id = event.pointerId;
+  pointer.moved = false;
+  pointer.shape = null;
+  pointer.marquee = null;
+  pointer.marqueeShape = null;
+  pointer.scale = {
+    mode,
+    origin,
+    anchor: point,
+    start: Math.max(12, Math.hypot(point.x - origin.x, point.y - origin.y)),
+    snapshot: live.map((shape) => ({ ...shape })),
+    live,
+    remembered: false,
+  };
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+}
+
+function onHolderPointerDown(event) {
+  if (event.target.closest?.(".shape, .scale-handle, .wires line")) return;
+  if (state.tool === "scale") return;
+  beginMarquee(event, null);
+}
+
+function paintShape(shape) {
+  const node = $("slide").querySelector(`[data-id="${shape.id}"]`);
+  if (!node) return;
+  if (shape.type === "wire") {
+    node.setAttribute("x1", shape.x1);
+    node.setAttribute("y1", shape.y1);
+    node.setAttribute("x2", shape.x2);
+    node.setAttribute("y2", shape.y2);
+  } else {
+    node.style.left = `${viewX(shape.x)}px`;
+    node.style.top = `${viewY(shape.y)}px`;
+    node.style.width = `${shape.w}px`;
+    node.style.height = `${shape.h}px`;
+  }
+}
+
+function applyScaleGesture(point) {
+  const gesture = pointer.scale;
+  const snapshot = gesture.snapshot.map((shape) => ({ ...shape }));
+  let factor = 1;
+  if (gesture.mode === "corner") {
+    factor = Math.hypot(point.x - gesture.origin.x, point.y - gesture.origin.y) / gesture.start;
+  } else {
+    factor = 1 + (point.y - gesture.anchor.y) / 180;
+  }
+  scaleShapes(snapshot, factor, gesture.origin);
+  gesture.live.forEach((shape, index) => {
+    const next = snapshot[index];
+    if (shape.type === "wire") {
+      shape.x1 = next.x1;
+      shape.y1 = next.y1;
+      shape.x2 = next.x2;
+      shape.y2 = next.y2;
+      shape.weight = next.weight;
+    } else {
+      shape.x = next.x;
+      shape.y = next.y;
+      shape.w = next.w;
+      shape.h = next.h;
+    }
+    paintShape(shape);
+  });
+  const frame = $("slide").querySelector(".selection-frame");
+  const bounds = selectionBounds(gesture.live);
+  if (frame && bounds) {
+    frame.style.left = `${viewX(bounds.x)}px`;
+    frame.style.top = `${viewY(bounds.y)}px`;
+    frame.style.width = `${bounds.w}px`;
+    frame.style.height = `${bounds.h}px`;
+  }
 }
 
 function onPointerMove(event) {
@@ -771,14 +973,23 @@ function onPointerMove(event) {
   const point = localPoint(event);
   const dx = point.x - pointer.x;
   const dy = point.y - pointer.y;
-  if (!pointer.moved && Math.hypot(dx, dy) < 2) return;
+  if (!pointer.moved && Math.hypot(point.x - (pointer.scale?.anchor.x ?? pointer.x), point.y - (pointer.scale?.anchor.y ?? pointer.y)) < 2) return;
+  if (pointer.scale) {
+    if (!pointer.scale.remembered) {
+      remember();
+      pointer.scale.remembered = true;
+    }
+    pointer.moved = true;
+    applyScaleGesture(point);
+    return;
+  }
   if (!pointer.moved && pointer.shape) remember();
   pointer.moved = true;
   if (pointer.marquee) {
     const x = Math.min(pointer.x, point.x);
     const y = Math.min(pointer.y, point.y);
-    pointer.marquee.style.left = `${x}px`;
-    pointer.marquee.style.top = `${y}px`;
+    pointer.marquee.style.left = `${viewX(x)}px`;
+    pointer.marquee.style.top = `${viewY(y)}px`;
     pointer.marquee.style.width = `${Math.abs(dx)}px`;
     pointer.marquee.style.height = `${Math.abs(dy)}px`;
     return;
@@ -789,63 +1000,180 @@ function onPointerMove(event) {
   for (const shape of moving) moveShape(shape, dx, dy);
   pointer.x = point.x;
   pointer.y = point.y;
-  for (const shape of moving) {
-    const node = $("slide").querySelector(`[data-id="${shape.id}"]`);
-    if (!node) continue;
-    if (shape.type === "wire") {
-      node.setAttribute("x1", shape.x1);
-      node.setAttribute("y1", shape.y1);
-      node.setAttribute("x2", shape.x2);
-      node.setAttribute("y2", shape.y2);
-    } else {
-      node.style.left = `${shape.x}px`;
-      node.style.top = `${shape.y}px`;
-    }
+  for (const shape of moving) paintShape(shape);
+  const frame = $("slide").querySelector(".selection-frame");
+  const bounds = selectionBounds(moving);
+  if (frame && bounds) {
+    frame.style.left = `${viewX(bounds.x)}px`;
+    frame.style.top = `${viewY(bounds.y)}px`;
+    frame.style.width = `${bounds.w}px`;
+    frame.style.height = `${bounds.h}px`;
   }
+}
+
+function marqueeRect() {
+  const box = pointer.marquee.getBoundingClientRect();
+  const slideRect = $("slide").getBoundingClientRect();
+  const frame = state.frame;
+  const scaleX = frame.w / slideRect.width;
+  const scaleY = frame.h / slideRect.height;
+  return {
+    x: frame.x + (box.left - slideRect.left) * scaleX,
+    y: frame.y + (box.top - slideRect.top) * scaleY,
+    w: box.width * scaleX,
+    h: box.height * scaleY,
+  };
 }
 
 function onPointerUp(event) {
   if (pointer.id !== event.pointerId) return;
   if (pointer.marquee) {
-    const box = pointer.marquee.getBoundingClientRect();
-    const slideRect = $("slide").getBoundingClientRect();
-    const scaleX = SLIDE.width / slideRect.width;
-    const scaleY = SLIDE.height / slideRect.height;
-    const rect = {
-      x: (box.left - slideRect.left) * scaleX,
-      y: (box.top - slideRect.top) * scaleY,
-      w: box.width * scaleX,
-      h: box.height * scaleY,
-    };
-    for (const shape of current().shapes) {
-      if (!Number.isFinite(shape.x)) continue;
-      const hits = shape.x < rect.x + rect.w && shape.x + shape.w > rect.x && shape.y < rect.y + rect.h && shape.y + shape.h > rect.y;
-      if (hits) state.selection.add(shape.id);
+    if (pointer.moved) {
+      const rect = marqueeRect();
+      if (!pointer.marqueeAdditive) state.selection.clear();
+      for (const shape of current().shapes) {
+        const box = shapeBox(shape);
+        if (!box) continue;
+        const hit = shape.type === "wire"
+          ? { x: box.x - 4, y: box.y - 4, w: box.w + 8, h: box.h + 8 }
+          : box;
+        if (!boxesIntersect(hit, rect)) continue;
+        const members = shape.groupId ? current().shapes.filter((item) => item.groupId === shape.groupId) : [shape];
+        for (const member of members) state.selection.add(member.id);
+      }
+    } else if (pointer.marqueeShape) {
+      selectGroup(pointer.marqueeShape, pointer.marqueeAdditive);
+    } else if (!pointer.marqueeAdditive) {
+      state.selection.clear();
     }
     pointer.marquee.remove();
     pointer.marquee = null;
+    pointer.marqueeShape = null;
+    render();
+  } else if (pointer.scale) {
+    pointer.scale = null;
     render();
   }
   pointer.id = null;
   pointer.shape = null;
 }
 
+function slideCaption(slide, index) {
+  const person = slide.rootKey && state.org ? state.org.people.get(slide.rootKey) : null;
+  const cards = slide.shapes.filter((shape) => shape.type === "card").length;
+  return {
+    title: slide.title || `Slide ${index + 1}`,
+    detail: person ? displayName(person) : cards ? `${cards} cards` : "Empty",
+  };
+}
+
+function commitRename(index, value) {
+  if (state.renaming !== index) return;
+  state.renaming = null;
+  const slide = state.slides[index];
+  if (!slide) {
+    renderFilmstrip();
+    return;
+  }
+  const trimmed = value.trim();
+  const next = !trimmed || trimmed === `Slide ${index + 1}` ? "" : trimmed;
+  if ((slide.title || "") === next) {
+    renderFilmstrip();
+    return;
+  }
+  remember();
+  slide.title = next;
+  render();
+}
+
+function deleteSlide(index) {
+  remember();
+  state.renaming = null;
+  state.slides = removeSlide(state.slides, index);
+  if (!state.slides.length) state.slides = [blankSlide()];
+  if (state.active > index) state.active -= 1;
+  if (state.active >= state.slides.length) state.active = state.slides.length - 1;
+  state.selection.clear();
+  render();
+}
+
 function renderFilmstrip() {
   const strip = $("filmstrip");
   strip.innerHTML = "";
   state.slides.forEach((slide, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    if (index === state.active) button.className = "active";
-    const person = slide.rootKey && state.org ? state.org.people.get(slide.rootKey) : null;
-    const cards = slide.shapes.filter((shape) => shape.type === "card").length;
-    button.innerHTML = `<b>Slide ${index + 1}</b><small>${escapeHtml(person ? displayName(person) : cards ? `${cards} cards` : "Empty")}</small>`;
-    button.addEventListener("click", () => {
+    const tab = document.createElement("div");
+    tab.className = `slide-tab${index === state.active ? " active" : ""}`;
+    const open = document.createElement("div");
+    open.className = "open";
+    open.tabIndex = 0;
+    open.setAttribute("role", "button");
+    const caption = slideCaption(slide, index);
+    if (state.renaming === index) {
+      const input = document.createElement("input");
+      input.className = "slide-name";
+      input.value = slide.title || `Slide ${index + 1}`;
+      input.setAttribute("aria-label", "Slide name");
+      input.addEventListener("click", (event) => event.stopPropagation());
+      input.addEventListener("keydown", (event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commitRename(index, input.value);
+        } else if (event.key === "Escape") {
+          state.renaming = null;
+          renderFilmstrip();
+        }
+      });
+      input.addEventListener("blur", () => commitRename(index, input.value));
+      const detail = document.createElement("small");
+      detail.textContent = caption.detail;
+      open.append(input, detail);
+      queueMicrotask(() => {
+        input.focus();
+        input.select();
+      });
+    } else {
+      open.innerHTML = `<b>${escapeHtml(caption.title)}</b><small>${escapeHtml(caption.detail)}</small>`;
+      open.title = "Double-click to rename";
+      open.addEventListener("click", () => {
+        state.active = index;
+        state.selection.clear();
+        render();
+      });
+      open.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        state.active = index;
+        state.renaming = index;
+        render();
+      });
+    }
+    const actions = document.createElement("span");
+    actions.className = "slide-actions";
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.className = "slide-mini";
+    rename.title = "Rename slide";
+    rename.setAttribute("aria-label", `Rename slide ${index + 1}`);
+    rename.textContent = "✎";
+    rename.addEventListener("click", (event) => {
+      event.stopPropagation();
       state.active = index;
-      state.selection.clear();
+      state.renaming = index;
       render();
     });
-    strip.appendChild(button);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "slide-mini danger";
+    remove.title = "Delete slide";
+    remove.setAttribute("aria-label", `Delete slide ${index + 1}`);
+    remove.textContent = "×";
+    remove.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteSlide(index);
+    });
+    actions.append(rename, remove);
+    tab.append(open, actions);
+    strip.appendChild(tab);
   });
 }
 
@@ -899,6 +1227,7 @@ function renderInspector() {
     ["Team", headcountLabel(person) || "1"],
     ["Excel row", String(person.row)],
     ["Flags", [person.important ? "Key" : "", person.outsource ? "External" : "", person.tbh ? "To be hired" : ""].filter(Boolean).join(", ") || "Staff"],
+    ["Cost center", person.costCenter || "—"],
   ];
   personNode.innerHTML = rows.map(([label, value]) => `<dt>${label}</dt><dd>${escapeHtml(value)}</dd>`).join("");
 }
@@ -920,14 +1249,42 @@ function baseScale() {
 }
 
 function applyScale() {
+  const frame = state.frame || contentFrame(current()?.shapes || []);
+  state.frame = frame;
   const scale = baseScale() * state.zoom;
   const holder = $("holder");
-  holder.style.width = `${SLIDE.width * scale}px`;
-  holder.style.height = `${SLIDE.height * scale}px`;
+  holder.style.width = `${frame.w * scale}px`;
+  holder.style.height = `${frame.h * scale}px`;
+  const scaler = $("scaler");
+  scaler.style.width = `${frame.w}px`;
+  scaler.style.height = `${frame.h}px`;
+  scaler.style.transform = `scale(${scale})`;
+  const page = $("page");
+  page.style.left = `${-frame.x}px`;
+  page.style.top = `${-frame.y}px`;
   const slide = $("slide");
-  slide.style.transformOrigin = "top left";
-  slide.style.transform = `scale(${scale})`;
+  slide.style.width = `${frame.w}px`;
+  slide.style.height = `${frame.h}px`;
   $("zoom-label").textContent = `${Math.round(scale * 100)}%`;
+}
+
+function setTool(tool) {
+  state.tool = state.tool === tool ? "move" : tool;
+  syncChrome();
+}
+
+function toggleCostCenters() {
+  if (!requireOrg()) return;
+  remember();
+  state.costCenters = !state.costCenters;
+  if (state.costCenters) {
+    const count = showCostCenterStamps(state.org, state.slides, nid);
+    toast(count ? `Cost centers on ${count} ${count === 1 ? "card" : "cards"}.` : "No cards to label.");
+  } else {
+    hideCostCenterStamps(state.slides);
+    toast("Cost centers hidden.");
+  }
+  render();
 }
 
 function downloadBlob(blob, name) {
@@ -1045,6 +1402,9 @@ function bind() {
   $("place-tree").addEventListener("click", () => placeBranch("tree"));
   $("departments").addEventListener("click", shadeDepartments);
   $("links").addEventListener("click", linkSlides);
+  $("cost-centers").addEventListener("click", toggleCostCenters);
+  $("tool-select").addEventListener("click", () => setTool("select"));
+  $("tool-scale").addEventListener("click", () => setTool("scale"));
   $("add-slide").addEventListener("click", () => addDecoration("slide"));
   $("add-title").addEventListener("click", () => addDecoration("title"));
   $("add-shade").addEventListener("click", () => addDecoration("shade"));
@@ -1059,7 +1419,7 @@ function bind() {
       id: nid("link"),
       type: "link",
       x: card.x,
-      y: card.y + card.h - 11,
+      y: slideLinkTop(card, current().shapes),
       w: card.w,
       h: 11,
       z: 4,
@@ -1091,7 +1451,7 @@ function bind() {
     state.zoom = 1;
     applyScale();
   });
-  $("slide").addEventListener("pointerdown", onSlidePointerDown);
+  $("holder").addEventListener("pointerdown", onHolderPointerDown);
   window.addEventListener("pointermove", onPointerMove);
   window.addEventListener("pointerup", onPointerUp);
   window.addEventListener("keydown", onKey);

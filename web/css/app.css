@@ -80,7 +80,9 @@ button, select, input { font: inherit; color: inherit; }
   cursor: pointer;
   color: #444;
 }
-.ribbon-tab .large img { width: 32px; height: 32px; object-fit: contain; }
+.ribbon-tab .large img,
+.ribbon-tab .large svg { width: 32px; height: 32px; object-fit: contain; }
+.ribbon-tab .large.pressed { background: #fde7d0; border-color: #e0a15a; }
 .ribbon-tab .large span {
   display: block;
   align-self: start;
@@ -323,30 +325,47 @@ button.tool small, button.tool-wide small {
   min-height: 280px;
   display: grid;
   place-items: center;
+  place-items: safe center;
   padding: 18px;
   overflow: auto;
 }
 
-.holder { position: relative; overflow: hidden; }
+.holder { position: relative; overflow: visible; }
 
-.slide {
-  width: 960px;
-  height: 540px;
-  background: white;
+.scaler {
   position: absolute;
   left: 0;
   top: 0;
+  transform-origin: top left;
+}
+
+.page {
+  position: absolute;
+  width: 960px;
+  height: 540px;
+  background: white;
   box-shadow: 0 12px 40px rgba(40, 32, 20, 0.18);
-  overflow: hidden;
+  pointer-events: none;
+}
+
+.slide {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  background: transparent;
   user-select: none;
   touch-action: none;
 }
 
+body[data-tool="select"] .slide,
+body[data-tool="select"] .holder { cursor: crosshair; }
+body[data-tool="scale"] .shape { cursor: nwse-resize; }
+
 .slide svg.wires {
   position: absolute;
-  inset: 0;
-  width: 960px;
-  height: 540px;
+  left: 0;
+  top: 0;
   overflow: visible;
   pointer-events: none;
   z-index: 1;
@@ -460,12 +479,13 @@ button.tool small, button.tool-wide small {
 .link {
   padding: 0 2px;
   text-align: center;
-  background: rgba(0, 18, 63, 0.88);
-  color: #fff;
-  box-shadow: none;
+  background: #9BC225;
+  color: #000;
+  font-weight: 700;
+  box-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.28);
   line-height: 11px;
 }
-.bubble.dotted, .link { box-shadow: inset 0 0 0 1px #001b58; }
+.bubble.dotted { box-shadow: inset 0 0 0 1px #001b58; }
 .bubble.dotted { background: repeating-linear-gradient(90deg, white, white 3px, #eef2f8 3px, #eef2f8 4px); }
 .nav {
   background: transparent;
@@ -523,6 +543,35 @@ button.tool small, button.tool-wide small {
   border: 1px solid #c45500;
   background: rgba(196, 85, 0, 0.12);
   pointer-events: none;
+  z-index: 9;
+}
+
+.selection-frame {
+  position: absolute;
+  border: 1px dashed #c45500;
+  pointer-events: none;
+  z-index: 8;
+}
+.scale-handle {
+  position: absolute;
+  background: #c45500;
+  border: 1px solid white;
+  border-radius: 1px;
+  cursor: nwse-resize;
+  pointer-events: auto;
+  padding: 0;
+}
+
+.cc {
+  background: #00ff00;
+  color: #083008;
+  font-weight: 700;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1px #0b6b0b;
 }
 
 .empty-slide {
@@ -545,18 +594,59 @@ button.tool small, button.tool-wide small {
   background: #cfc6b8;
   overflow-x: auto;
 }
-.filmstrip button {
-  border: 1px solid transparent;
+.filmstrip .slide-tab {
+  position: relative;
+  display: flex;
+  align-items: stretch;
   background: white;
-  min-width: 132px;
-  text-align: left;
-  padding: 6px 8px;
+  min-width: 156px;
+  border: 1px solid transparent;
   border-radius: 3px;
-  cursor: pointer;
 }
-.filmstrip button.active { border-color: var(--navy); box-shadow: 0 0 0 1px var(--navy); }
+.filmstrip .slide-tab.active { border-color: var(--navy); box-shadow: 0 0 0 1px var(--navy); }
+.filmstrip .open {
+  flex: 1;
+  min-width: 112px;
+  text-align: left;
+  padding: 6px 8px 6px 8px;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
 .filmstrip b { display: block; font-size: 12px; }
-.filmstrip small { color: var(--muted); }
+.filmstrip small { display: block; color: var(--muted); }
+.filmstrip .slide-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 4px 4px 0;
+}
+.filmstrip .slide-mini {
+  width: 18px;
+  height: 16px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  font-size: 12px;
+}
+.filmstrip .slide-mini:hover { background: #efe6d8; color: var(--navy); }
+.filmstrip .slide-mini.danger:hover { background: #f3d6d6; color: var(--red); }
+.filmstrip input.slide-name {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--navy);
+  border-radius: 2px;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 0 2px;
+  margin-bottom: 2px;
+}
 
 .inspector {
   background: var(--paper);

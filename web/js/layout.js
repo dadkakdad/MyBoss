@@ -35,8 +35,33 @@ export const CARDS = {
 
 export const SHADE_COLORS = ["#DEEBF7C4", "#BDD7EEC4", "#E7EEF6C4"];
 
+/** Palette SlideN: bold black type on a green bar. */
+export const LINK_STYLE = { fill: "#9BC225", color: "#000000" };
+
+/**
+ * Departments button, matching createDepartments.
+ * One selected shade lightens. Otherwise existing shades are removed, and a
+ * later click builds them again.
+ */
+export function departmentShadeAction(shapes, selectedIds = new Set()) {
+  const shades = shapes.filter((shape) => shape.type === "shade");
+  const selectedShades = shades.filter((shape) => selectedIds.has(shape.id));
+  if (selectedIds.size === 1 && selectedShades.length === 1) return "lighten";
+  if (shades.length) return "remove";
+  return "add";
+}
+
 /** Solid and dotted connector colours from applyLineStyle. */
 export const LINE = { solid: "#5B9BD5", dotted: "#002060" };
+
+/**
+ * Round dots whose gap stays open after the stroke caps.
+ * A fixed 2.8 gap closes up once the line is thicker than that gap.
+ */
+export function dottedDash(weight = 2) {
+  const size = Number(weight) || 2;
+  return [0.1, size * 2];
+}
 
 export function makeMetrics(size = "Medium", gapX = 10, gapExt = gapX, gapY = gapX) {
   const card = CARDS[size] || CARDS.Medium;
@@ -70,6 +95,15 @@ function parentDrop(org, parentKey, metrics) {
   return metrics.gapY + (parent?.termination ? commentSpace(metrics) : 0);
 }
 
+/** Top of a “See slide” bar: under the card, and under its end-date note. */
+export function slideLinkTop(card, shapes) {
+  let y = card.y + card.h;
+  for (const shape of shapes) {
+    if (shape.type === "comment" && shape.key === card.key) y = Math.max(y, shape.y + shape.h);
+  }
+  return y;
+}
+
 function commentItem(key, x, cardBottom, metrics, text) {
   return {
     type: "comment",
@@ -83,13 +117,13 @@ function commentItem(key, x, cardBottom, metrics, text) {
   };
 }
 
-function addBubble(items, org, person, key, centerX, cardY, metrics, shownUnder) {
+function addBubble(items, org, person, key, centerX, cardY, metrics, shownUnder, offsetTick) {
   const gap = bubbleGap(metrics);
-  const otherDotted = shownUnder !== "Dotted";
-  const nudge = shownUnder === "Solid" ? 5 : 0;
+  // Upward ticks are 5 points apart. The second tick uses the other line style,
+  // so a dotted parent line does not cover the solid one.
+  const nudge = offsetTick ? 5 : 0;
   const bottom = cardY - gap;
-  // Stop at the pill's lower edge. A line into the middle strikes through the surname.
-  items.push(wire(centerX + nudge, bottom, centerX + nudge, cardY, otherDotted, metrics));
+  items.push(wire(centerX + nudge, bottom, centerX + nudge, cardY, shownUnder !== "Dotted", metrics));
   items.push({
     type: "bubble",
     key,
@@ -98,8 +132,8 @@ function addBubble(items, org, person, key, centerX, cardY, metrics, shownUnder)
     w: metrics.bubbleW,
     h: metrics.bubbleH,
     z: 4,
-    dotted: otherDotted,
-    text: otherManagerSurname(org, person, shownUnder),
+    dotted: true,
+    text: org.people.get(person.dottedKey)?.surname || "",
   });
 }
 
@@ -122,12 +156,6 @@ function shiftMap(count) {
     if (count % 2 === 0 && cursor === 0) cursor += 1;
   }
   return shifts;
-}
-
-function otherManagerSurname(org, person, shownUnder) {
-  const key = shownUnder === "Solid" ? person.dottedKey : person.solidKey;
-  const other = org.people.get(key);
-  return other ? other.surname : "";
 }
 
 function wire(x1, y1, x2, y2, dotted, metrics) {
@@ -167,7 +195,7 @@ function leafLayout(org, key, metrics, shownUnder) {
   const tick = metrics.gapY + (two ? bubbleStack(metrics) : 0);
   const anchorX = metrics.w / 2;
   const items = [wire(anchorX, 0, anchorX, tick, shownUnder === "Dotted", metrics)];
-  if (two) addBubble(items, org, person, key, anchorX, tick, metrics, shownUnder);
+  if (two) addBubble(items, org, person, key, anchorX, tick, metrics, shownUnder, true);
   items.push(cardItem(key, 0, tick, metrics, shownUnder));
   let height = tick + metrics.h;
   if (person.termination) {
@@ -254,7 +282,7 @@ function rowsLayout(org, people, parentKey, metrics, perRow) {
       const cardX = center - metrics.w / 2;
       items.push(wire(center, y, center, cardY, shownUnder === "Dotted", metrics));
       if (Math.abs(center) > 0.4) items.push(wire(0, y, center, y, shownUnder === "Dotted", metrics));
-      if (two) addBubble(items, org, person, row[i], center, cardY, metrics, shownUnder);
+      if (two) addBubble(items, org, person, row[i], center, cardY, metrics, shownUnder, true);
       items.push(cardItem(row[i], cardX, cardY, metrics, shownUnder));
       if (person.termination) {
         items.push(commentItem(row[i], cardX, cardY + metrics.h, metrics, person.termination));
@@ -558,7 +586,7 @@ function layoutExpandedManager(org, key, metrics, visibility, options) {
     },
   ];
   if (hasTwoManagers(person)) {
-    addBubble(items, org, person, key, subs.anchorX + shift, cardY, metrics, shownUnder);
+    addBubble(items, org, person, key, subs.anchorX + shift, cardY, metrics, shownUnder, true);
   }
   if (person.termination) {
     items.push(commentItem(key, cardX + shift, cardY + metrics.h, metrics, person.termination));
@@ -1024,7 +1052,7 @@ export function buildSlides(org, rootKey, mode = "clever") {
         id: sid("link"),
         type: "link",
         x: shape.x,
-        y: shape.y + shape.h - 11,
+        y: slideLinkTop(shape, slide.shapes),
         w: shape.w,
         h: 11,
         z: 4,
