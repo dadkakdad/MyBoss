@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { saveBody, workToReopen } from "../js/persist.js";
+
+test("a reload reopens the newest saved workbook for the signed-in account", () => {
+  const source = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
+  const boot = source.slice(source.lastIndexOf("async function restoreAccount"));
+  assert.match(boot, /restoreLatest\(/);
+  const reopen = source.slice(source.indexOf("async function restoreLatest"), source.indexOf("async function submitAccount"));
+  assert.match(reopen, /workToReopen\(/);
+});
 
 test("reopening uses the newest saved workbook", () => {
   assert.equal(workToReopen(null), null);

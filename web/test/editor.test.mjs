@@ -123,8 +123,11 @@ test("the ribbon exposes slide tools and cost centers", () => {
   assert.match(ribbon, /id="account"[^>]*>Log in</);
   const status = html.slice(html.indexOf('<div class="status">'), html.indexOf('<div class="sheet-dialog"'));
   assert.equal(status.includes('id="account"'), false);
-  assert.match(html, /class="empty-slide"/);
   const css = readFileSync(new URL("../css/app.css", import.meta.url), "utf8");
+  const account = css.slice(css.indexOf("#account {"), css.indexOf("#account:hover"));
+  assert.match(account, /height:\s*36px/);
+  assert.match(account, /background:\s*var\(--navy\)/);
+  assert.match(html, /class="empty-slide"/);
   assert.match(css, /\.holder[\s\S]*aspect-ratio:\s*960\s*\/\s*540/);
 });
 
