@@ -63,16 +63,39 @@ function readCookie(req, name) {
   return "";
 }
 
-function sessionCookie(token, { secure, maxAge }) {
+// The same app is served at / on its own host and at /myboss on me.dadkakdad.ru.
+const MOUNT_PREFIX = "/myboss";
+
+function sessionCookie(token, { secure, maxAge, path = "/" }) {
   const parts = [
     `${COOKIE}=${token}`,
     "HttpOnly",
-    "Path=/",
+    `Path=${path}`,
     "SameSite=Lax",
     `Max-Age=${maxAge}`,
   ];
   if (secure) parts.push("Secure");
   return parts.join("; ");
+}
+
+function forwardedPrefix(req) {
+  return req.headers["x-forwarded-prefix"] === MOUNT_PREFIX ? MOUNT_PREFIX : "";
+}
+
+function pathIsMounted(pathname) {
+  return pathname === MOUNT_PREFIX || pathname.startsWith(`${MOUNT_PREFIX}/`);
+}
+
+function stripMount(url) {
+  const path = url.pathname === MOUNT_PREFIX ? "/" : url.pathname.slice(MOUNT_PREFIX.length);
+  return new URL(path + url.search, url);
+}
+
+function injectBase(html, prefix) {
+  if (!prefix || html.includes("<base ")) return html;
+  const tag = `<base href="${prefix}/">`;
+  if (html.includes("<head>")) return html.replace("<head>", `<head>\n  ${tag}`);
+  return `${tag}\n${html}`;
 }
 
 async function readJson(req) {
@@ -149,11 +172,11 @@ async function currentUser(req, store, now) {
   return session?.user || null;
 }
 
-async function startSession(res, store, user, now, secure) {
+async function startSession(res, store, user, now, secure, cookiePath) {
   const { token, tokenHash } = newSessionToken();
   const expiresAt = sessionExpiry(now);
   await store.createSession({ tokenHash, userId: user.id, expiresAt });
-  return sessionCookie(token, { secure, maxAge: sessionMaxAgeSeconds() });
+  return sessionCookie(token, { secure, maxAge: sessionMaxAgeSeconds(), path: cookiePath });
 }
 
 const STATIC_TYPES = {
@@ -233,7 +256,7 @@ function gzipBuffer(full, info, raw) {
   return hit;
 }
 
-function serveStatic(req, res, webRoot, urlPath) {
+function serveStatic(req, res, webRoot, urlPath, mountPrefix = "") {
   const requested = staticRequest(urlPath);
   const full = requested && staticPath(webRoot, urlPath);
   if (!full) {
@@ -246,25 +269,37 @@ function serveStatic(req, res, webRoot, urlPath) {
         sendJson(res, 404, { error: "Not found." });
         return;
       }
-      const etag = etagFor(info);
-      const cacheControl = cacheControlFor(requested);
       const type = STATIC_TYPES[extname(full)] || "application/octet-stream";
+      const cacheControl = cacheControlFor(requested);
+      let etag = etagFor(info);
+      let body = null;
+      if (mountPrefix && requested === "index.html") {
+        body = Buffer.from(injectBase(await readFile(full, "utf8"), mountPrefix));
+        etag = `"${info.size.toString(16)}-${Math.round(info.mtimeMs).toString(16)}-mount"`;
+      }
       const headers = { ...SECURITY_HEADERS, etag, "cache-control": cacheControl, "content-type": type };
+      if (requested === "index.html") headers.vary = "x-forwarded-prefix";
       if (noneMatch(req.headers["if-none-match"], etag)) {
         res.writeHead(304, headers);
         res.end();
         return;
       }
       if (!wantsGzip(req, type)) {
-        res.writeHead(200, { ...headers, "content-length": info.size });
-        createReadStream(full).pipe(res);
+        if (!body) {
+          res.writeHead(200, { ...headers, "content-length": info.size });
+          createReadStream(full).pipe(res);
+          return;
+        }
+        res.writeHead(200, { ...headers, "content-length": body.length });
+        res.end(body);
         return;
       }
-      const gz = gzipBuffer(full, info, await readFile(full));
+      const gz = body ? gzipSync(body, { level: 6 }) : gzipBuffer(full, info, await readFile(full));
+      const vary = headers.vary ? `${headers.vary}, accept-encoding` : "accept-encoding";
       res.writeHead(200, {
         ...headers,
+        vary,
         "content-encoding": "gzip",
-        vary: "accept-encoding",
         "content-length": gz.length,
       });
       res.end(gz);
@@ -283,7 +318,7 @@ function staticRequest(urlPath) {
   return path.replace(/^\/+/, "");
 }
 
-async function routeApi(req, res, url, store, now, secure, loginLimited) {
+async function routeApi(req, res, url, store, now, secure, loginLimited, cookiePath = "/") {
   const user = await currentUser(req, store, now);
   const path = url.pathname;
 
@@ -298,13 +333,13 @@ async function routeApi(req, res, url, store, now, secure, loginLimited) {
     if (path === "/api/register") {
       if (existing) throw httpError(409, "An account with that email already exists.");
       const created = await store.createUser({ email, passwordHash: await hashPassword(password) });
-      const cookie = await startSession(res, store, created, now, secure);
+      const cookie = await startSession(res, store, created, now, secure, cookiePath);
       sendJson(res, 201, { email: created.email }, { "set-cookie": cookie });
       return;
     }
     const matches = await verifyPassword(password, existing ? existing.passwordHash : await dummyPasswordHash());
     if (!existing || !matches) throw httpError(401, "Email or password is wrong.");
-    const cookie = await startSession(res, store, existing, now, secure);
+    const cookie = await startSession(res, store, existing, now, secure, cookiePath);
     sendJson(res, 200, { email: existing.email }, { "set-cookie": cookie });
     return;
   }
@@ -314,7 +349,7 @@ async function routeApi(req, res, url, store, now, secure, loginLimited) {
     if (token) await store.deleteSession(hashToken(token));
     res.writeHead(204, {
       ...SECURITY_HEADERS,
-      "set-cookie": sessionCookie("", { secure, maxAge: 0 }),
+      "set-cookie": sessionCookie("", { secure, maxAge: 0, path: cookiePath }),
       "cache-control": "no-store",
     });
     res.end();
@@ -409,11 +444,23 @@ function createLoginLimiter({ max = 20, windowMs = 15 * 60 * 1000 } = {}) {
 export function createHandler({ store, webRoot, now = () => new Date(), cookieSecure = () => false, limits } = {}) {
   const loginLimited = createLoginLimiter(limits);
   return function handler(req, res) {
-    const url = new URL(req.url || "/", "http://localhost");
+    const raw = new URL(req.url || "/", "http://localhost");
+    const mounted = pathIsMounted(raw.pathname);
+    const mountPrefix = mounted || forwardedPrefix(req) ? MOUNT_PREFIX : "";
+    if (raw.pathname === MOUNT_PREFIX) {
+      res.writeHead(308, {
+        ...SECURITY_HEADERS,
+        location: `${MOUNT_PREFIX}/${raw.search}`,
+        "cache-control": "no-store",
+      });
+      res.end();
+      return;
+    }
+    const url = mounted ? stripMount(raw) : raw;
     const secure = cookieSecure(req);
     const run = url.pathname.startsWith("/api/")
-      ? routeApi(req, res, url, store, now(), secure, loginLimited)
-      : Promise.resolve(serveStatic(req, res, webRoot, url.pathname));
+      ? routeApi(req, res, url, store, now(), secure, loginLimited, mountPrefix || "/")
+      : Promise.resolve(serveStatic(req, res, webRoot, url.pathname, mountPrefix));
     run.catch((error) => {
       if (res.headersSent) return;
       const status = error.status || 500;

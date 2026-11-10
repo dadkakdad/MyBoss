@@ -29,11 +29,12 @@ async function stop(server) {
   await once(server, "close");
 }
 
-async function send(base, path, { method = "GET", body, cookie, proto } = {}) {
+async function send(base, path, { method = "GET", body, cookie, proto, prefix } = {}) {
   const headers = {};
   if (body !== undefined) headers["content-type"] = "application/json";
   if (cookie) headers.cookie = cookie;
   if (proto) headers["x-forwarded-proto"] = proto;
+  if (prefix) headers["x-forwarded-prefix"] = prefix;
   const response = await fetch(base + path, {
     method,
     headers,
@@ -83,6 +84,7 @@ test("register logs in and treats email case as the same account", async () => {
     assert.equal(created.json.email, "ada@example.com");
     assert.match(created.setCookie, /Secure/);
     assert.match(created.setCookie, /HttpOnly/);
+    assert.match(created.setCookie, /Path=\/;/);
     const me = await send(base, "/api/me", { cookie: cookieOf(created.token) });
     assert.equal(me.status, 200);
     assert.equal(me.json.email, "ada@example.com");
@@ -299,6 +301,59 @@ function rawGet(url, headers = {}) {
     req.on("error", reject);
   });
 }
+
+test("the personal-site path serves the app and keeps its session on that path", async () => {
+  const { server, base } = await start();
+  try {
+    const slash = await fetch(base + "/myboss", { redirect: "manual" });
+    assert.equal(slash.status, 308);
+    assert.equal(slash.headers.get("location"), "/myboss/");
+
+    const page = await fetch(base + "/myboss/");
+    const html = await page.text();
+    assert.equal(page.status, 200);
+    assert.match(html, /<base href="\/myboss\/">/);
+    assert.match(html, /css\/app\.css/);
+    const root = await fetch(base + "/");
+    assert.equal((await root.text()).includes("<base "), false);
+
+    const css = await fetch(base + "/myboss/css/app.css");
+    assert.equal(css.status, 200);
+    assert.match(css.headers.get("content-type") || "", /text\/css/);
+    const hidden = await fetch(base + "/myboss/server/schema.sql");
+    assert.equal(hidden.status, 404);
+
+    const created = await send(base, "/myboss/api/register", {
+      method: "POST",
+      body: { email: "ada@example.com", password: "correct horse" },
+      proto: "https",
+    });
+    assert.equal(created.status, 201);
+    assert.match(created.setCookie, /Path=\/myboss/);
+    assert.match(created.setCookie, /Secure/);
+    const me = await send(base, "/myboss/api/me", { cookie: cookieOf(created.token) });
+    assert.equal(me.status, 200);
+    assert.equal(me.json.email, "ada@example.com");
+    const out = await send(base, "/myboss/api/logout", { method: "POST", cookie: cookieOf(created.token) });
+    assert.equal(out.status, 204);
+    assert.match(out.setCookie, /Path=\/myboss/);
+
+    const spoofed = await send(base, "/api/register", {
+      method: "POST",
+      body: { email: "grace@example.com", password: "correct horse" },
+      prefix: "/not-myboss",
+    });
+    assert.match(spoofed.setCookie, /Path=\/;/);
+    const forwarded = await send(base, "/api/login", {
+      method: "POST",
+      body: { email: "ada@example.com", password: "correct horse" },
+      prefix: "/myboss",
+    });
+    assert.match(forwarded.setCookie, /Path=\/myboss/);
+  } finally {
+    await stop(server);
+  }
+});
 
 test("slides that are not a list are rejected", async () => {
   const { server, base } = await start();
