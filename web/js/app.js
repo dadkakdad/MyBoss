@@ -2171,9 +2171,9 @@ function bind() {
   $("account").addEventListener("click", () => openAccount());
   $("account-form").addEventListener("submit", (event) => {
     event.preventDefault();
-    submitAccount("/api/login");
+    submitAccount(apiUrl("/api/login"));
   });
-  $("account-register").addEventListener("click", () => submitAccount("/api/register"));
+  $("account-register").addEventListener("click", () => submitAccount(apiUrl("/api/register")));
   $("account-logout").addEventListener("click", logoutAccount);
   $("account-close").addEventListener("click", closeAccount);
   $("holder").addEventListener("pointerdown", onHolderPointerDown);
@@ -2184,6 +2184,12 @@ function bind() {
   window.addEventListener("pagehide", flushSave);
   if (window.ResizeObserver) new ResizeObserver(() => applyScale()).observe($("stage"));
   requestAnimationFrame(() => applyScale());
+}
+
+function apiUrl(path) {
+  const here = window.location.pathname || "";
+  const prefix = here === "/myboss" || here.startsWith("/myboss/") ? "/myboss" : "";
+  return prefix + path;
 }
 
 function bytesToBase64(bytes) {
@@ -2248,7 +2254,7 @@ function flushSave() {
   });
   const json = JSON.stringify(body);
   if (json.length > 60000) return;
-  const path = state.workId ? `/api/works/${state.workId}` : "/api/works";
+  const path = apiUrl(state.workId ? `/api/works/${state.workId}` : "/api/works");
   fetch(path, {
     method: state.workId ? "PUT" : "POST",
     credentials: "same-origin",
@@ -2275,7 +2281,7 @@ async function saveWork({ file = false, deck = false } = {}) {
   if (!deck && state.workId && !includeFile) return;
   state.saveLabel = "saving";
   renderStatus();
-  const path = state.workId ? `/api/works/${state.workId}` : "/api/works";
+  const path = apiUrl(state.workId ? `/api/works/${state.workId}` : "/api/works");
   const response = await fetch(path, {
     method: state.workId ? "PUT" : "POST",
     credentials: "same-origin",
@@ -2322,7 +2328,7 @@ async function openAccount() {
 async function refreshWorkList() {
   const list = $("account-files");
   list.replaceChildren();
-  const response = await fetch("/api/works", { credentials: "same-origin" });
+  const response = await fetch(apiUrl("/api/works"), { credentials: "same-origin" });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     toast(payload.error || "Could not load saved files.");
@@ -2347,7 +2353,7 @@ async function refreshWorkList() {
 }
 
 async function openWork(id, { quiet = false } = {}) {
-  const response = await fetch(`/api/works/${id}`, { credentials: "same-origin" });
+  const response = await fetch(apiUrl(`/api/works/${id}`), { credentials: "same-origin" });
   const work = await response.json().catch(() => ({}));
   if (!response.ok) {
     toast(work.error || "Could not open that file.");
@@ -2376,7 +2382,7 @@ async function openWork(id, { quiet = false } = {}) {
 }
 
 async function restoreLatest() {
-  const response = await fetch("/api/works", { credentials: "same-origin" });
+  const response = await fetch(apiUrl("/api/works"), { credentials: "same-origin" });
   if (!response.ok) return "";
   const payload = await response.json().catch(() => ({}));
   const latest = workToReopen(payload.works);
@@ -2417,7 +2423,7 @@ async function submitAccount(path) {
 }
 
 async function logoutAccount() {
-  await fetch("/api/logout", { method: "POST", credentials: "same-origin" });
+  await fetch(apiUrl("/api/logout"), { method: "POST", credentials: "same-origin" });
   state.account = null;
   state.workId = null;
   state.saveLabel = "";
@@ -2428,7 +2434,7 @@ async function logoutAccount() {
 
 async function restoreAccount() {
   try {
-    const response = await fetch("/api/me", { credentials: "same-origin" });
+    const response = await fetch(apiUrl("/api/me"), { credentials: "same-origin" });
     if (!response.ok) return;
     const me = await response.json();
     state.account = { email: me.email };
