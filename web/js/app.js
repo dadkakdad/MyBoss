@@ -511,6 +511,7 @@ function shadeDepartments() {
   const shades = layoutDepartmentShades(
     state.org,
     slide.shapes.filter((shape) => shape.type === "card"),
+    slide.shapes.filter((shape) => shape.type === "wire"),
   ).map((shade) => ({ ...shade, id: nid("shade") }));
   slide.shapes.push(...shades);
   render();

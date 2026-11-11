@@ -940,8 +940,51 @@ function sideOf(shape, reference) {
   return side;
 }
 
+/**
+ * A sibling bar: long enough to leave the column, and not the short elbow
+ * that only reaches the trunk. Those bars are the horizontal lines a shade
+ * must not paint through.
+ */
+function connectorBars(wires, box, span) {
+  const bars = [];
+  for (const wire of wires || []) {
+    if (Math.abs(wire.y1 - wire.y2) > 0.8) continue;
+    const left = Math.min(wire.x1, wire.x2);
+    const right = Math.max(wire.x1, wire.x2);
+    const length = right - left;
+    if (length < 48) continue;
+    if (Math.min(right, span.right) - Math.max(left, span.left) < 4) continue;
+    const overlap = Math.min(right, box.right) - Math.max(left, box.left);
+    const overhang = overlap > 4 ? Math.max(box.left - left, right - box.right) : length;
+    if (overhang < 20) continue;
+    bars.push((wire.y1 + wire.y2) / 2);
+  }
+  return bars;
+}
+
+/** Pull the top or bottom back under a connector the cards do not already straddle. */
+function clearOfConnectors(top, bottom, box, wires, span) {
+  let ceiling = null;
+  let floor = null;
+  for (const y of connectorBars(wires, box, span)) {
+    if (y < box.top - 0.4 && (ceiling === null || y > ceiling)) ceiling = y;
+    if (y > box.bottom + 0.4 && (floor === null || y < floor)) floor = y;
+  }
+  // A shade that already sits under the bar stays put. One that runs through
+  // the bar, or up to the slide guide, stops just below the line.
+  if (ceiling != null && top < ceiling) {
+    const padded = (box.top + ceiling) / 2 - 1;
+    top = Math.min(box.top, Math.max(padded, ceiling + 2));
+  }
+  if (floor != null && bottom > floor) {
+    const padded = (box.bottom + floor) / 2 + 1;
+    bottom = Math.max(box.bottom, Math.min(padded, floor - 2));
+  }
+  return { top, bottom };
+}
+
 /** Department rectangles from makeDepartments: grow from the cards, then pull each side in from the slide guide. */
-export function layoutDepartmentShades(org, cards) {
+export function layoutDepartmentShades(org, cards, wires = []) {
   const members = [];
   for (const card of cards) {
     if (card.head || card.managerType === "Dotted" || card.y <= SHADE_GUIDE.top) continue;
@@ -978,11 +1021,16 @@ export function layoutDepartmentShades(org, cards) {
       if (side === "right" && other.box.left < stretched.right) stretched.right = other.box.left;
       if (side === "left" && other.box.right > stretched.left) stretched.left = other.box.right;
     }
-    const top = stretched.top !== SHADE_GUIDE.top ? (shade.top + stretched.top) / 2 - 1 : stretched.top - 1;
-    const bottom = stretched.bottom !== SHADE_GUIDE.bottom ? (shade.bottom + stretched.bottom) / 2 + 1 : stretched.bottom + 1;
     const right = stretched.right !== SHADE_GUIDE.right ? (shade.right + stretched.right) / 2 + 1 : stretched.right + 1;
     const left = stretched.left !== SHADE_GUIDE.left ? (shade.left + stretched.left) / 2 - 1 : stretched.left - 1;
-    shades.push({ name: bucket.name, top, left, right, bottom });
+    const cleared = clearOfConnectors(
+      stretched.top !== SHADE_GUIDE.top ? (shade.top + stretched.top) / 2 - 1 : stretched.top - 1,
+      stretched.bottom !== SHADE_GUIDE.bottom ? (shade.bottom + stretched.bottom) / 2 + 1 : stretched.bottom + 1,
+      shade,
+      wires,
+      { left, right },
+    );
+    shades.push({ name: bucket.name, top: cleared.top, left, right, bottom: cleared.bottom });
   }
   shades.sort((a, b) => (b.right - b.left) * (b.bottom - b.top) - (a.right - a.left) * (a.bottom - a.top));
   return shades.map((shade, index) => ({
@@ -998,8 +1046,8 @@ export function layoutDepartmentShades(org, cards) {
   }));
 }
 
-function shadeShapes(org, cards) {
-  return layoutDepartmentShades(org, cards);
+function shadeShapes(org, cards, wires) {
+  return layoutDepartmentShades(org, cards, wires);
 }
 
 function headCard(org, rootKey, peeled) {
@@ -1068,7 +1116,11 @@ export function buildSlides(org, rootKey, mode = "clever") {
       legendShape(),
       statsShape(org, key),
       ...[hiddenListShape(org, key)].filter(Boolean),
-      ...shadeShapes(org, body.filter((item) => item.type === "card")),
+      ...shadeShapes(
+        org,
+        body.filter((item) => item.type === "card"),
+        body.filter((item) => item.type === "wire"),
+      ),
       ...headCard(org, key, peeled),
       ...body,
     ];

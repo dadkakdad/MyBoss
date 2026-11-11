@@ -664,6 +664,72 @@ test("a department shade around two people stays a column when everyone else has
   assert.ok(shade.w < 400, "a column, not the whole slide");
 });
 
+test("a department shade stops under the horizontal connector instead of painting through it", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const rows = [
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("Li", "Darya", "Exec", "Office", "Ada", "Lovelace"),
+    row("Ann", "A", "Lead", "Content", "Li", "Darya"),
+    row("C1", "x", "IC", "Content", "Ann", "A"),
+    row("C2", "x", "IC", "Content", "Ann", "A"),
+    row("Rogova", "K", "Expert", "Communications", "Li", "Darya"),
+    row("Borisov", "Ivan", "Exec", "Office", "Ada", "Lovelace"),
+    row("Gogolev", "M", "Analyst", "Product analytics", "Borisov", "Ivan"),
+    row("Golovtsova", "A", "Analyst", "Product analytics", "Borisov", "Ivan"),
+    row("Kalashnikov", "R", "Analyst", "Product analytics", "Borisov", "Ivan"),
+    row("Ermakova", "E", "Expert", "Business analytics", "Borisov", "Ivan"),
+    row("Fidler", "E", "Manager", "Business analytics", "Borisov", "Ivan"),
+  ];
+  const org = buildOrg(rows);
+  assert.equal(org.fatal, false, org.issues.map((issue) => issue.message).join(" | "));
+  const [slide] = buildSlides(org, org.ceo, "clever");
+  const card = (name) => slide.shapes.find((shape) => shape.type === "card" && org.people.get(shape.key)?.surname === name);
+  const shade = (name) => slide.shapes.find((shape) => shape.type === "shade" && shape.text === name);
+  const bars = slide.shapes.filter(
+    (shape) => shape.type === "wire" && Math.abs(shape.y1 - shape.y2) < 0.8 && Math.abs(shape.x2 - shape.x1) >= 80,
+  );
+  const covers = (region, person) =>
+    region.x <= person.x + 0.5 &&
+    region.x + region.w >= person.x + person.w - 0.5 &&
+    region.y <= person.y + 0.5 &&
+    region.y + region.h >= person.y + person.h - 0.5;
+  const crossed = (region) =>
+    bars.filter((bar) => {
+      const y = (bar.y1 + bar.y2) / 2;
+      const left = Math.min(bar.x1, bar.x2);
+      const right = Math.max(bar.x1, bar.x2);
+      return right > region.x + 1 && left < region.x + region.w - 1 && y > region.y + 0.5 && y < region.y + region.h - 0.5;
+    });
+
+  const rogova = card("Rogova");
+  const communications = shade("Communications");
+  assert.ok(communications, "communications shade");
+  assert.ok(covers(communications, rogova), "the shade still wraps Rogova");
+  const above = bars
+    .filter((bar) => {
+      const left = Math.min(bar.x1, bar.x2);
+      const right = Math.max(bar.x1, bar.x2);
+      return right > rogova.x && left < rogova.x + rogova.w && (bar.y1 + bar.y2) / 2 < rogova.y;
+    })
+    .map((bar) => (bar.y1 + bar.y2) / 2);
+  assert.ok(above.length > 0, "Rogova hangs from a horizontal connector");
+  const line = Math.max(...above);
+  assert.ok(communications.y > line, `shade top ${communications.y} crosses the connector at ${line}`);
+  assert.equal(crossed(communications).length, 0, "communications shade paints through a connector");
+
+  for (const name of ["Product analytics", "Business analytics"]) {
+    const region = shade(name);
+    assert.ok(region, name);
+    const people = slide.shapes.filter(
+      (shape) => shape.type === "card" && org.people.get(shape.key)?.department === name,
+    );
+    assert.ok(people.length >= 2, name);
+    for (const person of people) assert.ok(covers(region, person), `${name} wraps its cards`);
+    assert.equal(crossed(region).length, 0, `${name} crosses a connector`);
+  }
+});
+
 function hiddenRow(...cells) {
   const base = row(...cells);
   base.push("", "1");
