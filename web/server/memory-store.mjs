@@ -11,6 +11,7 @@ export function createMemoryStore() {
       name: work.name,
       sheetName: work.sheetName,
       active: work.active,
+      createdAt: work.createdAt,
       updatedAt: work.updatedAt,
       slides: work.slides,
     };
@@ -72,6 +73,7 @@ export function createMemoryStore() {
         sheetName: sheetName || "",
         slides: slides ?? null,
         active: active || 0,
+        createdAt: now,
         updatedAt: now,
       };
       works.push(work);
@@ -93,6 +95,13 @@ export function createMemoryStore() {
       if (patch.active !== undefined) work.active = patch.active;
       work.updatedAt = new Date().toISOString();
       return publicWork(work);
+    },
+
+    async deleteWork(userId, id) {
+      const index = works.findIndex((item) => item.id === id && item.userId === userId);
+      if (index < 0) return false;
+      works.splice(index, 1);
+      return true;
     },
   };
 }

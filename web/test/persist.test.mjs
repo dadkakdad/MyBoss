@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { refreshSavedEntries, saveBody, workMenuLabel, workToReopen } from "../js/persist.js";
+import {
+  formatMoscowUploadTime,
+  refreshSavedEntries,
+  saveBody,
+  workMenuLabel,
+  workToReopen,
+} from "../js/persist.js";
 
 test("reopening uses the newest saved workbook", () => {
   assert.equal(workToReopen(null), null);
@@ -14,21 +20,38 @@ test("saved workbook labels show the file and sheet name", () => {
   assert.equal(workMenuLabel({ name: "team.xlsx", sheetName: "Advanced" }), "team.xlsx · Advanced");
 });
 
+test("upload times are shown in Moscow local time", () => {
+  assert.equal(formatMoscowUploadTime(null), "");
+  assert.equal(formatMoscowUploadTime("not-a-date"), "");
+  // 2026-11-13 10:05 UTC → 13:05 Europe/Moscow
+  assert.equal(formatMoscowUploadTime("2026-11-13T10:05:00.000Z"), "13.11.2026, 13:05");
+});
+
 test("Refresh lists every saved workbook so older uploads stay selectable", () => {
   assert.deepEqual(refreshSavedEntries(null), []);
   assert.deepEqual(refreshSavedEntries([]), []);
   assert.deepEqual(
     refreshSavedEntries(
       [
-        { id: "newest", name: "new.xlsx", sheetName: "Sheet1" },
-        { id: "older", name: "old.xlsx", sheetName: "Advanced" },
+        { id: "newest", name: "new.xlsx", sheetName: "Sheet1", createdAt: "2026-11-13T10:05:00.000Z" },
+        { id: "older", name: "old.xlsx", sheetName: "Advanced", createdAt: "2026-11-12T08:00:00.000Z" },
         { id: "", name: "broken.xlsx" },
       ],
       "newest",
     ),
     [
-      { id: "newest", label: "new.xlsx · Sheet1", current: true },
-      { id: "older", label: "old.xlsx · Advanced", current: false },
+      {
+        id: "newest",
+        label: "new.xlsx · Sheet1",
+        when: "13.11.2026, 13:05",
+        current: true,
+      },
+      {
+        id: "older",
+        label: "old.xlsx · Advanced",
+        when: "12.11.2026, 11:00",
+        current: false,
+      },
     ],
   );
 });

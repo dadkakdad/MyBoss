@@ -158,6 +158,7 @@ function workJson(work, { withBytes = false } = {}) {
     name: work.name,
     sheetName: work.sheetName || "",
     active: work.active || 0,
+    createdAt: work.createdAt instanceof Date ? work.createdAt.toISOString() : work.createdAt,
     updatedAt: work.updatedAt instanceof Date ? work.updatedAt.toISOString() : work.updatedAt,
     slides: work.slides ?? null,
   };
@@ -410,6 +411,13 @@ async function routeApi(req, res, url, store, now, secure, loginLimited, cookieP
       if (body.active !== undefined || body.slides !== undefined) patch.active = cleanActive(body.active ?? current.active, slides);
       const work = await store.updateWork(user.id, id, patch);
       sendJson(res, 200, workJson(work));
+      return;
+    }
+    if (req.method === "DELETE") {
+      const deleted = await store.deleteWork(user.id, id);
+      if (!deleted) throw httpError(404, "That file was not found.");
+      res.writeHead(204, { ...SECURITY_HEADERS, "cache-control": "no-store" });
+      res.end();
       return;
     }
   }

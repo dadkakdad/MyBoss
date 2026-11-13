@@ -12,6 +12,7 @@ function rowToWork(row, { withBytes = false } = {}) {
     sheetName: row.sheet_name || "",
     slides: row.slides ?? null,
     active: row.active || 0,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
     updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
   };
   if (withBytes) work.bytes = row.bytes;
@@ -70,7 +71,7 @@ export async function createPgStore(connection) {
 
     async listWorks(userId) {
       const result = await pool.query(
-        `SELECT id, name, sheet_name, active, updated_at
+        `SELECT id, name, sheet_name, active, created_at, updated_at
          FROM works
          WHERE user_id = $1
          ORDER BY updated_at DESC`,
@@ -83,7 +84,7 @@ export async function createPgStore(connection) {
       const result = await pool.query(
         `INSERT INTO works (user_id, name, bytes, sheet_name, slides, active)
          VALUES ($1, $2, $3, $4, $5::jsonb, $6)
-         RETURNING id, name, sheet_name, slides, active, updated_at`,
+         RETURNING id, name, sheet_name, slides, active, created_at, updated_at`,
         [userId, name, bytes, sheetName || "", slides == null ? null : JSON.stringify(slides), active || 0],
       );
       return rowToWork(result.rows[0]);
@@ -91,7 +92,7 @@ export async function createPgStore(connection) {
 
     async getWork(userId, id) {
       const result = await pool.query(
-        `SELECT id, name, bytes, sheet_name, slides, active, updated_at
+        `SELECT id, name, bytes, sheet_name, slides, active, created_at, updated_at
          FROM works
          WHERE id = $1 AND user_id = $2`,
         [id, userId],
@@ -118,11 +119,19 @@ export async function createPgStore(connection) {
         `UPDATE works
          SET ${fields.join(", ")}, updated_at = now()
          WHERE id = $${values.length - 1} AND user_id = $${values.length}
-         RETURNING id, name, sheet_name, slides, active, updated_at`,
+         RETURNING id, name, sheet_name, slides, active, created_at, updated_at`,
         values,
       );
       const row = result.rows[0];
       return row ? rowToWork(row) : null;
+    },
+
+    async deleteWork(userId, id) {
+      const result = await pool.query(
+        "DELETE FROM works WHERE id = $1 AND user_id = $2 RETURNING id",
+        [id, userId],
+      );
+      return result.rowCount > 0;
     },
   };
 }
