@@ -184,8 +184,62 @@ button, select, input { font: inherit; color: inherit; }
   text-transform: uppercase;
   color: #777;
 }
-.menu-saved { max-height: 220px; overflow: auto; }
-.menu-saved .menu-current { font-weight: 600; }
+.menu-saved { max-height: 260px; overflow: auto; }
+.menu-saved .menu-current .saved-file-label { font-weight: 600; }
+.menu { min-width: 280px; }
+.saved-file-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+.menu .saved-file-open,
+.saved-file-open {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #222;
+}
+.menu .saved-file-open:hover,
+#account-files .saved-file-open:hover { background: #fde7d0; }
+.saved-file-label {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.saved-file-when {
+  display: block;
+  font-size: 10px;
+  color: #777;
+  font-weight: 400;
+}
+.menu .saved-file-delete,
+.saved-file-delete {
+  flex: 0 0 auto;
+  width: 28px;
+  border: 0;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.saved-file-delete:hover { color: #8c1515; background: #f8e8e8; }
 
 .upload, .ribbon-tab .stack {
   --lab: 36px;
@@ -919,7 +973,12 @@ button.mini {
 #account-who { margin: 0; color: var(--navy); font-weight: 600; }
 #account-home h3 { margin: 8px 0 0; font-size: 13px; color: var(--navy); }
 #account-files { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow: auto; display: grid; gap: 6px; }
-#account-files button { width: 100%; text-align: left; }
+#account-files .saved-file-row {
+  border: 1px solid #e4dfd5;
+  border-radius: 3px;
+  background: #fff;
+}
+#account-files .saved-file-delete { border-left: 1px solid #eee; }
 .sheet-issues { flex: 0 0 auto; max-height: 110px; overflow: auto; padding: 6px 14px; border-top: 1px solid var(--line); font-size: 12px; }
 .sheet-issues p, .sheet-issues ul { margin: 2px 0; }
 .sheet-issues ul { padding-left: 18px; }

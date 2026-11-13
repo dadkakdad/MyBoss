@@ -10,6 +10,22 @@ export function workMenuLabel(work) {
   return work.sheetName ? `${work.name} · ${work.sheetName}` : work.name;
 }
 
+/** Upload time for saved files, always shown in Europe/Moscow. */
+export function formatMoscowUploadTime(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Europe/Moscow",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
 /**
  * Every saved workbook stays selectable from Refresh after newer uploads.
  * The works list is newest first; the open workbook is marked current.
@@ -21,6 +37,7 @@ export function refreshSavedEntries(works, currentWorkId = "") {
     .map((work) => ({
       id: work.id,
       label: workMenuLabel(work),
+      when: formatMoscowUploadTime(work.createdAt),
       current: work.id === currentWorkId,
     }));
 }

@@ -154,6 +154,7 @@ test("a saved workbook and its slides belong only to that account", async () => 
     assert.equal(list.json.works.length, 1);
     assert.equal(list.json.works[0].name, "team.xlsx");
     assert.equal(list.json.works[0].sheetName, "Advanced");
+    assert.match(list.json.works[0].createdAt, /^\d{4}-\d{2}-\d{2}T/);
     assert.equal("dataBase64" in list.json.works[0], false);
     const opened = await send(base, `/api/works/${saved.json.id}`, { cookie: cookieOf(ada.token) });
     assert.equal(Buffer.from(opened.json.dataBase64, "base64").toString(), "excel-bytes");
@@ -170,6 +171,40 @@ test("a saved workbook and its slides belong only to that account", async () => 
     assert.equal(again.json.active, 1);
     assert.equal(again.json.slides.length, 2);
     assert.equal(Buffer.from(again.json.dataBase64, "base64").toString(), "excel-bytes");
+  } finally {
+    await stop(server);
+  }
+});
+
+test("an account can delete its own saved workbook only", async () => {
+  const { server, base } = await start();
+  try {
+    const ada = await send(base, "/api/register", { method: "POST", body: { email: "ada@example.com", password: "correct horse" } });
+    const grace = await send(base, "/api/register", { method: "POST", body: { email: "grace@example.com", password: "correct horse" } });
+    const saved = await send(base, "/api/works", {
+      method: "POST",
+      cookie: cookieOf(ada.token),
+      body: {
+        name: "team.xlsx",
+        dataBase64: Buffer.from("excel-bytes").toString("base64"),
+        sheetName: "Advanced",
+      },
+    });
+    assert.equal(saved.status, 201);
+    const stolen = await send(base, `/api/works/${saved.json.id}`, {
+      method: "DELETE",
+      cookie: cookieOf(grace.token),
+    });
+    assert.equal(stolen.status, 404);
+    const gone = await send(base, `/api/works/${saved.json.id}`, {
+      method: "DELETE",
+      cookie: cookieOf(ada.token),
+    });
+    assert.equal(gone.status, 204);
+    const list = await send(base, "/api/works", { cookie: cookieOf(ada.token) });
+    assert.equal(list.json.works.length, 0);
+    const missing = await send(base, `/api/works/${saved.json.id}`, { cookie: cookieOf(ada.token) });
+    assert.equal(missing.status, 404);
   } finally {
     await stop(server);
   }

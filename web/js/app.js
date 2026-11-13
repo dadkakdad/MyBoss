@@ -55,7 +55,13 @@ import {
   showCostCenterStamps,
   stickNotes,
 } from "./editor.js";
-import { refreshSavedEntries, saveBody, workMenuLabel, workToReopen } from "./persist.js";
+import {
+  formatMoscowUploadTime,
+  refreshSavedEntries,
+  saveBody,
+  workMenuLabel,
+  workToReopen,
+} from "./persist.js";
 import {
   blankDraftRow,
   cellText,
@@ -2346,11 +2352,24 @@ async function refreshWorkList() {
   }
   for (const work of payload.works) {
     const item = document.createElement("li");
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = workMenuLabel(work);
-    button.addEventListener("click", () => openWork(work.id));
-    item.appendChild(button);
+    item.className = "saved-file-row";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "saved-file-open";
+    const label = document.createElement("span");
+    label.className = "saved-file-label";
+    label.textContent = workMenuLabel(work);
+    open.appendChild(label);
+    const when = formatMoscowUploadTime(work.createdAt);
+    if (when) {
+      const time = document.createElement("span");
+      time.className = "saved-file-when";
+      time.textContent = when;
+      open.appendChild(time);
+    }
+    open.addEventListener("click", () => openWork(work.id));
+    item.appendChild(open);
+    item.appendChild(deleteSavedButton(work.id, workMenuLabel(work), () => refreshWorkList()));
     list.appendChild(item);
   }
 }
@@ -2379,15 +2398,88 @@ async function fillRefreshSavedMenu() {
     return;
   }
   for (const entry of entries) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = entry.label;
-    if (entry.current) button.classList.add("menu-current");
-    button.title = entry.current ? "Currently open" : `Open ${entry.label}`;
-    button.addEventListener("click", () => openWork(entry.id));
-    list.appendChild(button);
+    const row = document.createElement("div");
+    row.className = "saved-file-row";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "saved-file-open";
+    if (entry.current) open.classList.add("menu-current");
+    open.title = entry.current ? "Currently open" : `Open ${entry.label}`;
+    const label = document.createElement("span");
+    label.className = "saved-file-label";
+    label.textContent = entry.label;
+    open.appendChild(label);
+    if (entry.when) {
+      const time = document.createElement("span");
+      time.className = "saved-file-when";
+      time.textContent = entry.when;
+      open.appendChild(time);
+    }
+    open.addEventListener("click", () => openWork(entry.id));
+    row.appendChild(open);
+    row.appendChild(deleteSavedButton(entry.id, entry.label, () => fillRefreshSavedMenu()));
+    list.appendChild(row);
   }
   section.hidden = false;
+}
+
+function deleteSavedButton(id, label, afterDelete) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "saved-file-delete";
+  button.setAttribute("aria-label", `Delete ${label}`);
+  button.title = `Delete ${label}`;
+  button.textContent = "×";
+  button.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    await deleteSavedWork(id, afterDelete);
+  });
+  return button;
+}
+
+async function deleteSavedWork(id, afterDelete) {
+  const response = await fetch(apiUrl(`/api/works/${id}`), {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
+  if (response.status === 401) {
+    state.account = null;
+    paintAccount();
+    toast("Log in again to manage saved files.");
+    return;
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    toast(payload.error || "Could not delete that file.");
+    return;
+  }
+  const wasCurrent = state.workId === id;
+  if (wasCurrent) {
+    state.workId = null;
+    state.saveLabel = "";
+  }
+  toast("Deleted.");
+  if (typeof afterDelete === "function") await afterDelete();
+  if (!wasCurrent) return;
+  const restored = await restoreLatest();
+  if (!restored) clearImportedWork();
+}
+
+function clearImportedWork() {
+  state.fileName = "";
+  state.sheetName = "";
+  state.matrix = null;
+  state.org = null;
+  state.workbookSheets = null;
+  state.fileBytes = null;
+  state.workId = null;
+  state.saveLabel = "";
+  state.imported = false;
+  state.slides = [blankSlide()];
+  state.active = 0;
+  state.selection.clear();
+  document.body.dataset.stage = "empty";
+  render();
 }
 
 async function openWork(id, { quiet = false } = {}) {
