@@ -55,7 +55,7 @@ import {
   showCostCenterStamps,
   stickNotes,
 } from "./editor.js";
-import { saveBody, workToReopen } from "./persist.js";
+import { refreshSavedEntries, saveBody, workMenuLabel, workToReopen } from "./persist.js";
 import {
   blankDraftRow,
   cellText,
@@ -2050,7 +2050,10 @@ function bind() {
       // Older browsers refuse to open a <select> from script; focus is enough there.
     }
   });
-  $("refresh-more").addEventListener("click", (event) => toggleMenu("menu-refresh", event));
+  $("refresh-more").addEventListener("click", (event) => {
+    toggleMenu("menu-refresh", event);
+    if ($("menu-refresh").classList.contains("open")) fillRefreshSavedMenu();
+  });
   $("create-main").addEventListener("click", (event) => toggleMenu("menu-create", event));
   $("manager-more").addEventListener("click", (event) => toggleMenu("menu-manager", event));
   $("reports-more").addEventListener("click", (event) => toggleMenu("menu-reports", event));
@@ -2345,11 +2348,46 @@ async function refreshWorkList() {
     const item = document.createElement("li");
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = work.sheetName ? `${work.name} · ${work.sheetName}` : work.name;
+    button.textContent = workMenuLabel(work);
     button.addEventListener("click", () => openWork(work.id));
     item.appendChild(button);
     list.appendChild(item);
   }
+}
+
+/** Put previously uploaded workbooks under Refresh so a newer upload does not hide them. */
+async function fillRefreshSavedMenu() {
+  const section = $("refresh-saved");
+  const list = $("refresh-saved-list");
+  if (!section || !list) return;
+  if (!state.account) {
+    section.hidden = true;
+    list.replaceChildren();
+    return;
+  }
+  const response = await fetch(apiUrl("/api/works"), { credentials: "same-origin" });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    section.hidden = true;
+    list.replaceChildren();
+    return;
+  }
+  const entries = refreshSavedEntries(payload.works, state.workId);
+  list.replaceChildren();
+  if (!entries.length) {
+    section.hidden = true;
+    return;
+  }
+  for (const entry of entries) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = entry.label;
+    if (entry.current) button.classList.add("menu-current");
+    button.title = entry.current ? "Currently open" : `Open ${entry.label}`;
+    button.addEventListener("click", () => openWork(entry.id));
+    list.appendChild(button);
+  }
+  section.hidden = false;
 }
 
 async function openWork(id, { quiet = false } = {}) {

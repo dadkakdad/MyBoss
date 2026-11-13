@@ -175,6 +175,17 @@ button, select, input { font: inherit; color: inherit; }
 }
 .menu button img { width: 24px; height: 24px; }
 .menu button:disabled { opacity: 0.35; cursor: not-allowed; }
+.menu-sep { height: 1px; margin: 4px 2px; background: #e0e0e0; }
+.menu-heading {
+  padding: 4px 8px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #777;
+}
+.menu-saved { max-height: 220px; overflow: auto; }
+.menu-saved .menu-current { font-weight: 600; }
 
 .upload, .ribbon-tab .stack {
   --lab: 36px;
