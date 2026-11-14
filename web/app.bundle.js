@@ -988,9 +988,18 @@ function placeBranches(branches, metrics) {
   const anchorX = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : totalW / 2;
   const drawBar = (dotted) => {
     const line = hangs.filter((hang) => hang.dotted === dotted).map((hang) => hang.x);
-    if (!line.length || (stem <= 0 && line.length < 2)) return;
-    const left = Math.min(...line);
-    const right = Math.max(...line);
+    if (!line.length) return;
+    let left = Math.min(...line);
+    let right = Math.max(...line);
+    // Each line style has to reach the trunk. A single dotted report off to
+    // one side, or every report of that style sitting on one side of centre,
+    // used to leave a gap: the bar only spanned that style's own ticks.
+    // The same rule as the VBA horizontal connector: run from the outermost
+    // tick of the style through the shared centre.
+    if (stem > 0) {
+      if (left > anchorX) left = anchorX;
+      if (right < anchorX) right = anchorX;
+    }
     if (right - left < 0.5) return;
     items.push({
       type: "wire",
