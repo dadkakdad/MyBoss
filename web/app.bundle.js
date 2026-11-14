@@ -1937,6 +1937,33 @@ function scaleShapes(shapes, factor, origin) {
   return next;
 }
 
+/** Pull one side of a box. `edge` is a combination of n, s, e, w. The opposite side stays put. */
+function resizeShapes(shapes, edge, dx, dy, minimum = { w: 16, h: 24 }) {
+  const minW = minimum.w ?? 16;
+  const minH = minimum.h ?? 24;
+  const side = String(edge || "");
+  for (const shape of shapes) {
+    if (!Number.isFinite(shape.x) || !Number.isFinite(shape.w) || !Number.isFinite(shape.h)) continue;
+    let { x, y, w, h } = shape;
+    if (side.includes("w")) {
+      const right = x + w;
+      x = Math.min(x + dx, right - minW);
+      w = right - x;
+    }
+    if (side.includes("e")) w = Math.max(minW, w + dx);
+    if (side.includes("n")) {
+      const bottom = y + h;
+      y = Math.min(y + dy, bottom - minH);
+      h = bottom - y;
+    }
+    if (side.includes("s")) h = Math.max(minH, h + dy);
+    shape.x = x;
+    shape.y = y;
+    shape.w = w;
+    shape.h = h;
+  }
+}
+
 function rewriteSlideNumber(text, number) {
   if (typeof text !== "string") return text;
   return text.replace(/slide \d+/gi, `slide ${number}`);
@@ -3997,17 +4024,23 @@ function renderSlide() {
     }
     root.appendChild(renderShape(shape));
   }
-  const bounds = selectionBounds(selectedShapes());
-  if (bounds) root.appendChild(selectionFrame(bounds));
+  const selected = selectedShapes();
+  const bounds = selectionBounds(selected);
+  if (bounds) root.appendChild(selectionFrame(bounds, selected));
 }
 
-function selectionFrame(bounds) {
+function selectionFrame(bounds, shapes = []) {
   const frame = document.createElement("div");
   frame.className = "selection-frame";
   frame.style.left = `${viewX(bounds.x)}px`;
   frame.style.top = `${viewY(bounds.y)}px`;
   frame.style.width = `${bounds.w}px`;
   frame.style.height = `${bounds.h}px`;
+  const shadesOnly = shapes.length > 0 && shapes.every((shape) => shape.type === "shade");
+  if (shadesOnly) {
+    for (const edge of ["n", "s", "e", "w", "nw", "ne", "sw", "se"]) frame.appendChild(resizeHandle(edge));
+    return frame;
+  }
   const handle = document.createElement("button");
   handle.type = "button";
   handle.className = "scale-handle";
@@ -4021,6 +4054,33 @@ function selectionFrame(bounds) {
   handle.addEventListener("pointerdown", (event) => beginScale(event, "corner"));
   frame.appendChild(handle);
   return frame;
+}
+
+function resizeHandle(edge) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `resize-handle resize-${edge}`;
+  button.title = "Drag to resize the department";
+  button.setAttribute("aria-label", `Resize department ${edge}`);
+  const unit = 1 / Math.max(0.4, baseScale() * state.zoom);
+  const across = edge === "n" || edge === "s" || edge === "e" || edge === "w";
+  const along = edge === "n" || edge === "s";
+  button.style.width = `${(along ? 28 : across ? 10 : 12) * unit}px`;
+  button.style.height = `${(edge === "e" || edge === "w" ? 28 : across ? 10 : 12) * unit}px`;
+  const spot = {
+    n: ["50%", "0"],
+    s: ["50%", "100%"],
+    e: ["100%", "50%"],
+    w: ["0", "50%"],
+    nw: ["0", "0"],
+    ne: ["100%", "0"],
+    sw: ["0", "100%"],
+    se: ["100%", "100%"],
+  }[edge];
+  button.style.left = spot[0];
+  button.style.top = spot[1];
+  button.addEventListener("pointerdown", (event) => beginResize(event, edge));
+  return button;
 }
 
 function renderShape(shape) {
@@ -4315,7 +4375,7 @@ function focusPerson(key) {
   $("employee").value = key;
 }
 
-const pointer = { id: null, x: 0, y: 0, moved: false, shape: null, marquee: null, scale: null };
+const pointer = { id: null, x: 0, y: 0, moved: false, shape: null, marquee: null, scale: null, resize: null };
 
 function localPoint(event) {
   const frame = state.frame;
@@ -4347,6 +4407,7 @@ function startPointer(event, shape) {
   pointer.moved = false;
   pointer.shape = shape;
   pointer.scale = null;
+  pointer.resize = null;
   if (shape && !state.selection.has(shape.id)) selectGroup(shape, event.shiftKey);
   if ((shape?.type === "card" || shape?.type === "note") && shape.key) focusPerson(shape.key);
   else if (shape && event.shiftKey) {
@@ -4367,6 +4428,7 @@ function beginMarquee(event, shape) {
   pointer.moved = false;
   pointer.shape = null;
   pointer.scale = null;
+  pointer.resize = null;
   pointer.marquee?.remove();
   pointer.marqueeShape = shape || null;
   pointer.marqueeAdditive = event.shiftKey;
@@ -4396,6 +4458,7 @@ function beginScale(event, mode) {
   pointer.shape = null;
   pointer.marquee = null;
   pointer.marqueeShape = null;
+  pointer.resize = null;
   pointer.scale = {
     mode,
     origin,
@@ -4408,9 +4471,32 @@ function beginScale(event, mode) {
   event.currentTarget.setPointerCapture?.(event.pointerId);
 }
 
+function beginResize(event, edge) {
+  event.stopPropagation();
+  event.preventDefault();
+  const live = selectedShapes().filter((shape) => shape.type === "shade");
+  if (!live.length) return;
+  const point = localPoint(event);
+  pointer.marquee?.remove();
+  pointer.id = event.pointerId;
+  pointer.moved = false;
+  pointer.shape = null;
+  pointer.marquee = null;
+  pointer.marqueeShape = null;
+  pointer.scale = null;
+  pointer.resize = {
+    edge,
+    anchor: point,
+    snapshot: live.map((shape) => ({ ...shape })),
+    live,
+    remembered: false,
+  };
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+}
+
 function onHolderPointerDown(event) {
   if (event.button !== 0) return;
-  if (event.target.closest?.(".shape, .scale-handle, .wires line")) return;
+  if (event.target.closest?.(".shape, .scale-handle, .resize-handle, .wires line")) return;
   if (state.tool === "scale") return;
   beginMarquee(event, null);
 }
@@ -4428,6 +4514,28 @@ function paintShape(shape) {
     node.style.top = `${viewY(shape.y)}px`;
     node.style.width = `${shape.w}px`;
     node.style.height = `${shape.h}px`;
+  }
+}
+
+function applyResizeGesture(point) {
+  const gesture = pointer.resize;
+  const snapshot = gesture.snapshot.map((shape) => ({ ...shape }));
+  resizeShapes(snapshot, gesture.edge, point.x - gesture.anchor.x, point.y - gesture.anchor.y);
+  gesture.live.forEach((shape, index) => {
+    const next = snapshot[index];
+    shape.x = next.x;
+    shape.y = next.y;
+    shape.w = next.w;
+    shape.h = next.h;
+    paintShape(shape);
+  });
+  const frame = $("slide").querySelector(".selection-frame");
+  const bounds = selectionBounds(gesture.live);
+  if (frame && bounds) {
+    frame.style.left = `${viewX(bounds.x)}px`;
+    frame.style.top = `${viewY(bounds.y)}px`;
+    frame.style.width = `${bounds.w}px`;
+    frame.style.height = `${bounds.h}px`;
   }
 }
 
@@ -4474,7 +4582,18 @@ function onPointerMove(event) {
   const point = localPoint(event);
   const dx = point.x - pointer.x;
   const dy = point.y - pointer.y;
-  if (!pointer.moved && Math.hypot(point.x - (pointer.scale?.anchor.x ?? pointer.x), point.y - (pointer.scale?.anchor.y ?? pointer.y)) < 2) return;
+  const anchorX = pointer.scale?.anchor.x ?? pointer.resize?.anchor.x ?? pointer.x;
+  const anchorY = pointer.scale?.anchor.y ?? pointer.resize?.anchor.y ?? pointer.y;
+  if (!pointer.moved && Math.hypot(point.x - anchorX, point.y - anchorY) < 2) return;
+  if (pointer.resize) {
+    if (!pointer.resize.remembered) {
+      remember();
+      pointer.resize.remembered = true;
+    }
+    pointer.moved = true;
+    applyResizeGesture(point);
+    return;
+  }
   if (pointer.scale) {
     if (!pointer.scale.remembered) {
       remember();
@@ -4555,8 +4674,9 @@ function onPointerUp(event) {
     pointer.marquee = null;
     pointer.marqueeShape = null;
     render();
-  } else if (pointer.scale) {
+  } else if (pointer.scale || pointer.resize) {
     pointer.scale = null;
+    pointer.resize = null;
     render();
   } else if (!moved && pointer.shape?.type === "note" && state.editingNote !== pointer.shape.id && state.tool === "move") {
     beginNoteEdit(pointer.shape);

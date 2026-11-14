@@ -699,6 +699,19 @@ body[data-tool="scale"] .shape { cursor: nwse-resize; }
   pointer-events: auto;
   padding: 0;
 }
+.resize-handle {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  background: #c45500;
+  border: 1px solid white;
+  border-radius: 1px;
+  pointer-events: auto;
+  padding: 0;
+}
+.resize-n, .resize-s { cursor: ns-resize; }
+.resize-e, .resize-w { cursor: ew-resize; }
+.resize-ne, .resize-sw { cursor: nesw-resize; }
+.resize-nw, .resize-se { cursor: nwse-resize; }
 
 .cc {
   background: #00ff00;
