@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MyBoss — org charts in the browser</title>
-  <link rel="stylesheet" href="css/app.css?v=d818233a">
+  <link rel="stylesheet" href="css/app.css?v=7233bba1">
 </head>
 <body data-stage="empty">
   <header class="ribbon">
-    <button id="account" type="button">Log in</button>
+    <div class="ribbon-scroll">
     <div class="ribbon-tab" id="ribbon">
       <div class="cluster needs-pick">
         <button class="large" id="open-file" type="button"><img src="icons/icon2.png" alt=""><span>Select Excel file</span></button>
@@ -187,6 +187,8 @@
         </button>
       </div>
     </div>
+    </div>
+    <button id="account" type="button">Log in</button>
   </header>
 
   <div class="workspace">
@@ -279,6 +281,6 @@
   <div class="toast" id="toast" role="status"></div>
 
   <script type="application/json" id="myboss-assets">{"xlsx":"node_modules/xlsx/dist/xlsx.full.min.js?v=7f749f81","pptx":"node_modules/pptxgenjs/dist/pptxgen.bundle.js?v=8b9b814f"}</script>
-  <script src="app.bundle.js?v=c9f586db"></script>
+  <script src="app.bundle.js?v=07462052"></script>
 </body>
 </html>

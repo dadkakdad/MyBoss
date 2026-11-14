@@ -25,6 +25,7 @@ import {
   departmentShadeAction,
   SLIDE,
   buildSlides,
+  dropSubordinateShapes,
   layoutDepartmentShades,
   layoutManualBranch,
   layoutSingleCard,
@@ -448,12 +449,10 @@ function placeBranch(mode) {
   }
   remember();
   const slide = current();
-  slide.shapes = slide.shapes.filter((shape) => {
-    if (shape.type === "note") return true;
-    if (["title", "legend", "nav", "stats", "hiddenlist"].includes(shape.type)) return true;
-    if (shape.key === key && (shape.type === "card" || shape.type === "bubble" || shape.type === "comment")) return true;
-    return false;
-  });
+  slide.shapes = dropSubordinateShapes(state.org, slide.shapes, key);
+  for (const id of [...state.selection]) {
+    if (!slide.shapes.some((shape) => shape.id === id)) state.selection.delete(id);
+  }
   const box = layoutManualBranch(state.org, key, metrics(), mode);
   const anchor = cardAnchor(slide, key);
   const dx = anchor.x - box.anchorX;
@@ -1143,7 +1142,7 @@ function openContextMenu(card, note, x, y) {
   add.hidden = !card;
   remove.hidden = !note;
   if (add.hidden && remove.hidden) return;
-  document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open"));
+  closeMenus();
   state.noteTargetId = card?.id || "";
   state.deleteNoteId = note?.id || "";
   const menu = $("context-menu");
@@ -2019,12 +2018,31 @@ function onKey(event) {
   }
 }
 
+function closeMenus() {
+  document.querySelectorAll(".menu.open").forEach((node) => {
+    node.classList.remove("open");
+    node.style.position = "";
+    node.style.top = "";
+    node.style.left = "";
+    node.style.zIndex = "";
+  });
+}
+
 function toggleMenu(menuId, event) {
   event.stopPropagation();
   const menu = $(menuId);
   const willOpen = !menu.classList.contains("open");
-  document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open"));
-  if (willOpen) menu.classList.add("open");
+  closeMenus();
+  if (!willOpen) return;
+  menu.classList.add("open");
+  // The tool strip scrolls, so a menu anchored inside it would be clipped.
+  // Pin it to the screen at the button that opened it.
+  const host = menu.parentElement.getBoundingClientRect();
+  const left = Math.max(8, Math.min(host.left, window.innerWidth - menu.offsetWidth - 8));
+  menu.style.position = "fixed";
+  menu.style.top = `${host.bottom - 2}px`;
+  menu.style.left = `${left}px`;
+  menu.style.zIndex = "40";
 }
 
 function bind() {
@@ -2066,7 +2084,7 @@ function bind() {
   $("elements-main").addEventListener("click", (event) => toggleMenu("menu-elements", event));
   $("arrange-main").addEventListener("click", (event) => toggleMenu("menu-arrange", event));
   document.addEventListener("click", () => {
-    document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open"));
+    closeMenus();
     closeContextMenu();
   });
   $("context-add-note").addEventListener("click", (event) => {
