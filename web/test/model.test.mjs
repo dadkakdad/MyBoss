@@ -10,10 +10,11 @@ import {
   headcountLabel,
   isManager,
   peopleInCategory,
+  reportsTo,
   solidTree,
   statisticsLines,
 } from "../js/org.js";
-import { CARDS, GUIDE, LINK_STYLE, SLIDE, allVisible, buildSlides, chooseFit, departmentShadeAction, dottedDash, hiddenListShape, layoutLeaves, layoutSubordinates, makeMetrics } from "../js/layout.js";
+import { CARDS, GUIDE, LINK_STYLE, SLIDE, allVisible, buildSlides, chooseFit, departmentShadeAction, dottedDash, dropSubordinateShapes, hiddenListShape, layoutLeaves, layoutSubordinates, makeMetrics } from "../js/layout.js";
 
 const samplePath = new URL("../../MyBoss-Sample data.xlsx", import.meta.url);
 
@@ -530,6 +531,41 @@ test("rows share one trunk and a bar on every row", () => {
     );
     assert.ok(tick, "top tick");
   }
+});
+
+test("a branch replaces that person's team and leaves the rest of the slide", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("Grace", "Hopper", "Eng", "Lab", "Ada", "Lovelace"),
+    row("Ken", "Thompson", "Eng", "Lab", "Grace", "Hopper"),
+    row("Lin", "Worker", "Eng", "Field", "Ada", "Lovelace"),
+    row("Ned", "Peer", "Eng", "Field", "Lin", "Worker"),
+  ]);
+  assert.equal(org.fatal, false, org.issues.map((issue) => issue.message).join(" | "));
+  const [slide] = buildSlides(org, org.ceo, "clever");
+  const id = (surname) => [...org.people.values()].find((person) => person.surname === surname).key;
+  const has = (shapes, surname, type = "card") => shapes.some((shape) => shape.type === type && shape.key === id(surname));
+  assert.equal(has(slide.shapes, "Ken"), true);
+  assert.equal(has(slide.shapes, "Ned"), true);
+  const shade = slide.shapes.find((shape) => shape.type === "shade");
+  const title = slide.shapes.find((shape) => shape.type === "title");
+  const next = dropSubordinateShapes(org, slide.shapes, id("Grace"));
+  assert.equal(has(next, "Ken"), false, "Grace's report is cleared so the branch can be drawn again");
+  assert.equal(has(next, "Grace"), true, "Grace's own card stays");
+  assert.equal(has(next, "Ned"), true, "a team that does not report to Grace stays");
+  assert.equal(has(next, "Lin"), true);
+  assert.equal(has(next, "Ada"), true);
+  assert.equal(next.includes(title), true);
+  if (shade) assert.equal(next.includes(shade), true, "department shades stay");
+  assert.equal(next.some((shape) => shape.type === "legend"), true);
+  const kenTick = next.find(
+    (shape) => shape.type === "wire" && shape.branchKey === id("Ken"),
+  );
+  assert.equal(kenTick, undefined, "connectors of the cleared team go with it");
+  assert.equal(reportsTo(org, id("Ken"), id("Grace"), "solid"), true);
+  assert.equal(reportsTo(org, id("Ned"), id("Grace"), "solid"), false);
 });
 
 test("department shades toggle off on the next click, unless one shade is selected", () => {

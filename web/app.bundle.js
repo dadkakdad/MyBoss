@@ -343,25 +343,38 @@ function buildOrg(matrix, options = {}) {
   };
 }
 
-/** Solid and dotted walks, matching extractReportingSequence. After the first hop, a two-manager person is followed through the dotted key. */
-function chainReachesCeo(people, startKey, ceoKey, regime) {
+/**
+ * The person, then each manager up the line. The first hop uses `regime`
+ * (the line the card is hanging on). After that a two-manager person is
+ * followed through the dotted key, matching extractReportingSequence.
+ */
+function reportingChain(people, startKey, regime) {
+  const chain = [];
   const start = people.get(startKey);
-  if (!start) return false;
-  if (startKey === ceoKey) return true;
-  const seen = new Set([startKey]);
-  let current = start;
-  let next = current.dottedKey ? (regime === "dotted" ? current.dottedKey : current.solidKey) : current.solidKey;
+  if (!start) return chain;
+  chain.push(startKey);
+  let next = start.dottedKey ? (regime === "dotted" ? start.dottedKey : start.solidKey) : start.solidKey;
+  const seen = new Set(chain);
   let guard = 0;
   while (next && !seen.has(next) && guard < 10000) {
-    guard += 1;
     const node = people.get(next);
-    if (!node) return false;
+    if (!node) break;
+    chain.push(next);
     seen.add(next);
-    if (next === ceoKey) return true;
-    current = node;
-    next = current.dottedKey ? current.dottedKey : current.solidKey;
+    next = node.dottedKey ? node.dottedKey : node.solidKey;
+    guard += 1;
   }
-  return false;
+  return chain;
+}
+
+function chainReachesCeo(people, startKey, ceoKey, regime) {
+  return reportingChain(people, startKey, regime).includes(ceoKey);
+}
+
+/** True when `managerKey` is above `personKey` on the given line. The person is not their own manager. */
+function reportsTo(org, personKey, managerKey, regime) {
+  if (!personKey || !managerKey || personKey === managerKey) return false;
+  return reportingChain(org.people, personKey, regime).includes(managerKey);
 }
 
 function computeStats(people, reports) {
@@ -687,7 +700,7 @@ function slideLinkTop(card, shapes) {
 }
 
 function commentItem(key, x, cardBottom, metrics, text) {
-  return {
+  return own({
     type: "comment",
     key,
     x,
@@ -696,7 +709,7 @@ function commentItem(key, x, cardBottom, metrics, text) {
     h: commentHeight(metrics),
     z: 4,
     text: `Works until ${text}`,
-  };
+  });
 }
 
 /**
@@ -715,9 +728,10 @@ function addBubble(items, org, person, key, centerX, cardY, metrics, shownUnder,
   const nudge = offsetTick ? 5 : 0;
   const bottom = cardY - gap;
   items.push(wire(centerX + nudge, bottom, centerX + nudge, cardY, shownUnder !== "Dotted", metrics));
-  items.push({
+  items.push(own({
     type: "bubble",
     key,
+    managerType: shownUnder,
     x: centerX - metrics.bubbleW / 2,
     y: bottom - metrics.bubbleH,
     w: metrics.bubbleW,
@@ -725,7 +739,7 @@ function addBubble(items, org, person, key, centerX, cardY, metrics, shownUnder,
     z: 4,
     dotted: true,
     text: otherManagerSurname(org, person, shownUnder),
-  });
+  }));
 }
 
 function translate(items, dx, dy) {
@@ -749,8 +763,24 @@ function shiftMap(count) {
   return shifts;
 }
 
+let branchOwner = "";
+
+function own(item) {
+  return branchOwner ? { ...item, branchKey: branchOwner } : item;
+}
+
+function withBranch(key, draw) {
+  const previous = branchOwner;
+  branchOwner = key || "";
+  try {
+    return draw();
+  } finally {
+    branchOwner = previous;
+  }
+}
+
 function wire(x1, y1, x2, y2, dotted, metrics) {
-  return {
+  return own({
     type: "wire",
     x1,
     y1,
@@ -758,11 +788,11 @@ function wire(x1, y1, x2, y2, dotted, metrics) {
     y2,
     dotted: Boolean(dotted),
     weight: metrics.line,
-  };
+  });
 }
 
 function cardItem(key, x, y, metrics, shownUnder) {
-  return {
+  return own({
     type: "card",
     key,
     x,
@@ -773,7 +803,7 @@ function cardItem(key, x, y, metrics, shownUnder) {
     managerType: shownUnder,
     collapsed: false,
     head: false,
-  };
+  });
 }
 
 /**
@@ -992,28 +1022,12 @@ function placeBranches(branches, metrics) {
     const left = Math.min(...line);
     const right = Math.max(...line);
     if (right - left < 0.5) return;
-    items.push({
-      type: "wire",
-      x1: left,
-      y1: stem,
-      x2: right,
-      y2: stem,
-      dotted,
-      weight: metrics.line,
-    });
+    items.push(wire(left, stem, right, stem, dotted, metrics));
   };
   drawBar(false);
   drawBar(true);
   if (stem > 0) {
-    items.push({
-      type: "wire",
-      x1: anchorX,
-      y1: 0,
-      x2: anchorX,
-      y2: stem,
-      dotted: hangs.every((hang) => hang.dotted),
-      weight: metrics.line,
-    });
+    items.push(wire(anchorX, 0, anchorX, stem, hangs.every((hang) => hang.dotted), metrics));
   }
   return { w: totalW, h: maxH, anchorX, items };
 }
@@ -1096,6 +1110,10 @@ function branchLine(org, parentKey, keys) {
  * `visibility` maps a direct report to 1 (draw their team) or 0 (card only).
  */
 function layoutSubordinates(org, key, metrics, visibility, options = {}) {
+  return withBranch(key, () => drawSubordinates(org, key, metrics, visibility, options));
+}
+
+function drawSubordinates(org, key, metrics, visibility, options = {}) {
   const asWorkers = Boolean(options.asWorkers);
   const shrunk = Boolean(options.shrunk);
   const stack = options.stack || new Set();
@@ -1168,16 +1186,8 @@ function layoutExpandedManager(org, key, metrics, visibility, options) {
   const cardY = tick;
   const subsY = cardY + metrics.h + (person.termination ? commentSpace(metrics) : 0);
   const items = [
-    {
-      type: "wire",
-      x1: subs.anchorX + shift,
-      y1: 0,
-      x2: subs.anchorX + shift,
-      y2: cardY,
-      dotted: shownUnder === "Dotted",
-      weight: metrics.line,
-    },
-    {
+    wire(subs.anchorX + shift, 0, subs.anchorX + shift, cardY, shownUnder === "Dotted", metrics),
+    own({
       type: "card",
       key,
       x: cardX + shift,
@@ -1188,7 +1198,7 @@ function layoutExpandedManager(org, key, metrics, visibility, options) {
       managerType: shownUnder,
       collapsed: false,
       head: false,
-    },
+    }),
   ];
   if (hasTwoManagers(person)) {
     addBubble(items, org, person, key, subs.anchorX + shift, cardY, metrics, shownUnder, true);
@@ -1856,7 +1866,108 @@ function layoutManualBranch(org, key, metrics, mode) {
     return layoutSubordinates(org, key, metrics, allVisible(org, key), { asWorkers: true });
   }
   const people = directReports(org, key).all;
-  return layoutLeaves(org, people, key, metrics, mode);
+  return withBranch(key, () => layoutLeaves(org, people, key, metrics, mode));
+}
+
+const SLIDE_CHROME = new Set(["title", "legend", "nav", "stats", "hiddenlist", "shade", "frame", "note"]);
+
+function cardIsSubordinate(org, card, managerKey) {
+  if (!card?.key || card.key === managerKey || card.head) return false;
+  const regime = card.managerType === "Dotted" ? "dotted" : "solid";
+  return reportsTo(org, card.key, managerKey, regime);
+}
+
+function ownsBranch(org, branchKey, managerKey) {
+  if (!branchKey) return false;
+  if (branchKey === managerKey) return true;
+  return reportsTo(org, branchKey, managerKey, "solid") || reportsTo(org, branchKey, managerKey, "dotted");
+}
+
+function nearCard(shape, card) {
+  const cx = shape.x + (shape.w || 0) / 2;
+  const cy = shape.y + (shape.h || 0) / 2;
+  const pad = 32;
+  return cx >= card.x - pad && cx <= card.x + card.w + pad && cy >= card.y - pad && cy <= card.y + card.h + pad;
+}
+
+function pointNear(x, y, px, py, slack = 6) {
+  return Math.hypot(x - px, y - py) <= slack;
+}
+
+function wireTouches(wire, x, y) {
+  return pointNear(wire.x1, wire.y1, x, y) || pointNear(wire.x2, wire.y2, x, y);
+}
+
+function wireTouchesCard(wire, card) {
+  const midY = card.y + card.h / 2;
+  const midX = card.x + card.w / 2;
+  return (
+    wireTouches(wire, midX, card.y) ||
+    wireTouches(wire, card.x, midY) ||
+    wireTouches(wire, midX, card.y + card.h)
+  );
+}
+
+function wiresMeet(a, b) {
+  const ends = [
+    [a.x1, a.y1],
+    [a.x2, a.y2],
+  ];
+  const other = [
+    [b.x1, b.y1],
+    [b.x2, b.y2],
+  ];
+  return ends.some(([x, y]) => other.some(([px, py]) => pointNear(x, y, px, py)));
+}
+
+/**
+ * Shapes that belong to `managerKey`'s subordinates, the way eraseSubordinates
+ * clears a branch before drawing it again. The manager's own card, and every
+ * other shape on the slide, stay.
+ */
+function dropSubordinateShapes(org, shapes, managerKey) {
+  const list = shapes || [];
+  const cards = list.filter((shape) => shape.type === "card");
+  const removedCards = cards.filter((card) => cardIsSubordinate(org, card, managerKey));
+  const managerCard = cards.find((card) => card.key === managerKey && card.head)
+    || cards.find((card) => card.key === managerKey && card.managerType !== "Dotted")
+    || cards.find((card) => card.key === managerKey);
+  const drop = new Set(removedCards);
+
+  for (const shape of list) {
+    if (SLIDE_CHROME.has(shape.type)) continue;
+    if (shape.branchKey && ownsBranch(org, shape.branchKey, managerKey)) drop.add(shape);
+  }
+  for (const shape of list) {
+    if (!["bubble", "comment", "link", "cc"].includes(shape.type)) continue;
+    if (removedCards.some((card) => shape.key === card.key && nearCard(shape, card))) drop.add(shape);
+  }
+
+  const keptCards = cards.filter((card) => !drop.has(card));
+  const wires = list.filter((shape) => shape.type === "wire" && !drop.has(shape));
+  const seeded = [];
+  for (const wire of wires) {
+    const hitsRemoved = removedCards.some((card) => wireTouchesCard(wire, card));
+    const hitsBottom = managerCard && wireTouches(wire, managerCard.x + managerCard.w / 2, managerCard.y + managerCard.h);
+    const hitsOther = keptCards.some((card) => card !== managerCard && wireTouchesCard(wire, card));
+    if ((hitsRemoved || hitsBottom) && !hitsOther) seeded.push(wire);
+  }
+  const gone = new Set(seeded);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const wire of wires) {
+      if (gone.has(wire)) continue;
+      if (keptCards.some((card) => card !== managerCard && wireTouchesCard(wire, card))) continue;
+      if ([...gone].some((other) => wiresMeet(wire, other))) {
+        gone.add(wire);
+        grew = true;
+      }
+    }
+  }
+  for (const wire of gone) drop.add(wire);
+
+  return list.filter((shape) => !drop.has(shape));
 }
 
 // ---- js/editor.js ----
@@ -3569,12 +3680,10 @@ function placeBranch(mode) {
   }
   remember();
   const slide = current();
-  slide.shapes = slide.shapes.filter((shape) => {
-    if (shape.type === "note") return true;
-    if (["title", "legend", "nav", "stats", "hiddenlist"].includes(shape.type)) return true;
-    if (shape.key === key && (shape.type === "card" || shape.type === "bubble" || shape.type === "comment")) return true;
-    return false;
-  });
+  slide.shapes = dropSubordinateShapes(state.org, slide.shapes, key);
+  for (const id of [...state.selection]) {
+    if (!slide.shapes.some((shape) => shape.id === id)) state.selection.delete(id);
+  }
   const box = layoutManualBranch(state.org, key, metrics(), mode);
   const anchor = cardAnchor(slide, key);
   const dx = anchor.x - box.anchorX;
@@ -4264,7 +4373,7 @@ function openContextMenu(card, note, x, y) {
   add.hidden = !card;
   remove.hidden = !note;
   if (add.hidden && remove.hidden) return;
-  document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open"));
+  closeMenus();
   state.noteTargetId = card?.id || "";
   state.deleteNoteId = note?.id || "";
   const menu = $("context-menu");
@@ -5140,12 +5249,31 @@ function onKey(event) {
   }
 }
 
+function closeMenus() {
+  document.querySelectorAll(".menu.open").forEach((node) => {
+    node.classList.remove("open");
+    node.style.position = "";
+    node.style.top = "";
+    node.style.left = "";
+    node.style.zIndex = "";
+  });
+}
+
 function toggleMenu(menuId, event) {
   event.stopPropagation();
   const menu = $(menuId);
   const willOpen = !menu.classList.contains("open");
-  document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open"));
-  if (willOpen) menu.classList.add("open");
+  closeMenus();
+  if (!willOpen) return;
+  menu.classList.add("open");
+  // The tool strip scrolls, so a menu anchored inside it would be clipped.
+  // Pin it to the screen at the button that opened it.
+  const host = menu.parentElement.getBoundingClientRect();
+  const left = Math.max(8, Math.min(host.left, window.innerWidth - menu.offsetWidth - 8));
+  menu.style.position = "fixed";
+  menu.style.top = `${host.bottom - 2}px`;
+  menu.style.left = `${left}px`;
+  menu.style.zIndex = "40";
 }
 
 function bind() {
@@ -5187,7 +5315,7 @@ function bind() {
   $("elements-main").addEventListener("click", (event) => toggleMenu("menu-elements", event));
   $("arrange-main").addEventListener("click", (event) => toggleMenu("menu-arrange", event));
   document.addEventListener("click", () => {
-    document.querySelectorAll(".menu.open").forEach((node) => node.classList.remove("open"));
+    closeMenus();
     closeContextMenu();
   });
   $("context-add-note").addEventListener("click", (event) => {
