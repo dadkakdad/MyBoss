@@ -532,6 +532,103 @@ test("rows share one trunk and a bar on every row", () => {
   }
 });
 
+/** Upward tick into a card, the one that comes down from the bus rather than a short surname pill. */
+function busTick(box, card) {
+  const cx = card.x + card.w / 2;
+  const ticks = box.items.filter(
+    (item) =>
+      item.type === "wire" &&
+      Math.abs(item.x1 - item.x2) < 0.8 &&
+      Math.abs((item.x1 + item.x2) / 2 - cx) < 3 &&
+      Math.abs(Math.max(item.y1, item.y2) - card.y) < 0.6,
+  );
+  ticks.sort((a, b) => Math.abs(b.y2 - b.y1) - Math.abs(a.y2 - a.y1));
+  return ticks[0] || null;
+}
+
+function wireCovers(box, x, y) {
+  return box.items.some((item) => {
+    if (item.type !== "wire" || Math.abs(item.y1 - item.y2) > 0.5) return false;
+    if (Math.abs(item.y1 - y) > 0.6) return false;
+    const left = Math.min(item.x1, item.x2);
+    const right = Math.max(item.x1, item.x2);
+    return left - 0.5 <= x && x <= right + 0.5;
+  });
+}
+
+test("a dotted branch outside the solid row is still joined to the trunk", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("Bo", "Boss", "Director", "Lab", "Ada", "Lovelace"),
+    row("Bo1", "M", "IC", "Lab", "Bo", "Boss"),
+    row("Bo2", "M", "IC", "Lab", "Bo", "Boss"),
+    row("Cy", "Boss", "Director", "Field", "Ada", "Lovelace"),
+    row("Cy1", "M", "IC", "Field", "Cy", "Boss"),
+    row("Cy2", "M", "IC", "Field", "Cy", "Boss"),
+    // Solid line to Bo, so under Ada this card hangs on the dotted line, on its own, to the left of the solid teams.
+    row("Ed", "Side", "IC", "Side", "Bo", "Boss", "Ada", "Lovelace"),
+  ]);
+  assert.equal(org.fatal, false, org.issues.map((issue) => issue.message).join(" | "));
+  const box = layoutSubordinates(org, org.ceo, makeMetrics("Small", 8, 8, 8), allVisible(org, org.ceo));
+  const ed = box.items.find((item) => item.type === "card" && org.people.get(item.key).surname === "Ed");
+  const tick = busTick(box, ed);
+  assert.ok(tick, "Ed hangs from an upward tick");
+  const top = Math.min(tick.y1, tick.y2);
+  const trunk = box.items.find(
+    (item) => item.type === "wire" && Math.abs(item.x1 - item.x2) < 0.8 && Math.min(item.y1, item.y2) < 0.5 && Math.abs(Math.max(item.y1, item.y2) - top) < 0.6,
+  );
+  assert.ok(trunk, "the trunk comes down to the bus");
+  const trunkX = (trunk.x1 + trunk.x2) / 2;
+  const edX = (tick.x1 + tick.x2) / 2;
+  assert.ok(Math.abs(edX - trunkX) > 8, "Ed is not already standing on the trunk");
+  assert.ok(wireCovers(box, edX, top), "the bus reaches Ed's tick");
+  assert.ok(wireCovers(box, trunkX, top), "the same bus reaches the trunk, so the branch is not left floating");
+});
+
+test("solid and dotted branches under one manager meet at the trunk", () => {
+  const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
+  const org = buildOrg([
+    header,
+    row("Ada", "Lovelace", "CEO", "Office", "", ""),
+    row("TBH_Open", "TBH_Open", "Role", "Open", "Ada", "Lovelace"),
+    row("Ann", "Lead", "Lead", "Open", "TBH_Open", "TBH_Open"),
+    row("Ann1", "M", "IC", "Open", "Ann", "Lead"),
+    row("Ann2", "M", "IC", "Open", "Ann", "Lead"),
+    row("Ann3", "M", "IC", "Open", "Ann", "Lead"),
+    row("Bo", "Boss", "Director", "Other", "Ada", "Lovelace"),
+    row("Dot", "One", "IC", "Dots", "Bo", "Boss", "TBH_Open", "TBH_Open"),
+    row("Dot2", "Two", "IC", "Dots", "Bo", "Boss", "TBH_Open", "TBH_Open"),
+  ]);
+  assert.equal(org.fatal, false, org.issues.map((issue) => issue.message).join(" | "));
+  const tbh = [...org.people.values()].find((person) => person.tbh);
+  const box = layoutSubordinates(org, tbh.key, makeMetrics("Small", 8, 8, 8), allVisible(org, tbh.key));
+  const ann = box.items.find((item) => item.type === "card" && org.people.get(item.key).surname === "Ann");
+  const tick = busTick(box, ann);
+  assert.ok(tick, "the solid team hangs from an upward tick");
+  const top = Math.min(tick.y1, tick.y2);
+  const dotted = box.items.find(
+    (item) =>
+      item.type === "wire" &&
+      item.dotted &&
+      Math.abs(item.x1 - item.x2) < 0.8 &&
+      Math.abs(Math.min(item.y1, item.y2) - top) < 0.6,
+  );
+  assert.ok(dotted, "the dotted branch reaches the same bus");
+  const annX = (tick.x1 + tick.x2) / 2;
+  const dotX = (dotted.x1 + dotted.x2) / 2;
+  assert.ok(Math.abs(annX - dotX) > 8, "the two branches are not on top of each other");
+  const trunk = box.items.find(
+    (item) => item.type === "wire" && Math.abs(item.x1 - item.x2) < 0.8 && Math.min(item.y1, item.y2) < 0.5 && Math.abs(Math.max(item.y1, item.y2) - top) < 0.6,
+  );
+  assert.ok(trunk, "a trunk comes down to the bus");
+  const trunkX = (trunk.x1 + trunk.x2) / 2;
+  assert.ok(wireCovers(box, annX, top), "the bus reaches the solid team");
+  assert.ok(wireCovers(box, dotX, top), "the bus reaches the dotted branch");
+  assert.ok(wireCovers(box, trunkX, top), "both sides meet the trunk, with no gap between them");
+});
+
 test("department shades toggle off on the next click, unless one shade is selected", () => {
   const shapes = [
     { id: "s1", type: "shade" },
