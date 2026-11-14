@@ -339,25 +339,38 @@ export function buildOrg(matrix, options = {}) {
   };
 }
 
-/** Solid and dotted walks, matching extractReportingSequence. After the first hop, a two-manager person is followed through the dotted key. */
-function chainReachesCeo(people, startKey, ceoKey, regime) {
+/**
+ * The person, then each manager up the line. The first hop uses `regime`
+ * (the line the card is hanging on). After that a two-manager person is
+ * followed through the dotted key, matching extractReportingSequence.
+ */
+export function reportingChain(people, startKey, regime) {
+  const chain = [];
   const start = people.get(startKey);
-  if (!start) return false;
-  if (startKey === ceoKey) return true;
-  const seen = new Set([startKey]);
-  let current = start;
-  let next = current.dottedKey ? (regime === "dotted" ? current.dottedKey : current.solidKey) : current.solidKey;
+  if (!start) return chain;
+  chain.push(startKey);
+  let next = start.dottedKey ? (regime === "dotted" ? start.dottedKey : start.solidKey) : start.solidKey;
+  const seen = new Set(chain);
   let guard = 0;
   while (next && !seen.has(next) && guard < 10000) {
-    guard += 1;
     const node = people.get(next);
-    if (!node) return false;
+    if (!node) break;
+    chain.push(next);
     seen.add(next);
-    if (next === ceoKey) return true;
-    current = node;
-    next = current.dottedKey ? current.dottedKey : current.solidKey;
+    next = node.dottedKey ? node.dottedKey : node.solidKey;
+    guard += 1;
   }
-  return false;
+  return chain;
+}
+
+function chainReachesCeo(people, startKey, ceoKey, regime) {
+  return reportingChain(people, startKey, regime).includes(ceoKey);
+}
+
+/** True when `managerKey` is above `personKey` on the given line. The person is not their own manager. */
+export function reportsTo(org, personKey, managerKey, regime) {
+  if (!personKey || !managerKey || personKey === managerKey) return false;
+  return reportingChain(org.people, personKey, regime).includes(managerKey);
 }
 
 function computeStats(people, reports) {

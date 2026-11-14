@@ -157,6 +157,9 @@ test("the ribbon exposes slide tools and cost centers", () => {
   assert.match(html, /class="empty-slide"/);
   const css = readFileSync(new URL("../css/app.css", import.meta.url), "utf8");
   assert.match(css, /\.holder[\s\S]*aspect-ratio:\s*960\s*\/\s*540/);
+  assert.match(css, /\.ribbon\s*\{[^}]*display:\s*flex/);
+  assert.match(css, /\.ribbon-scroll\s*\{[^}]*overflow-x:\s*auto/);
+  assert.equal(/#account\s*\{[^}]*position:\s*absolute/.test(css), false);
 });
 
 test("cost-center stamps sit on the card corner and toggle off", () => {
