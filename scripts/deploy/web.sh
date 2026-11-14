@@ -6,6 +6,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 APP_NAME="${1:-myboss}"
 SRC="$ROOT/web"
 
+if git -C "$ROOT" rev-parse --verify origin/master >/dev/null 2>&1; then
+  if ! git -C "$ROOT" merge-base --is-ancestor origin/master HEAD; then
+    echo "Refusing to deploy a commit that does not contain origin/master." >&2
+    echo "That is how the ribbon Log in button and the reload restore left the live app." >&2
+    exit 1
+  fi
+fi
+
 if [ ! -d "$SRC" ]; then
   echo "web/ directory not found" >&2
   exit 1
