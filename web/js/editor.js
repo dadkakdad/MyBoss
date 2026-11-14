@@ -77,6 +77,33 @@ export function scaleShapes(shapes, factor, origin) {
   return next;
 }
 
+/** Pull one side of a box. `edge` is a combination of n, s, e, w. The opposite side stays put. */
+export function resizeShapes(shapes, edge, dx, dy, minimum = { w: 16, h: 24 }) {
+  const minW = minimum.w ?? 16;
+  const minH = minimum.h ?? 24;
+  const side = String(edge || "");
+  for (const shape of shapes) {
+    if (!Number.isFinite(shape.x) || !Number.isFinite(shape.w) || !Number.isFinite(shape.h)) continue;
+    let { x, y, w, h } = shape;
+    if (side.includes("w")) {
+      const right = x + w;
+      x = Math.min(x + dx, right - minW);
+      w = right - x;
+    }
+    if (side.includes("e")) w = Math.max(minW, w + dx);
+    if (side.includes("n")) {
+      const bottom = y + h;
+      y = Math.min(y + dy, bottom - minH);
+      h = bottom - y;
+    }
+    if (side.includes("s")) h = Math.max(minH, h + dy);
+    shape.x = x;
+    shape.y = y;
+    shape.w = w;
+    shape.h = h;
+  }
+}
+
 export function rewriteSlideNumber(text, number) {
   if (typeof text !== "string") return text;
   return text.replace(/slide \d+/gi, `slide ${number}`);

@@ -17,6 +17,7 @@ import {
   placeCardNotes,
   prependCharts,
   removeSlide,
+  resizeShapes,
   scaleShapes,
   selectionBounds,
   showCostCenterStamps,
@@ -119,6 +120,28 @@ test("scale grows a selection away from the anchor", () => {
   assert.equal(shapes[1].weight, 4);
   const bounds = selectionBounds(shapes);
   assert.equal(bounds.w, 80);
+});
+
+test("a department shade stretches from each side and keeps the opposite edge", () => {
+  const shade = { type: "shade", x: 10, y: 20, w: 100, h: 80 };
+  resizeShapes([shade], "e", 40, 0);
+  assert.equal(shade.x, 10);
+  assert.equal(shade.w, 140);
+  resizeShapes([shade], "w", 15, 0);
+  assert.equal(shade.x, 25);
+  assert.equal(shade.w, 125);
+  assert.equal(shade.x + shade.w, 150);
+  resizeShapes([shade], "s", 0, 10);
+  assert.equal(shade.y, 20);
+  assert.equal(shade.h, 90);
+  resizeShapes([shade], "n", 0, 8);
+  assert.equal(shade.y, 28);
+  assert.equal(shade.h, 82);
+  assert.equal(shade.y + shade.h, 110);
+  resizeShapes([shade], "se", 20, -200);
+  assert.equal(shade.w, 145);
+  assert.equal(shade.h, 24);
+  assert.equal(shade.x, 25);
 });
 
 test("the ribbon exposes slide tools and cost centers", () => {
