@@ -1003,8 +1003,12 @@ button.mini {
 }
 #account-files .saved-file-delete { border-left: 1px solid #eee; }
 .copy-panel { width: min(460px, 100%); }
-#copy-sheet-error { color: #8c1515; margin: 0; }
-#copy-sheet-error[hidden] { display: none; }
+#copy-sheet-dialog,
+#rename-sheet-dialog { z-index: 60; }
+#copy-sheet-error,
+#rename-sheet-error { color: #8c1515; margin: 0; }
+#copy-sheet-error[hidden],
+#rename-sheet-error[hidden] { display: none; }
 .sheet-issues { flex: 0 0 auto; max-height: 110px; overflow: auto; padding: 6px 14px; border-top: 1px solid var(--line); font-size: 12px; }
 .sheet-issues p, .sheet-issues ul { margin: 2px 0; }
 .sheet-issues ul { padding-left: 18px; }

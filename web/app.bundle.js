@@ -3194,6 +3194,7 @@ async function deckToPptx(org, slides, fileName) {
  * A "draft" is an array of rows, each row an array of at least COLUMN_LABELS.length cells.
  * A copied tab is a new sheet in the same workbook: same rows, its own name, so another tree
  * can be drawn for a different viewer without changing the tab it came from.
+ * Renaming a tab changes that name in place. The rows stay on the same sheet.
  */
 
 
@@ -3290,10 +3291,10 @@ function checkSheet(matrix) {
 
 const SHEET_NAME_FORBIDDEN = /[:\\/?*[\]]/;
 
-/** "" when `name` can be a new Excel tab. `existingNames` are the tabs already in the workbook. */
-function sheetNameError(name, existingNames = []) {
+/** "" when `name` can be an Excel tab. `existingNames` are the tabs already in the workbook. */
+function sheetNameError(name, existingNames = [], blankMessage = "Enter a name for the new tab.") {
   const text = String(name ?? "").trim();
-  if (!text) return "Enter a name for the new tab.";
+  if (!text) return blankMessage;
   if (text.length > SHEET_NAME_MAX) return `A tab name can be at most ${SHEET_NAME_MAX} characters.`;
   if (SHEET_NAME_FORBIDDEN.test(text)) return "A tab name cannot contain : \\ / ? * [ ].";
   if (/[\u0000-\u001f]/.test(text)) return "A tab name cannot contain a line break.";
@@ -3352,6 +3353,31 @@ function copiedSheet({ sheets, sourceName, requestedName, matrix }) {
   if (error) return { error };
   const rows = matrix != null ? matrix : source.matrix;
   return { sheet: { name, matrix: cloneSheetMatrix(rows) } };
+}
+
+/**
+ * The new name for an existing tab. The same text, once trimmed, is `unchanged`.
+ * A case-only change is allowed. Other tabs' names stay taken. The list is not modified.
+ */
+function renamedSheet({ sheets, sourceName, requestedName }) {
+  const list = Array.isArray(sheets) ? sheets : [];
+  const source = list.find((sheet) => sheet.name === sourceName);
+  if (!source) return { error: "Choose a tab to rename." };
+  const name = String(requestedName ?? "").trim();
+  if (name === source.name) return { unchanged: true, name };
+  const others = list.filter((sheet) => sheet.name !== source.name).map((sheet) => sheet.name);
+  const error = sheetNameError(name, others, "Enter a name for the tab.");
+  if (error) return { error };
+  return { from: source.name, name };
+}
+
+/**
+ * A slide's tab label after `from` is renamed to `to`.
+ * Unlabeled slides follow only when they were drawn from that tab.
+ */
+function slideSheetNameAfterRename(slideSheetName, from, to, claimUnlabeled = false) {
+  if (slideSheetName === from || (claimUnlabeled && !slideSheetName)) return to;
+  return slideSheetName;
 }
 
 /** The copy sits just after the tab it came from. The original list is left as it was. */
@@ -5478,12 +5504,92 @@ function confirmCopySheet(event) {
     .catch((error) => toast(error.message || "Could not save."));
 }
 
+function showRenameError(message) {
+  const error = $("rename-sheet-error");
+  error.hidden = !message;
+  error.textContent = message || "";
+  $("rename-sheet-name").setAttribute("aria-invalid", message ? "true" : "false");
+}
+
+function closeRenameSheetDialog() {
+  $("rename-sheet-dialog").hidden = true;
+  document.body.classList.remove("rename-open");
+}
+
+/** Ask for a new name for the tab open in Edit data. The rows stay; only the name changes. */
+function openRenameSheetDialog() {
+  if ($("sheet-dialog").hidden) return;
+  const source = sheetByName(sheetEdit.sheetName);
+  if (!source) {
+    toast("Import a sheet first.");
+    return;
+  }
+  $("rename-sheet-name").value = source.name;
+  $("rename-sheet-note").textContent = sheetEdit.dirty
+    ? `Renames “${source.name}”. Slides drawn from it use the new name. Row edits stay here until you Apply.`
+    : `Renames “${source.name}”. Slides drawn from it use the new name. The rows stay as they are.`;
+  showRenameError("");
+  $("rename-sheet-dialog").hidden = false;
+  document.body.classList.add("rename-open");
+  $("rename-sheet-name").focus();
+  $("rename-sheet-name").select();
+}
+
+function confirmRenameSheet(event) {
+  event.preventDefault();
+  const plan = renamedSheet({
+    sheets: state.workbookSheets,
+    sourceName: sheetEdit.sheetName,
+    requestedName: $("rename-sheet-name").value,
+  });
+  if (plan.error) {
+    showRenameError(plan.error);
+    $("rename-sheet-name").focus();
+    return;
+  }
+  if (plan.unchanged) {
+    closeRenameSheetDialog();
+    return;
+  }
+  const sheet = sheetByName(plan.from);
+  if (!sheet) {
+    showRenameError("Choose a tab to rename.");
+    return;
+  }
+  const claimUnlabeled = state.sheetName === plan.from;
+  sheet.name = plan.name;
+  for (const slide of state.slides || []) {
+    slide.sheetName = slideSheetNameAfterRename(slide.sheetName, plan.from, plan.name, claimUnlabeled);
+  }
+  if (claimUnlabeled) state.sheetName = plan.name;
+  sheetEdit.sheetName = plan.name;
+  $("sheet-sub").textContent = `${state.fileName || "Workbook"} · ${plan.name}`;
+  closeRenameSheetDialog();
+  fillSheetPickers();
+  if (claimUnlabeled) showImportProblem();
+  render();
+  toast(`Renamed “${plan.from}” to “${plan.name}”.`);
+  rewriteFileBytes()
+    .then(() => enqueueSave(() => saveWork({ file: true, deck: true })))
+    .catch((error) => toast(error.message || "Could not save."));
+}
+
 function bindSheetEditor() {
   $("edit-data").addEventListener("click", openSheetEditor);
   $("sheet-cancel").addEventListener("click", closeSheetEditor);
   $("sheet-apply").addEventListener("click", applySheetEdits);
   $("sheet-download").addEventListener("click", downloadSheetXlsx);
   $("sheet-copy").addEventListener("click", openCopySheetDialog);
+  $("sheet-rename").addEventListener("click", openRenameSheetDialog);
+  $("rename-sheet-form").addEventListener("submit", confirmRenameSheet);
+  $("rename-sheet-cancel").addEventListener("click", closeRenameSheetDialog);
+  $("rename-sheet-close").addEventListener("click", closeRenameSheetDialog);
+  $("rename-sheet-name").addEventListener("input", () => showRenameError(""));
+  $("rename-sheet-dialog").addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.stopPropagation();
+    closeRenameSheetDialog();
+  });
   $("copy-sheet-form").addEventListener("submit", confirmCopySheet);
   $("copy-sheet-cancel").addEventListener("click", closeCopySheetDialog);
   $("copy-sheet-close").addEventListener("click", closeCopySheetDialog);
@@ -5520,7 +5626,7 @@ function bindSheetEditor() {
 }
 
 function onKey(event) {
-  if (document.body.classList.contains("sheet-open") || document.body.classList.contains("account-open") || document.body.classList.contains("copy-open")) return;
+  if (document.body.classList.contains("sheet-open") || document.body.classList.contains("account-open") || document.body.classList.contains("copy-open") || document.body.classList.contains("rename-open")) return;
   const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName);
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
     event.preventDefault();
