@@ -10,7 +10,9 @@ import {
   isFlagOn,
   nextSheetCopyName,
   problemRows,
+  renamedSheet,
   sheetNameError,
+  slideSheetNameAfterRename,
   trimTrailingBlankRows,
   vacancyDraftRow,
   withSheetCopy,
@@ -114,6 +116,39 @@ test("a new tab name has to be unique and legal for Excel", () => {
   assert.match(sheetNameError("'Board", []), /apostrophe/);
   assert.match(sheetNameError("Board'", []), /apostrophe/);
   assert.equal(sheetNameError("O'Brien", []), "");
+});
+
+test("renaming a tab keeps its rows and follows Excel's name rules", () => {
+  const sheets = [
+    { name: "Advanced", matrix: [header, ["Ada", "Lovelace"]] },
+    { name: "Board", matrix: [] },
+  ];
+  const same = renamedSheet({ sheets, sourceName: "Advanced", requestedName: "  Advanced  " });
+  assert.equal(same.unchanged, true);
+  assert.equal(same.name, "Advanced");
+  assert.equal(sheets[0].name, "Advanced", "deciding the name does not rewrite the workbook");
+  assert.equal(sheets[0].matrix[1][0], "Ada");
+
+  const renamed = renamedSheet({ sheets, sourceName: "Advanced", requestedName: " Leadership " });
+  assert.equal(renamed.error, undefined);
+  assert.equal(renamed.from, "Advanced");
+  assert.equal(renamed.name, "Leadership");
+  assert.equal(sheets[0].name, "Advanced");
+
+  const cased = renamedSheet({ sheets, sourceName: "Advanced", requestedName: "advanced" });
+  assert.equal(cased.error, undefined);
+  assert.equal(cased.name, "advanced");
+
+  assert.match(renamedSheet({ sheets, sourceName: "Advanced", requestedName: "board" }).error, /already exists/);
+  assert.equal(renamedSheet({ sheets, sourceName: "Advanced", requestedName: "  " }).error, "Enter a name for the tab.");
+  assert.equal(renamedSheet({ sheets, sourceName: "Missing", requestedName: "Team" }).error, "Choose a tab to rename.");
+  assert.match(renamedSheet({ sheets, sourceName: "Advanced", requestedName: "Team/Board" }).error, /cannot contain/);
+  assert.match(renamedSheet({ sheets, sourceName: "Advanced", requestedName: "A".repeat(32) }).error, /31 characters/);
+
+  assert.equal(slideSheetNameAfterRename("Advanced", "Advanced", "Leadership", false), "Leadership");
+  assert.equal(slideSheetNameAfterRename("Board", "Advanced", "Leadership", true), "Board");
+  assert.equal(slideSheetNameAfterRename("", "Advanced", "Leadership", true), "Leadership");
+  assert.equal(slideSheetNameAfterRename(undefined, "Advanced", "Leadership", false), undefined);
 });
 
 test("the suggested copy name is Name (2), then the next free number, and it always fits", () => {
