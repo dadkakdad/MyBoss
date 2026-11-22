@@ -9,11 +9,6 @@ on:
       - '.github/workflows/deploy-web.yml'
       - 'scripts/deploy/web.sh'
   workflow_dispatch:
-    inputs:
-      branch_name:
-        description: 'Git branch to deploy (default master)'
-        required: false
-        default: 'master'
 
 jobs:
   deploy:
@@ -22,7 +17,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.branch_name || 'master' }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Refuse a commit that is not based on master
+        run: |
+          set -euo pipefail
+          git fetch origin master
+          if ! git merge-base --is-ancestor origin/master HEAD; then
+            echo "Refusing to deploy a commit that does not contain origin/master."
+            echo "That is how the ribbon Log in button and the reload restore left the live app."
+            exit 1
+          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4
