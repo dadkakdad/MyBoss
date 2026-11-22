@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MyBoss — org charts in the browser</title>
-  <link rel="stylesheet" href="css/app.css?v=c1c04bbd">
+  <link rel="stylesheet" href="css/app.css?v=7d66fece">
 </head>
 <body data-stage="empty">
   <header class="ribbon">
@@ -50,6 +50,15 @@
           <label><span>Select category</span><select id="category"></select></label>
           <label><span>Select employee</span><select id="employee"></select></label>
         </div>
+        <button class="large" id="copy-sheet" type="button" title="Add a tab with the same rows, then draw another tree for a different viewer">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <rect x="4" y="7" width="16" height="18" rx="1.4" fill="#ffffff" stroke="#001b58" stroke-width="1.6"/>
+            <path d="M4 12h16" stroke="#001b58" stroke-width="1.6"/>
+            <rect x="12" y="11" width="16" height="16" rx="1.4" fill="#fffaf4" stroke="#c45500" stroke-width="1.6"/>
+            <path d="M12 16h16M17 16v11M22 16v11" stroke="#e0a15a" stroke-width="1"/>
+          </svg>
+          <span>Copy tab</span>
+        </button>
         <div class="split">
           <button class="large" id="create-main" type="button"><img src="icons/tree_clever0.png" alt=""><span>Create org chart</span></button>
           <div class="menu" id="menu-create">
@@ -245,6 +254,7 @@
       <footer class="sheet-foot">
         <span class="sheet-hint">Key / Intern / Hide / Newcomer: tick the box. Vacancy: surname starts with <b>TBH_</b>. Newcomer date: 16.11.2026 shows as 16.11 on the badge. Enter moves down.</span>
         <span class="spacer"></span>
+        <button type="button" id="sheet-copy" title="Add a tab with these rows, so you can draw another tree for a different viewer">Copy tab</button>
         <button type="button" id="sheet-cancel">Cancel</button>
         <button type="button" id="sheet-apply" class="primary">Apply to chart</button>
       </footer>
@@ -278,9 +288,29 @@
     <button type="button" id="context-add-note" role="menuitem">Add note</button>
     <button type="button" id="context-delete-note" role="menuitem" hidden>Delete note</button>
   </div>
+  <div class="sheet-dialog" id="copy-sheet-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="copy-sheet-title">
+    <div class="sheet-panel account-panel copy-panel">
+      <header class="sheet-head">
+        <h2 id="copy-sheet-title">Copy tab</h2>
+        <span class="spacer"></span>
+        <button type="button" id="copy-sheet-close">Close</button>
+      </header>
+      <form id="copy-sheet-form">
+        <p class="account-note" id="copy-sheet-note"></p>
+        <label>New tab name
+          <input id="copy-sheet-name" type="text" maxlength="31" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="account-note" id="copy-sheet-error" hidden></p>
+        <div class="account-actions">
+          <button type="submit" class="primary">Add tab</button>
+          <button type="button" id="copy-sheet-cancel">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
   <div class="toast" id="toast" role="status"></div>
 
   <script type="application/json" id="myboss-assets">{"xlsx":"node_modules/xlsx/dist/xlsx.full.min.js?v=7f749f81","pptx":"node_modules/pptxgenjs/dist/pptxgen.bundle.js?v=8b9b814f"}</script>
-  <script src="app.bundle.js?v=2bcb305b"></script>
+  <script src="app.bundle.js?v=212cba2a"></script>
 </body>
 </html>

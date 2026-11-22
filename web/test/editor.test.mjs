@@ -147,6 +147,9 @@ test("a department shade stretches from each side and keeps the opposite edge", 
 test("the ribbon exposes slide tools and cost centers", () => {
   const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
   assert.match(html, /id="cost-centers"/);
+  assert.match(html, /id="copy-sheet"/);
+  assert.match(html, /id="sheet-copy"/);
+  assert.match(html, /id="copy-sheet-name"/);
   assert.match(html, /id="tool-select"/);
   assert.match(html, /id="tool-scale"/);
   assert.match(html, /id="filmstrip"/);

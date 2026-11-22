@@ -770,7 +770,14 @@ body[data-tool="scale"] .shape { cursor: nwse-resize; }
   border: 0;
 }
 .filmstrip b { display: block; font-size: 12px; }
-.filmstrip small { display: block; color: var(--muted); }
+.filmstrip small {
+  display: block;
+  max-width: 168px;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .filmstrip .slide-actions {
   display: flex;
   flex-direction: column;
@@ -995,6 +1002,9 @@ button.mini {
   background: #fff;
 }
 #account-files .saved-file-delete { border-left: 1px solid #eee; }
+.copy-panel { width: min(460px, 100%); }
+#copy-sheet-error { color: #8c1515; margin: 0; }
+#copy-sheet-error[hidden] { display: none; }
 .sheet-issues { flex: 0 0 auto; max-height: 110px; overflow: auto; padding: 6px 14px; border-top: 1px solid var(--line); font-size: 12px; }
 .sheet-issues p, .sheet-issues ul { margin: 2px 0; }
 .sheet-issues ul { padding-left: 18px; }
