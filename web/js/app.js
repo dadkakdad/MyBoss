@@ -278,7 +278,7 @@ function fillSheetPickers() {
 }
 
 /** `checked`: autoImport just ran the checks on every tab, so they are not run again. */
-function importSheet(name = state.sheetName, { checked = false } = {}) {
+function importSheet(name = state.sheetName, { checked = false, quiet = false } = {}) {
   const sheet = state.workbookSheets?.find((item) => item.name === name);
   if (!sheet) {
     toast("Choose an Excel file first.");
@@ -298,13 +298,13 @@ function importSheet(name = state.sheetName, { checked = false } = {}) {
     state.imported = false;
     document.body.dataset.stage = "file";
     render();
-    if (!state.hydrating) toast("This sheet has problems. The chart stays blocked until they are fixed.");
+    if (!state.hydrating && !quiet) toast("This sheet has problems. The chart stays blocked until they are fixed.");
     return;
   }
   state.imported = true;
   document.body.dataset.stage = "ready";
   render();
-  if (state.hydrating) return;
+  if (state.hydrating || quiet) return;
   const size = state.org.companySize === 1 ? "1 person" : `${state.org.companySize} people`;
   toast(`Imported ${state.sheetName}. CEO ${personFullName(state.org.people.get(state.org.ceo))}, ${size}.`);
 }
@@ -1946,9 +1946,9 @@ function validateSheet() {
   } else {
     const ceo = org.people.get(org.ceo);
     const notes = org.issues.map((issue) => `<li>${escapeHtml(issue.message)}</li>`).join("");
-    box.innerHTML = `<p class="ok">${org.companySize} people${ceo ? ` · CEO ${escapeHtml(personFullName(ceo))}` : ""}. Ready to apply.</p>${notes ? `<ul>${notes}</ul>` : ""}`;
+    box.innerHTML = `<p class="ok">${org.companySize} people${ceo ? ` · CEO ${escapeHtml(personFullName(ceo))}` : ""}. Ready to save.</p>${notes ? `<ul>${notes}</ul>` : ""}`;
   }
-  $("sheet-apply").disabled = org.fatal;
+  $("sheet-save").disabled = org.fatal;
 }
 
 function scheduleSheetValidation() {
@@ -2007,7 +2007,7 @@ function onSheetKeydown(event) {
   }
   if (event.key === "Escape") {
     event.stopPropagation();
-    if (sheetEdit.dirty) toast("You have unsaved edits. Use Apply or Cancel.");
+    if (sheetEdit.dirty) toast("You have unsaved edits. Use Save or Cancel.");
     else closeSheetEditor();
     return;
   }
@@ -2020,32 +2020,36 @@ function onSheetKeydown(event) {
   tr?.querySelector(`input[data-c="${c}"]`)?.focus();
 }
 
-function applySheetEdits() {
+/** Write a valid sheet back into the workbook, refresh the imported org, and store the file with the slides. */
+async function saveSheetEdits() {
   validateSheet();
-  if (sheetEdit.org.fatal) return;
+  if (!sheetEdit.org || sheetEdit.org.fatal) return;
   const sheet = sheetByName(sheetEdit.sheetName);
   if (!sheet) return;
   sheet.matrix = trimTrailingBlankRows(sheetEdit.draft, sheetEdit.firstRow);
   const sameSheet = sheet.name === state.sheetName;
   const keep = { category: state.category, personKey: state.personKey };
+  sheetEdit.dirty = false;
   closeSheetEditor();
-  importSheet(sheet.name);
-  if (state.org && !state.org.fatal) {
-    if (sameSheet) {
-      state.category = keep.category;
-      state.personKey = keep.personKey;
-      fillPeople();
-    }
+  importSheet(sheet.name, { quiet: true });
+  if (state.org && !state.org.fatal && sameSheet) {
+    state.category = keep.category;
+    state.personKey = keep.personKey;
+    fillPeople();
     render();
-    const size = state.org.companySize === 1 ? "1 person" : `${state.org.companySize} people`;
-    const note = state.slides.some((slide) => slide.shapes.some((shape) => shape.type === "card"))
-      ? " Existing slides are unchanged: click Create org chart for new ones."
-      : "";
-    toast(`Data applied, ${size}.${note}`);
   }
-  rewriteFileBytes()
-    .then(() => enqueueSave(() => saveWork({ file: true, deck: true })))
-    .catch((error) => toast(error.message || "Could not save."));
+  const size = state.org && !state.org.fatal
+    ? state.org.companySize === 1
+      ? "1 person"
+      : `${state.org.companySize} people`
+    : "";
+  try {
+    await rewriteFileBytes();
+    await enqueueSave(() => saveWork({ file: true, deck: true }));
+    toast(size ? `Saved, ${size}.` : "Saved.");
+  } catch (error) {
+    toast(error.message || "Could not save.");
+  }
 }
 
 async function downloadSheetXlsx() {
@@ -2160,7 +2164,7 @@ function openRenameSheetDialog() {
   }
   $("rename-sheet-name").value = source.name;
   $("rename-sheet-note").textContent = sheetEdit.dirty
-    ? `Renames “${source.name}”. Slides drawn from it use the new name. Row edits stay here until you Apply.`
+    ? `Renames “${source.name}”. Slides drawn from it use the new name. Row edits stay here until you Save.`
     : `Renames “${source.name}”. Slides drawn from it use the new name. The rows stay as they are.`;
   showRenameError("");
   $("rename-sheet-dialog").hidden = false;
@@ -2211,7 +2215,7 @@ function confirmRenameSheet(event) {
 function bindSheetEditor() {
   $("edit-data").addEventListener("click", openSheetEditor);
   $("sheet-cancel").addEventListener("click", closeSheetEditor);
-  $("sheet-apply").addEventListener("click", applySheetEdits);
+  $("sheet-save").addEventListener("click", saveSheetEdits);
   $("sheet-download").addEventListener("click", downloadSheetXlsx);
   $("sheet-copy").addEventListener("click", openCopySheetDialog);
   $("sheet-rename").addEventListener("click", openRenameSheetDialog);
@@ -2389,7 +2393,7 @@ function bind() {
     if (!sheet) return;
     if (sheet.problem) {
       openSheetEditor(sheet.name);
-      toast(`${sheet.name}: ${sheet.problem} Fix it here, then Apply.`);
+      toast(`${sheet.name}: ${sheet.problem} Fix it here, then Save.`);
       return;
     }
     importSheet(sheet.name);
