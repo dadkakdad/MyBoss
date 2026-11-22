@@ -147,10 +147,14 @@ test("a department shade stretches from each side and keeps the opposite edge", 
 test("the ribbon exposes slide tools and cost centers", () => {
   const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
   assert.match(html, /id="cost-centers"/);
+  assert.match(html, /id="sheet-copy"/);
+  assert.match(html, /id="copy-sheet-name"/);
   assert.match(html, /id="tool-select"/);
   assert.match(html, /id="tool-scale"/);
   assert.match(html, /id="filmstrip"/);
   const ribbon = html.slice(html.indexOf('<header class="ribbon">'), html.indexOf("</header>"));
+  assert.equal(ribbon.includes("Copy tab"), false);
+  assert.equal(ribbon.includes('id="sheet-copy"'), false);
   assert.match(ribbon, /id="account"[^>]*>Log in</);
   const status = html.slice(html.indexOf('<div class="status">'), html.indexOf('<div class="sheet-dialog"'));
   assert.equal(status.includes('id="account"'), false);

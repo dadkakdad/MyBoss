@@ -4,12 +4,16 @@ import { buildOrg } from "../js/org.js";
 import {
   blankDraftRow,
   cellText,
+  copiedSheet,
   draftFromMatrix,
   flagValue,
   isFlagOn,
+  nextSheetCopyName,
   problemRows,
+  sheetNameError,
   trimTrailingBlankRows,
   vacancyDraftRow,
+  withSheetCopy,
 } from "../js/sheet.js";
 
 const header = ["s", "n", "j", "d", "ms", "mn", "ds", "dn", "l", "t", "o", "i", "c"];
@@ -95,4 +99,80 @@ test("a tab is read with or without a title row, whichever passes", async () => 
   const broken = checkSheet([titles, ["", "Lovelace", "CEO", "Office", "", "", "", "", "", "", "", "", ""]]);
   assert.equal(broken.hasTitles, true);
   assert.match(broken.problem, /missing a surname/);
+});
+
+test("a new tab name has to be unique and legal for Excel", () => {
+  assert.equal(sheetNameError("", ["Org"]), "Enter a name for the new tab.");
+  assert.equal(sheetNameError("   ", []), "Enter a name for the new tab.");
+  assert.equal(sheetNameError("Board", ["Org"]), "");
+  assert.match(sheetNameError("org", ["Org"]), /already exists/);
+  assert.match(sheetNameError(`${"A".repeat(32)}`, []), /31 characters/);
+  assert.equal(sheetNameError("A".repeat(31), []), "");
+  assert.match(sheetNameError("Team/Board", []), /cannot contain/);
+  assert.match(sheetNameError("Team?Board", []), /cannot contain/);
+  assert.match(sheetNameError("Board\n2", []), /line break/);
+  assert.match(sheetNameError("'Board", []), /apostrophe/);
+  assert.match(sheetNameError("Board'", []), /apostrophe/);
+  assert.equal(sheetNameError("O'Brien", []), "");
+});
+
+test("the suggested copy name is Name (2), then the next free number, and it always fits", () => {
+  assert.equal(nextSheetCopyName(["Advanced"], "Advanced"), "Advanced (2)");
+  assert.equal(nextSheetCopyName(["Advanced", "Advanced (2)"], "Advanced"), "Advanced (3)");
+  assert.equal(nextSheetCopyName(["Advanced", "advanced (2)"], "Advanced"), "Advanced (3)");
+  assert.equal(nextSheetCopyName(["Other"], "Team/Board"), "Team Board (2)");
+  assert.equal(nextSheetCopyName(["Team Board (2)"], "Team/Board"), "Team Board (3)");
+  assert.equal(nextSheetCopyName([], "???"), "Sheet (2)");
+  const long = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const suggested = nextSheetCopyName([long], long);
+  assert.equal(suggested.length <= 31, true);
+  assert.equal(sheetNameError(suggested, [long]), "");
+  assert.match(suggested, /\(2\)$/);
+});
+
+test("copying a tab keeps the same people on independent rows", () => {
+  const hired = new Date(Date.UTC(2026, 10, 16));
+  const ada = ["Ada", "Lovelace", "CEO", "Office", "", "", "", "", "Moscow", hired];
+  const grace = ["Grace", "Hopper", "Eng", "Lab", "Ada", "Lovelace"];
+  const sheets = [{ name: "Advanced", matrix: [header, ada, grace, blankDraftRow()] }];
+  const draft = [header, ada, grace, ["Bob", "Ross", "Art", "Studio", "Ada", "Lovelace"]];
+  const copy = copiedSheet({ sheets, sourceName: "Advanced", requestedName: "Board", matrix: draft });
+  assert.equal(copy.error, undefined);
+  assert.equal(copy.sheet.name, "Board");
+  assert.equal(copy.sheet.matrix.length, 4, "the editor draft is copied, including the extra person");
+  assert.equal(sheets[0].matrix.length, 4, "the source list still has its own rows");
+  assert.notEqual(copy.sheet.matrix[1], ada);
+  assert.notEqual(copy.sheet.matrix[1][9], hired);
+  assert.equal(copy.sheet.matrix[1][9].getTime(), hired.getTime());
+  const org = buildOrg(copy.sheet.matrix);
+  assert.equal(org.fatal, false);
+  assert.equal(org.companySize, 3);
+  copy.sheet.matrix[1][0] = "Changed";
+  assert.equal(ada[0], "Ada");
+  assert.equal(sheets[0].matrix[1][0], "Ada");
+
+  const stored = copiedSheet({ sheets, sourceName: "Advanced", requestedName: "Team" });
+  assert.equal(stored.sheet.matrix.length, 3, "blank rows at the end of the stored tab are dropped");
+  assert.equal(buildOrg(stored.sheet.matrix).companySize, 2);
+
+  assert.equal(copiedSheet({ sheets, sourceName: "Missing", requestedName: "Board" }).error, "Choose a tab to copy.");
+  assert.match(copiedSheet({ sheets, sourceName: "Advanced", requestedName: "advanced" }).error, /already exists/);
+  assert.match(copiedSheet({ sheets, sourceName: "Advanced", requestedName: "  " }).error, /Enter a name/);
+
+  const ordered = withSheetCopy(sheets, "Advanced", copy.sheet);
+  assert.deepEqual(ordered.map((item) => item.name), ["Advanced", "Board"]);
+  assert.deepEqual(sheets.map((item) => item.name), ["Advanced"]);
+  assert.deepEqual(withSheetCopy([{ name: "A" }, { name: "B" }], "A", { name: "A (2)" }).map((item) => item.name), ["A", "A (2)", "B"]);
+  assert.deepEqual(withSheetCopy([], "Missing", { name: "New" }).map((item) => item.name), ["New"]);
+});
+
+test("a copied tab name can be stored in an xlsx workbook", async () => {
+  const XLSX = await import("xlsx");
+  const name = nextSheetCopyName(["Advanced"], "Advanced");
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([header, ["Ada", "Lovelace", "CEO", "Office"]]), "Advanced");
+  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([header, ["Ada", "Lovelace", "CEO", "Office"]]), name);
+  const out = XLSX.write(book, { bookType: "xlsx", type: "array" });
+  const again = XLSX.read(out, { type: "array" });
+  assert.deepEqual(again.SheetNames, ["Advanced", name]);
 });

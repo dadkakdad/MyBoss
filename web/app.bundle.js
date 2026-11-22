@@ -3192,8 +3192,13 @@ async function deckToPptx(org, slides, fileName) {
 /**
  * Helpers for the in-browser spreadsheet editor. Pure functions, no DOM.
  * A "draft" is an array of rows, each row an array of at least COLUMN_LABELS.length cells.
+ * A copied tab is a new sheet in the same workbook: same rows, its own name, so another tree
+ * can be drawn for a different viewer without changing the tab it came from.
  */
 
+
+/** Excel's limit for a sheet name. */
+const SHEET_NAME_MAX = 31;
 
 /** Text shown in an input for a cell. Dates become yyyy-mm-dd. */
 function cellText(value) {
@@ -3281,6 +3286,80 @@ function checkSheet(matrix) {
   if (!asData.fatal) return { org: asData, hasTitles: false, problem: "" };
   const titled = buildOrg(matrix, { hasTitles: true });
   return { org: titled, hasTitles: true, problem: sheetProblem(titled) };
+}
+
+const SHEET_NAME_FORBIDDEN = /[:\\/?*[\]]/;
+
+/** "" when `name` can be a new Excel tab. `existingNames` are the tabs already in the workbook. */
+function sheetNameError(name, existingNames = []) {
+  const text = String(name ?? "").trim();
+  if (!text) return "Enter a name for the new tab.";
+  if (text.length > SHEET_NAME_MAX) return `A tab name can be at most ${SHEET_NAME_MAX} characters.`;
+  if (SHEET_NAME_FORBIDDEN.test(text)) return "A tab name cannot contain : \\ / ? * [ ].";
+  if (/[\u0000-\u001f]/.test(text)) return "A tab name cannot contain a line break.";
+  if (text.startsWith("'") || text.endsWith("'")) return "A tab name cannot start or end with an apostrophe.";
+  const taken = (existingNames || []).some((item) => String(item).toLowerCase() === text.toLowerCase());
+  if (taken) return "A tab with that name already exists.";
+  return "";
+}
+
+/** A legal base for "Name (2)". Characters Excel rejects become spaces. */
+function sheetNameBase(sourceName) {
+  const cleaned = String(sourceName || "")
+    .replace(/[:\\/?*[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^'+|'+$/g, "")
+    .trim();
+  return cleaned || "Sheet";
+}
+
+/** Next free "Name (2)", "Name (3)", … that fits in Excel's 31 characters. */
+function nextSheetCopyName(existingNames, sourceName) {
+  const names = existingNames || [];
+  const base = sheetNameBase(sourceName);
+  for (let n = 2; n < 1000; n += 1) {
+    const suffix = ` (${n})`;
+    let head = base;
+    if (head.length + suffix.length > SHEET_NAME_MAX) head = head.slice(0, SHEET_NAME_MAX - suffix.length).trimEnd();
+    if (!head) head = "Sheet";
+    const candidate = `${head}${suffix}`;
+    if (!sheetNameError(candidate, names)) return candidate;
+  }
+  return "Sheet (2)";
+}
+
+function cloneCell(value) {
+  return value instanceof Date ? new Date(value.getTime()) : value;
+}
+
+/** Independent rows: editing the copy does not change the tab it came from. Dates stay dates. */
+function cloneSheetMatrix(matrix) {
+  const draft = draftFromMatrix(matrix).map((row) => row.map(cloneCell));
+  return trimTrailingBlankRows(draft, 0);
+}
+
+/**
+ * The tab to add. `matrix`, when given, is the rows to copy (the editor draft); otherwise the
+ * stored rows of `sourceName`. The source list is not modified.
+ */
+function copiedSheet({ sheets, sourceName, requestedName, matrix }) {
+  const list = Array.isArray(sheets) ? sheets : [];
+  const source = list.find((sheet) => sheet.name === sourceName);
+  if (!source && matrix == null) return { error: "Choose a tab to copy." };
+  const name = String(requestedName ?? "").trim();
+  const error = sheetNameError(name, list.map((sheet) => sheet.name));
+  if (error) return { error };
+  const rows = matrix != null ? matrix : source.matrix;
+  return { sheet: { name, matrix: cloneSheetMatrix(rows) } };
+}
+
+/** The copy sits just after the tab it came from. The original list is left as it was. */
+function withSheetCopy(sheets, sourceName, sheet) {
+  const list = Array.isArray(sheets) ? sheets.slice() : [];
+  const index = list.findIndex((item) => item.name === sourceName);
+  list.splice(index >= 0 ? index + 1 : list.length, 0, sheet);
+  return list;
 }
 
 // ---- js/persist.js ----
@@ -3621,7 +3700,10 @@ function createDeck(mode) {
   const fresh = buildSlides(state.org, key, mode);
   for (const slide of fresh) placeCardNotes(slide.shapes, records);
   const deck = { id: nid("deck"), mode, rootKey: key };
-  for (const slide of fresh) slide.deck = deck;
+  for (const slide of fresh) {
+    slide.deck = deck;
+    rememberSheet(slide);
+  }
   state.slides = prependCharts(state.slides, fresh);
   state.active = 0;
   state.selection.clear();
@@ -3634,6 +3716,11 @@ function createDeck(mode) {
   const fit = mode === "infinity" ? "" : hidden ? ` ${hidden} team${hidden === 1 ? "" : "s"} folded to fit.` : " Chart fits on one slide.";
   toast(`${placed}${fit}`);
   scheduleSave();
+}
+
+/** Slides drawn from a tab keep its name, so trees for different viewers stay distinguishable. */
+function rememberSheet(slide) {
+  if (slide && !slide.sheetName && state.sheetName) slide.sheetName = state.sheetName;
 }
 
 function hiddenTeams(slide) {
@@ -3679,6 +3766,7 @@ function placeCard(head) {
     if (hiddenList) slide.shapes.push({ ...hiddenList, id: nid("hiddenlist") });
   }
   freezeCards(state.org, slide.shapes);
+  rememberSheet(slide);
   if (!slide.rootKey) {
     slide.rootKey = key;
     slide.rootLabel = displayName(state.org.people.get(key));
@@ -3738,6 +3826,7 @@ function placeBranch(mode) {
     slide.shapes.push(shape);
   }
   freezeCards(state.org, slide.shapes);
+  rememberSheet(slide);
   stickNotes(slide.shapes);
   render();
 }
@@ -3859,7 +3948,9 @@ function addDecoration(kind) {
   const slide = current();
   if (kind === "slide") {
     const at = state.active + 1;
-    state.slides.splice(at, 0, blankSlide());
+    const added = blankSlide();
+    rememberSheet(added);
+    state.slides.splice(at, 0, added);
     offsetSlideTargets(state.slides, 1, at);
     state.active = at;
     render();
@@ -4806,9 +4897,11 @@ function onPointerUp(event) {
 
 function slideCaption(slide, index) {
   const cards = slide.shapes.filter((shape) => shape.type === "card").length;
+  const who = slide.rootLabel || (cards ? `${cards} cards` : "Empty");
+  const severalTabs = (state.workbookSheets?.length || 0) > 1;
   return {
     title: slide.title || `Slide ${index + 1}`,
-    detail: slide.rootLabel || (cards ? `${cards} cards` : "Empty"),
+    detail: severalTabs && slide.sheetName ? `${who} · ${slide.sheetName}` : who,
   };
 }
 
@@ -4879,7 +4972,7 @@ function renderFilmstrip() {
       });
     } else {
       open.innerHTML = `<b>${escapeHtml(caption.title)}</b><small>${escapeHtml(caption.detail)}</small>`;
-      open.title = "Double-click to rename";
+      open.title = `${caption.detail}. Double-click to rename.`;
       open.addEventListener("click", () => {
         state.active = index;
         state.selection.clear();
@@ -5308,11 +5401,98 @@ async function downloadSheetXlsx() {
   XLSX.writeFile(workbook, `${base}-edited.xlsx`);
 }
 
+const sheetCopy = { sourceName: "", matrix: null };
+
+function showCopyError(message) {
+  const error = $("copy-sheet-error");
+  error.hidden = !message;
+  error.textContent = message || "";
+  $("copy-sheet-name").setAttribute("aria-invalid", message ? "true" : "false");
+}
+
+function closeCopySheetDialog() {
+  $("copy-sheet-dialog").hidden = true;
+  document.body.classList.remove("copy-open");
+  sheetCopy.sourceName = "";
+  sheetCopy.matrix = null;
+}
+
+/** Open the name dialog for a new tab. Only Edit data can start a copy, and the rows on screen are what gets copied. */
+function openCopySheetDialog() {
+  if ($("sheet-dialog").hidden) return;
+  const source = sheetByName(sheetEdit.sheetName);
+  if (!source) {
+    toast("Import a sheet first.");
+    return;
+  }
+  sheetCopy.sourceName = source.name;
+  sheetCopy.matrix = trimTrailingBlankRows(sheetEdit.draft, sheetEdit.firstRow);
+  const names = (state.workbookSheets || []).map((item) => item.name);
+  $("copy-sheet-name").value = nextSheetCopyName(names, source.name);
+  $("copy-sheet-note").textContent = sheetEdit.dirty
+    ? `Copies the rows in the editor into a new tab. “${source.name}” keeps the rows it had before these edits. Slides already drawn stay. Name the tab after the viewer.`
+    : `Copies the rows of “${source.name}” into a new tab of this workbook. Slides already drawn stay. Name the tab after the viewer, then create an org chart from it.`;
+  showCopyError("");
+  $("copy-sheet-dialog").hidden = false;
+  document.body.classList.add("copy-open");
+  $("copy-sheet-name").focus();
+  $("copy-sheet-name").select();
+}
+
+function confirmCopySheet(event) {
+  event.preventDefault();
+  const result = copiedSheet({
+    sheets: state.workbookSheets,
+    sourceName: sheetCopy.sourceName,
+    requestedName: $("copy-sheet-name").value,
+    matrix: sheetCopy.matrix,
+  });
+  if (result.error) {
+    showCopyError(result.error);
+    $("copy-sheet-name").focus();
+    return;
+  }
+  const copiedFrom = sheetCopy.sourceName;
+  state.workbookSheets = withSheetCopy(state.workbookSheets, copiedFrom, result.sheet);
+  const addedName = result.sheet.name;
+  if (copiedFrom && copiedFrom === state.sheetName) {
+    for (const slide of state.slides) {
+      if (!slide.sheetName) slide.sheetName = copiedFrom;
+    }
+  }
+  closeCopySheetDialog();
+  checkSheets();
+  const added = sheetByName(addedName);
+  if (added.problem) {
+    fillSheetPickers();
+    openSheetEditor(added.name);
+    render();
+    toast(`Added tab “${added.name}”. Fix its errors before drawing a tree from it.`);
+  } else {
+    if (!$("sheet-dialog").hidden) closeSheetEditor();
+    importSheet(added.name, { checked: true });
+    toast(`Added tab “${added.name}”. Create org chart to draw a new tree from it.`);
+  }
+  rewriteFileBytes()
+    .then(() => enqueueSave(() => saveWork({ file: true, deck: true })))
+    .catch((error) => toast(error.message || "Could not save."));
+}
+
 function bindSheetEditor() {
   $("edit-data").addEventListener("click", openSheetEditor);
   $("sheet-cancel").addEventListener("click", closeSheetEditor);
   $("sheet-apply").addEventListener("click", applySheetEdits);
   $("sheet-download").addEventListener("click", downloadSheetXlsx);
+  $("sheet-copy").addEventListener("click", openCopySheetDialog);
+  $("copy-sheet-form").addEventListener("submit", confirmCopySheet);
+  $("copy-sheet-cancel").addEventListener("click", closeCopySheetDialog);
+  $("copy-sheet-close").addEventListener("click", closeCopySheetDialog);
+  $("copy-sheet-name").addEventListener("input", () => showCopyError(""));
+  $("copy-sheet-dialog").addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.stopPropagation();
+    closeCopySheetDialog();
+  });
   $("sheet-add").addEventListener("click", () => addSheetRow(blankDraftRow()));
   $("sheet-add-tbh").addEventListener("click", () => addSheetRow(vacancyDraftRow()));
   $("sheet-filter").addEventListener("input", applySheetFilter);
@@ -5340,7 +5520,7 @@ function bindSheetEditor() {
 }
 
 function onKey(event) {
-  if (document.body.classList.contains("sheet-open") || document.body.classList.contains("account-open")) return;
+  if (document.body.classList.contains("sheet-open") || document.body.classList.contains("account-open") || document.body.classList.contains("copy-open")) return;
   const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName);
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
     event.preventDefault();
