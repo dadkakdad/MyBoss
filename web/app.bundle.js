@@ -5417,21 +5417,19 @@ function closeCopySheetDialog() {
   sheetCopy.matrix = null;
 }
 
-/** Open the name dialog for a new tab. From Edit data, the rows on screen are what gets copied. */
+/** Open the name dialog for a new tab. Only Edit data can start a copy, and the rows on screen are what gets copied. */
 function openCopySheetDialog() {
-  const editing = !$("sheet-dialog").hidden;
-  const sourceName = editing ? sheetEdit.sheetName : state.sheetName;
-  const source = sheetByName(sourceName);
+  if ($("sheet-dialog").hidden) return;
+  const source = sheetByName(sheetEdit.sheetName);
   if (!source) {
     toast("Import a sheet first.");
     return;
   }
   sheetCopy.sourceName = source.name;
-  sheetCopy.matrix = editing ? trimTrailingBlankRows(sheetEdit.draft, sheetEdit.firstRow) : source.matrix;
+  sheetCopy.matrix = trimTrailingBlankRows(sheetEdit.draft, sheetEdit.firstRow);
   const names = (state.workbookSheets || []).map((item) => item.name);
   $("copy-sheet-name").value = nextSheetCopyName(names, source.name);
-  const fromEdits = editing && sheetEdit.dirty;
-  $("copy-sheet-note").textContent = fromEdits
+  $("copy-sheet-note").textContent = sheetEdit.dirty
     ? `Copies the rows in the editor into a new tab. “${source.name}” keeps the rows it had before these edits. Slides already drawn stay. Name the tab after the viewer.`
     : `Copies the rows of “${source.name}” into a new tab of this workbook. Slides already drawn stay. Name the tab after the viewer, then create an org chart from it.`;
   showCopyError("");
@@ -5486,7 +5484,6 @@ function bindSheetEditor() {
   $("sheet-apply").addEventListener("click", applySheetEdits);
   $("sheet-download").addEventListener("click", downloadSheetXlsx);
   $("sheet-copy").addEventListener("click", openCopySheetDialog);
-  $("copy-sheet").addEventListener("click", openCopySheetDialog);
   $("copy-sheet-form").addEventListener("submit", confirmCopySheet);
   $("copy-sheet-cancel").addEventListener("click", closeCopySheetDialog);
   $("copy-sheet-close").addEventListener("click", closeCopySheetDialog);
